@@ -1,0 +1,9 @@
+{
+  "adapterId": "replace-with-host-adapter-id",
+  "partnerId": "replace-with-asterium-partner-id",
+  "conversationId": "replace-with-existing-conversation-id",
+  "sourceMode": "existing_thread",
+  "nativeThreadId": "replace-with-existing-native-thread-id",
+  "bindingGeneration": 1,
+  "workspaceSignature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

@@ -1,0 +1,65 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryFallbackSettings } from '../../src/renderer/components/memory/MemoryFallbackSettings';
+import type { MemoryFallbackSnapshot } from '../../src/shared/memoryFallback';
+
+beforeEach(() => localStorage.clear());
+afterEach(() => { delete window.asteriumMemoryFallback; });
+describe('memory fallback settings UI', () => {
+  const configured: MemoryFallbackSnapshot = { settings: { provider: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', model: 'saved-model', intervalMinutes: 20, credentialConfigured: true, partners: {} }, jobs: [] };
+  it('loads a dropdown on demand, preserves the saved selection, and saves the selected model', async () => {
+    const listModels = vi.fn(async () => [{ id: 'model-one' }, { id: 'model-two' }]);
+    const configure = vi.fn(async () => configured);
+    window.asteriumMemoryFallback = { get: vi.fn(async () => configured), setPartner: vi.fn(async () => configured), configure, listModels };
+    const { container } = render(<MemoryFallbackSettings partnerId="p" eligible />);
+    const select = screen.getByLabelText('兜底模型');
+    await waitFor(() => expect(select).toHaveValue('saved-model'));
+    expect(select.tagName).toBe('SELECT'); expect(listModels).not.toHaveBeenCalled();
+    fireEvent.focus(select);
+    await screen.findByRole('option', { name: 'model-two', hidden: true });
+    expect(select).toHaveValue('saved-model');
+    fireEvent.change(select, { target: { value: 'model-two' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存兜底配置', hidden: true }));
+    await waitFor(() => expect(configure).toHaveBeenCalledWith(expect.objectContaining({ model: 'model-two' })));
+    const content = container.querySelector('.memory-fallback-content')!;
+    expect(container.querySelector('summary')).toHaveTextContent('星丛记忆兜底');
+    expect(container.querySelector('summary')).not.toHaveTextContent('独立 API');
+    expect(container.querySelector('.memory-fallback-actions')).toContainElement(screen.getByRole('button', { name: '开启此伙伴兜底', hidden: true }));
+    expect(screen.getByRole('button', { name: '开启此伙伴兜底', hidden: true })).toHaveAttribute('aria-pressed', 'false');
+    expect(content).toContainElement(select);
+    expect(content).toContainElement(screen.getByRole('button', { name: '开启此伙伴兜底', hidden: true }));
+  });
+  it('does not stack requests or automatically retry a failed list request', async () => {
+    let reject!: (reason: Error) => void;
+    const listModels = vi.fn(() => new Promise<Array<{ id: string }>>((_, rejectRequest) => { reject = rejectRequest; }));
+    window.asteriumMemoryFallback = { get: vi.fn(async () => configured), setPartner: vi.fn(async () => configured), configure: vi.fn(async () => configured), listModels };
+    render(<MemoryFallbackSettings partnerId="p" eligible />);
+    const select = screen.getByLabelText('兜底模型'); await waitFor(() => expect(select).toHaveValue('saved-model'));
+    fireEvent.focus(select); fireEvent.focus(select); fireEvent.focus(select);
+    expect(listModels).toHaveBeenCalledTimes(1);
+    reject(new Error('simulated failure'));
+    await screen.findByText('模型列表读取失败，请检查独立 API 配置后点击刷新。');
+    fireEvent.focus(select); expect(listModels).toHaveBeenCalledTimes(1);
+    listModels.mockResolvedValue([{ id: 'model-recovered' }]);
+    fireEvent.click(screen.getByRole('button', { name: '刷新兜底模型列表', hidden: true }));
+    await screen.findByRole('option', { name: 'model-recovered', hidden: true });
+    expect(listModels).toHaveBeenCalledTimes(2);
+    expect(select).toHaveValue('saved-model');
+  });
+  it('requires an explicit history choice, keeps secrets out of browser persistence, and offers no manual run action', async () => {
+    const snapshot: MemoryFallbackSnapshot = { settings: { provider: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', intervalMinutes: 20, credentialConfigured: false, partners: {} }, jobs: [] };
+    const setPartner = vi.fn(async () => snapshot); const configure = vi.fn(async () => snapshot);
+    window.asteriumMemoryFallback = { get: vi.fn(async () => snapshot), setPartner, configure, listModels: vi.fn(async () => []) };
+    render(<MemoryFallbackSettings partnerId="p" eligible />);
+    await waitFor(() => expect(window.asteriumMemoryFallback?.get).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '开启此伙伴兜底', hidden: true }));
+    expect(setPartner).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '补做未处理历史' }));
+    await waitFor(() => expect(setPartner).toHaveBeenCalledWith({ partnerId: 'p', enabled: true, history: 'unprocessed' }));
+    fireEvent.change(screen.getByLabelText('兜底 API Key'), { target: { value: 'test-secret-not-real' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存兜底配置', hidden: true }));
+    await waitFor(() => expect(configure).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'test-secret-not-real', intervalMinutes: 20 })));
+    expect(localStorage.length).toBe(0);
+    expect(screen.queryByRole('button', { name: /立即整理/u, hidden: true })).not.toBeInTheDocument();
+  });
+});

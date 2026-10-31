@@ -1,0 +1,4 @@
+{
+  "serviceUrl": "https://SERVER-NAME.TAILNET.ts.net",
+  "connectionBindingId": "COPY_SERVER_CONFIGURED_WAKE_BINDING_ID"
+}

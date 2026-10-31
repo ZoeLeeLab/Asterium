@@ -1,0 +1,60 @@
+/* Font preferences change text sizing, never page zoom or layout dimensions. */
+.message-bubble, .message-content--user, .preview-markdown,
+.composer textarea, .studio-composer textarea, .studio-composer__highlights,
+.appearance-preview .message-bubble {
+  font-size: var(--content-font-size,14px);
+}
+.markdown-content code, .markdown-content pre, .code-preview-lines, .code-preview-lines code,
+.preview-text, .timeline-tool pre, .timeline-authorization-record pre,
+.appearance-preview code, .appearance-preview pre {
+  font-family: var(--code-font-family,Consolas,monospace);
+  font-size: var(--code-font-size,12px);
+}
+.code-preview-lines { font-family: var(--code-font-family,Consolas,monospace); }
+.timeline-reasoning__body { font-size: calc(var(--content-font-size,14px) * .9); }
+.appearance-settings { display: grid; flex: 1; min-height: 0; overflow: auto; grid-template-columns: minmax(0,1.4fr) minmax(260px,1fr); align-items: start; gap: 18px; padding: 20px 8px; }
+.appearance-options { display: grid; gap: 16px; min-width: 0; }
+.appearance-card { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-strong); }
+.appearance-card h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; color: var(--text-strong); font-size: calc(15px * var(--ui-font-scale,1)); }
+.appearance-card h2 small { margin-left: auto; color: var(--muted); font-size: calc(10px * var(--ui-font-scale,1)); font-weight: 400; }
+.appearance-modes, .appearance-themes { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; }
+.appearance-themes { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.appearance-modes button, .appearance-themes button { display: flex; min-width: 0; min-height: 82px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 10px 6px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); font-size: calc(12px * var(--ui-font-scale,1)); }
+.appearance-modes button[aria-checked='true'], .appearance-themes button[aria-pressed='true'] { border-color: var(--accent-strong); color: var(--text-strong); background: var(--button-selected); }
+.appearance-modes button { position: relative; }
+.appearance-modes button > svg:last-child:not(:first-child) { position: absolute; top: 6px; right: 6px; }
+.appearance-themes button > span:last-child { display: flex; align-items: center; gap: 5px; }
+.appearance-swatches { display: flex; width: min(100%,100px); height: 24px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 6px; }
+.appearance-swatches i { flex: 1; }
+.appearance-themes .appearance-swatches { width: min(100%,140px); height: 32px; }
+.appearance-swatches--rainy-study { background: url('../assets/rainy-study-light.png') center 48% / cover; }
+.appearance-swatches--rainy-study i, .appearance-swatches--sea-letter i, .appearance-swatches--olympian-garden i { visibility: hidden; }
+:root[data-theme='dark'] .appearance-swatches--rainy-study { background-image: url('../assets/rainy-study-dark.png'); }
+.appearance-hint { margin-top: 12px; color: var(--muted); font-size: calc(11px * var(--ui-font-scale,1)); line-height: 1.65; }
+.appearance-sizes { display: grid; gap: 20px; }
+.appearance-sizes label { display: grid; grid-template-columns: minmax(110px,1fr) minmax(70px,1fr) 48px; align-items: center; gap: 12px; }
+.appearance-sizes strong { display: block; font-size: calc(12px * var(--ui-font-scale,1)); font-weight: 600; }
+.appearance-sizes small { display: block; margin-top: 5px; color: var(--muted); font-size: calc(10px * var(--ui-font-scale,1)); }
+.appearance-sizes input { width: 100%; min-width: 0; accent-color: var(--accent-strong); }
+.appearance-sizes output { text-align: right; font-size: calc(11px * var(--ui-font-scale,1)); font-variant-numeric: tabular-nums; }
+.appearance-fonts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 22px; }
+.appearance-fonts label { display: grid; gap: 8px; font-size: calc(12px * var(--ui-font-scale,1)); }
+.appearance-fonts select { width: 100%; min-height: 36px; min-width: 0; padding: 7px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--text); background: var(--popover-bg); font-family: inherit; }
+.appearance-preview { position: sticky; top: 0; }
+.appearance-preview__ui { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-size: calc(14px * var(--ui-font-scale,1)); }
+.appearance-preview__tag { padding: 4px 8px; border-radius: 5px; color: var(--accent-strong); background: var(--accent-soft); font-size: calc(10px * var(--ui-font-scale,1)); }
+.appearance-preview .message-bubble { width: 100%; padding: 14px; box-shadow: none; }
+.appearance-preview .message-bubble p + p { margin-top: .8em; }
+.appearance-preview pre { margin: 14px 0 0; padding: 12px; overflow: auto; border-radius: 6px; background: var(--surface-soft); line-height: 1.7; }
+.settings-nav nav { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
+.settings-nav .settings-brand, .settings-nav .back-button, .settings-nav .reset-button { flex-shrink: 0; }
+.settings-nav .reset-button { margin-top: 10px; }
+@media(max-width:1150px) { .appearance-settings { grid-template-columns: minmax(0,1fr); } .appearance-preview { position: static; } }
+@media(max-width:760px) { .appearance-fonts { grid-template-columns: minmax(0,1fr); } .appearance-sizes label { grid-template-columns: minmax(0,1fr) 48px; } .appearance-sizes label > span { grid-column: 1/-1; } }
+
+
+.appearance-swatches--sea-letter { background: url('../assets/sea-letter-light.png') center 46% / cover; }
+:root[data-theme='dark'] .appearance-swatches--sea-letter { background-image: url('../assets/sea-letter-dark.png'); }
+
+.appearance-swatches--olympian-garden { background: url('../assets/olympian-garden-light.png') center 52% / cover; }
+:root[data-theme='dark'] .appearance-swatches--olympian-garden { background-image: url('../assets/olympian-garden-dark.png'); }

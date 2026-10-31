@@ -1,0 +1,79 @@
+import { execFile } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { afterEach, describe, expect, it } from 'vitest';
+import { ProjectBrowserService } from '../../src/main/project/ProjectBrowserService';
+const exec = promisify(execFile);
+const temporary: string[] = [];
+afterEach(async () => { for (const root of temporary.splice(0)) await rm(root, { recursive: true, force: true }); });
+async function fixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-browser-')); temporary.push(root);
+  const workspaces = { get: async () => ({ rootPath: root }) };
+  const browser = new ProjectBrowserService(workspaces as never, { resolve: async () => path.join(await realpath(root), '中文.ts') });
+  const git = (args: string[]) => exec('git', ['-c', `safe.directory=${root}`, '-C', root, ...args], { windowsHide: true });
+  await git(['init']); await git(['config', 'user.name', 'Browser Test']); await git(['config', 'user.email', 'browser@example.invalid']);
+  return { root, browser, git };
+}
+describe('project browser read-only boundary', () => {
+  it('browses files without registration, previews code and rejects escapes', async () => {
+    const { root, browser } = await fixture();
+    await writeFile(path.join(root, '中文.ts'), 'export const x = 1;');
+    await mkdir(path.join(root, 'src'));
+    const result = await browser.query({ projectId: 'p', action: 'directory' });
+    expect(result.entries?.map((item) => item.name)).toEqual(['src', '中文.ts']);
+    expect((await browser.query({ projectId: 'p', action: 'file', fileId: 'f' })).content?.text).toContain('const x');
+    for (const file of ['../outside', '.git/config', 'src/../../outside']) await expect(browser.query({ projectId: 'p', action: 'file', path: file })).rejects.toThrow('PROJECT_FILE_PATH_REJECTED');
+    await expect(browser.query({ projectId: 'p', action: 'history', offset: -1 })).rejects.toThrow();
+    const outside = await mkdtemp(path.join(os.tmpdir(), 'asterium-outside-')); temporary.push(outside);
+    await writeFile(path.join(outside, 'secret.txt'), 'secret');
+    await symlink(outside, path.join(root, 'linked'), 'junction');
+    await expect(browser.query({ projectId: 'p', action: 'file', path: 'linked/secret.txt' })).rejects.toThrow('PROJECT_FILE_PATH_REJECTED');
+    expect((await browser.query({ projectId: 'p', action: 'directory' })).entries?.some((entry) => entry.name === 'linked')).toBe(false);
+  });
+  it('keeps commit, staged and current versions separate, including root commits and deletion', async () => {
+    const { root, browser, git } = await fixture();
+    await writeFile(path.join(root, '中文.ts'), 'const x = 1;\n');
+    await git(['add', '.']); await git(['commit', '-m', '第一项提交', '-m', '说明正文']);
+    const history = await browser.query({ projectId: 'p', action: 'history' }); const sha = history.commits![0].sha;
+    expect(history.commits![0].body).toContain('说明正文');
+    expect((await browser.query({ projectId: 'p', action: 'changes', revision: sha })).changes).toContainEqual({ path: '中文.ts', status: 'A' });
+    expect((await browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', revision: sha })).content?.diff).toContain('+const x = 1;');
+    await writeFile(path.join(root, '中文.ts'), 'const x = 2;\n'); await git(['add', '.']);
+    await writeFile(path.join(root, '中文.ts'), 'const x = 3;\n');
+    expect((await browser.query({ projectId: 'p', action: 'status' })).changes).toHaveLength(2);
+    expect((await browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', group: 'staged' })).content?.text).toContain('x = 2');
+    expect((await browser.query({ projectId: 'p', action: 'file', path: '中文.ts', revision: sha })).content?.text).toContain('x = 1');
+    expect(await readFile(path.join(root, '中文.ts'), 'utf8')).toContain('x = 3');
+    await rm(path.join(root, '中文.ts'));
+    expect((await browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', group: 'unstaged' })).content?.diff).toContain('-const x = 2;');
+  });
+  it('scopes a subdirectory project and reports unborn and non-git projects', async () => {
+    const { root, browser, git } = await fixture();
+    expect((await browser.query({ projectId: 'p', action: 'history' })).git).toBe('empty');
+    await mkdir(path.join(root, 'sub')); await writeFile(path.join(root, 'sub', 'inside.ts'), 'inside'); await writeFile(path.join(root, 'outside.ts'), 'outside');
+    const sub = new ProjectBrowserService({ get: async () => ({ rootPath: path.join(root, 'sub') }) } as never, {} as never);
+    expect((await sub.query({ projectId: 'p', action: 'status' })).changes).toEqual([{ path: 'inside.ts', status: 'A', group: 'untracked' }]);
+    await git(['add', '.']); await git(['commit', '-m', 'initial']);
+    const sha = (await sub.query({ projectId: 'p', action: 'history' })).commits![0].sha;
+    expect((await sub.query({ projectId: 'p', action: 'file', path: 'inside.ts', revision: sha })).content?.text).toBe('inside');
+    await git(['mv', 'sub/inside.ts', 'moved-outside.ts']);
+    expect((await sub.query({ projectId: 'p', action: 'status' })).changes).toEqual([{ path: 'inside.ts', status: 'D', group: 'staged' }]);
+    await rm(path.join(root, '.git'), { recursive: true });
+    expect((await sub.query({ projectId: 'p', action: 'status' })).git).toBe('unavailable');
+  });
+  it('reads renames and detached worktrees without changing either checkout', async () => {
+    const { root, browser, git } = await fixture();
+    await writeFile(path.join(root, 'before.ts'), 'original\n');
+    await git(['add', '.']); await git(['commit', '-m', 'base']);
+    await git(['mv', 'before.ts', 'after.ts']); await git(['commit', '-m', 'rename']);
+    const sha = (await browser.query({ projectId: 'p', action: 'history' })).commits![0].sha;
+    expect((await browser.query({ projectId: 'p', action: 'changes', revision: sha })).changes).toContainEqual({ path: 'after.ts', oldPath: 'before.ts', status: 'R' });
+    const worktree = await mkdtemp(path.join(os.tmpdir(), 'asterium-worktree-')); temporary.push(worktree);
+    await git(['worktree', 'add', '--detach', worktree, 'HEAD']);
+    const other = new ProjectBrowserService({ get: async () => ({ rootPath: worktree }) } as never, {} as never);
+    expect((await other.query({ projectId: 'p', action: 'file', path: 'after.ts', revision: sha })).content?.text).toBe('original\n');
+    expect((await other.query({ projectId: 'p', action: 'directory' })).entries?.some((item) => item.name === '.git')).toBe(false);
+  });
+});

@@ -1,0 +1,33 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { afterEach, expect, it, vi } from 'vitest';
+import { PrototypeProvider } from '../../src/renderer/app/PrototypeProvider';
+import { ProfilePage } from '../../src/renderer/pages/ProfilePage';
+import { createTestState } from '../fixtures/applicationState';
+import { STATE_KEY } from '../../src/renderer/app/persistence';
+
+afterEach(() => { window.asteriumAgents = undefined; });
+it('preserves the profile draft on focus refresh, rejects a stale save and explicitly reloads the latest version', async () => {
+  const state = createTestState(); state.userProfile.revision = 'a'.repeat(64); state.userProfile.displayName = '初始用户';
+  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  let disk = { ...state.userProfile };
+  const refreshPartnerProfiles = vi.fn(async () => ({ user: disk, partners: [] }));
+  const saveUserProfile = vi.fn(async (profile) => { if (profile.revision !== disk.revision) throw new Error('PROFILE_VERSION_CONFLICT'); disk = { ...disk, ...profile, revision: 'c'.repeat(64) }; return disk; });
+  window.asteriumAgents = { detectClaude: vi.fn(), selectWorkspace: vi.fn(), sendClaudeMessage: vi.fn(), cancelRun: vi.fn(), resumeSession: vi.fn(), onEvent: () => () => undefined, refreshPartnerProfiles, saveUserProfile };
+  render(<MemoryRouter initialEntries={['/profile']}><PrototypeProvider><ProfilePage /></PrototypeProvider></MemoryRouter>);
+  const name = await screen.findByRole('textbox', { name: '名字' });
+  await waitFor(() => expect(refreshPartnerProfiles).toHaveBeenCalled());
+  fireEvent.change(name, { target: { value: '未保存草稿' } });
+  disk = { ...disk, displayName: '外部修改', revision: 'b'.repeat(64) };
+  await act(async () => { fireEvent(window, new Event('focus')); });
+  expect(name).toHaveValue('未保存草稿');
+  fireEvent.click(screen.getByRole('button', { name: '保存资料' }));
+  await screen.findByText('磁盘资料已变化，未覆盖外部修改；草稿已保留，请重新载入后编辑。');
+  expect(name).toHaveValue('未保存草稿'); expect(disk.displayName).toBe('外部修改');
+  expect(saveUserProfile).toHaveBeenCalledWith(expect.objectContaining({ revision: 'a'.repeat(64) }));
+  fireEvent.click(screen.getByRole('button', { name: '重新载入并放弃草稿' }));
+  await waitFor(() => expect(name).toHaveValue('外部修改'));
+  fireEvent.change(name, { target: { value: '确认保存' } }); fireEvent.click(screen.getByRole('button', { name: '保存资料' }));
+  await waitFor(() => expect(disk.displayName).toBe('确认保存'));
+  expect(saveUserProfile).toHaveBeenLastCalledWith(expect.objectContaining({ revision: 'b'.repeat(64) }));
+});

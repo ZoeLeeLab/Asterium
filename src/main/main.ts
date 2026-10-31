@@ -1,0 +1,133 @@
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, shell, Tray } from 'electron';
+import { DESKTOP_IPC } from '../shared/desktopIpc';
+import { DesktopNotifications } from './settings/DesktopNotifications';
+import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
+import { DesktopLifecycle } from './settings/DesktopLifecycle';
+import { windowsStartupRegistration } from './settings/windowsStartup';
+import appIcon from '../../assets/asterium-icon.png?inline';
+import path from 'node:path';
+import { registerTitlebarThemeChannel, installAppearanceRecovery } from './titlebar';
+import { registerAgentIpc } from './agentIpc';
+import { loadClaudeAgentSdk } from './adapters/ClaudeCodeAdapter';
+import { normalizeExternalHttpUrl } from './security/externalUrl';
+
+let mainWindow: BrowserWindow | null = null;
+const generalSettings = new GeneralSettingsStore(() => path.join(app.getPath('userData'), 'general-settings.v1.json'),
+  app.isPackaged && process.platform === 'win32' ? windowsStartupRegistration(app, process.execPath) : undefined);
+let disposeAgentIpc: () => Promise<void> = async () => undefined;
+const lifecycle = new DesktopLifecycle({
+  getWindow: () => mainWindow, closeAction: () => generalSettings.current().closeAction,
+  createTray: (restore, quit) => {
+    const tray = new Tray(nativeImage.createFromDataURL(appIcon));
+    try {
+      tray.setToolTip('星丛 Asterium');
+      tray.setContextMenu(Menu.buildFromTemplate([{ label: '打开星丛', click: restore }, { type: 'separator' }, { label: '退出星丛', click: quit }]));
+      tray.on('click', restore);
+      return tray;
+    } catch (error) { tray.destroy(); throw error; }
+  },
+  trayError: () => { if (mainWindow) void dialog.showMessageBox(mainWindow, { type: 'error', message: '未能创建托盘图标，窗口已保留。', detail: '你可以在通用设置中选择“彻底退出”。' }); },
+  dispose: async () => {
+    notifications.dispose();
+    for (const notification of activeNotifications) { try { notification.close(); } catch { /* OS state must not prevent runtime cleanup. */ } }
+    activeNotifications.clear(); await disposeAgentIpc();
+  }, exit: () => app.quit(),
+});
+
+const activeNotifications = new Set<Notification>();
+const notifications = new DesktopNotifications({
+  settings: () => generalSettings.current(),
+  background: () => !mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized() || !mainWindow.isFocused(),
+  supported: () => Notification.isSupported(),
+  show: (message, click) => {
+    const notification = new Notification({ ...message, icon: nativeImage.createFromDataURL(appIcon) });
+    activeNotifications.add(notification);
+    notification.once('click', click);
+    notification.once('close', () => activeNotifications.delete(notification));
+    notification.once('failed', () => activeNotifications.delete(notification));
+    try { notification.show(); } catch (error) { activeNotifications.delete(notification); throw error; }
+  },
+  restore: () => { if (!mainWindow) createWindow(); else lifecycle.restore(); },
+  navigationReady: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DESKTOP_IPC.desktopNavigationReady); },
+});
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1536,
+    height: 1024,
+    minWidth: 1180,
+    minHeight: 720,
+    show: false,
+    icon: nativeImage.createFromDataURL(appIcon),
+    backgroundColor: '#071321',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#00000000',
+      symbolColor: '#dbe9ff',
+      height: 34,
+    },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  installAppearanceRecovery(mainWindow);
+  mainWindow.once('ready-to-show', () => mainWindow?.show());
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    const externalUrl = normalizeExternalHttpUrl(url);
+    if (externalUrl) void shell.openExternal(externalUrl);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const expectedPrefix = MAIN_WINDOW_VITE_DEV_SERVER_URL || 'file://';
+    if (!url.startsWith(expectedPrefix)) event.preventDefault();
+  });
+
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    void mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  } else {
+    void mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+  }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+  mainWindow.on('close', event => lifecycle.close(event));
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+registerTitlebarThemeChannel(ipcMain, () => mainWindow);
+disposeAgentIpc = registerAgentIpc(ipcMain, () => mainWindow, { generalSettings, notifications });
+
+app.on('second-instance', () => { void app.whenReady().then(() => { if (!mainWindow) createWindow(); else lifecycle.restore(); }); });
+app.on('before-quit', event => { if (!lifecycle.canExit) { event.preventDefault(); void lifecycle.quit(); } });
+
+app.whenReady().then(async () => {
+  if (process.platform === 'win32') app.setAppUserModelId('Asterium');
+  try { await generalSettings.get(); } catch { console.error('GENERAL_SETTINGS_LOAD_FAILED'); }
+  if (process.env.ASTERIUM_STARTUP_SMOKE === '1') {
+    const sdk = await loadClaudeAgentSdk();
+    if (typeof sdk.query !== 'function' || typeof sdk.createSdkMcpServer !== 'function' || typeof sdk.tool !== 'function') {
+      throw new Error('CLAUDE_AGENT_SDK_RUNTIME_INCOMPLETE');
+    }
+  }
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+}).catch((error) => {
+  console.error('ASTERIUM_STARTUP_FAILED', error);
+  app.exit(1);
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') void lifecycle.quit();
+});
+}

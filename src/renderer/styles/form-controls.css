@@ -1,0 +1,102 @@
+/* Shared form typography and control sizes. Chat/code reading preferences remain independent. */
+:is(.form-section, .mcp-editor, .memory-editor, .api-site-fields, .automation-form,
+  .studio-mcp-settings, .studio-wake-settings, .security-settings-card, .general-settings-card) label,
+.modal-card .modal-field {
+  font-size: var(--form-label-size);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.mcp-editor > label { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+
+/* Explicitly exclude switches, native file pickers, sliders, hidden inputs and color controls. */
+:is(.form-section, .mcp-editor, .memory-editor, .api-site-fields, .automation-form,
+  .studio-mcp-settings, .studio-wake-settings, .security-settings-card, .appearance-fonts, .general-settings-card)
+  :is(input:not([type='checkbox'],[type='radio'],[type='range'],[type='file'],[type='hidden'],[type='color']), select),
+.modal-card .modal-field :is(input:not([type='checkbox'],[type='radio'],[type='range'],[type='file'],[type='hidden'],[type='color']), select) {
+  min-width: 0;
+  height: var(--form-control-height);
+  min-height: var(--form-control-height);
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-strong);
+  background: var(--surface-strong);
+  font-size: var(--form-input-size);
+  font-weight: 400;
+  line-height: 1.5;
+}
+:is(.form-section, .mcp-editor, .memory-editor, .api-site-fields, .automation-form) textarea,
+.modal-card .modal-field textarea {
+  min-width: 0;
+  padding: 10px 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--form-input-size);
+  font-weight: 400;
+  line-height: 1.6;
+}
+/* The leading key icon needs its own inset; the hidden avatar-upload input keeps its original size. */
+.input-with-icon input { padding-left: 34px; }
+.form-section .managed-toggle > input { min-height: 0; }
+
+:is(.form-section, .mcp-editor, .memory-editor, .api-site-fields, .automation-form,
+  .studio-mcp-settings, .studio-wake-settings, .security-settings-card, .general-settings-card) small,
+.form-section > p, .mcp-editor > p, .modal-field small,
+.form-footer > p, .form-error, .modal-error {
+  font-size: var(--form-help-size);
+  font-weight: 400;
+  line-height: 1.5;
+}
+.managed-toggle strong, .profile-audience-card strong { font-size: var(--form-label-size); }
+.managed-toggle small, .profile-audience-card small { font-size: var(--form-help-size); }
+.managed-toggle strong, .managed-toggle small { white-space: normal; }
+.profile-character-count { font-size: var(--form-help-size) !important; }
+
+/* Dense search/filter rows are deliberately one step smaller than full forms. */
+.memory-filter-row label, .memory-filter-row select,
+.memory-filter-row > .secondary-button, .memory-bulk-actions > button,
+.appearance-control select {
+  height: var(--compact-control-height);
+  min-height: var(--compact-control-height);
+  border-radius: var(--radius-sm);
+}
+.memory-filter-row input {
+  height: calc(var(--compact-control-height) - 2px);
+  font-size: var(--form-input-size);
+}
+.memory-filter-row select, .appearance-control select { font-size: var(--form-input-size); }
+.memory-filter-row > .secondary-button, .memory-bulk-actions > button { font-size: var(--form-label-size); }
+
+/* Match edit/delete controls with their neighbours, while retaining their danger/primary colors. */
+.automation-card .appearance-actions .secondary-button,
+.archive-conversation-list :is(.secondary-button, .text-button),
+.memory-detail-heading :is(.secondary-button, .text-button, .danger-button),
+.role-manager__group > article > div .text-button,
+.workflow-manager__group > article > div .text-button,
+.workflow-template-list > article > div .text-button,
+.task-execution-controls button, .mini-detail-actions .text-button,
+.studio-note-card .primary-button {
+  min-height: var(--compact-action-height);
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--form-label-size);
+}
+.project-editor-footer .project-delete-button { min-height: var(--form-control-height); }
+
+/* Keep the existing SVG size; enlarge the hit area and its grid tracks together. */
+.conversation-action, .conversation-pin,
+.studio-note-card .icon-button, .project-summary__edit,
+.studio-member-manager__selected > button {
+  width: var(--compact-icon-size);
+  height: var(--compact-icon-size);
+  border-radius: var(--radius-sm);
+}
+.conversation-row { grid-template-columns: minmax(0,1fr) repeat(3,var(--compact-icon-size)); }
+.studio-group-row { grid-template-columns: minmax(0,1fr) repeat(2,var(--compact-icon-size)); }
+.studio-member-manager section > div > button, .studio-member-manager__selected {
+  grid-template-columns: 38px minmax(0,1fr) var(--compact-icon-size);
+}
+.project-summary__edit { left: 70px; bottom: 4px; }
+.conversation-action--danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb,var(--danger) 12%,transparent);
+}

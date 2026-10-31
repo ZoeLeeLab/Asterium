@@ -1,0 +1,26 @@
+:root {
+  font-family: var(--app-font-family,"Segoe UI Variable","Microsoft YaHei UI","Microsoft YaHei",sans-serif);
+  font-size: calc(16px * var(--ui-font-scale,1));
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 8px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --form-label-size: calc(12px * var(--ui-font-scale,1));
+  --form-input-size: calc(13px * var(--ui-font-scale,1));
+  --form-help-size: calc(11px * var(--ui-font-scale,1));
+  --form-control-height: 40px;
+  --compact-control-height: 36px;
+  --compact-action-height: 32px;
+  --compact-icon-size: 28px;
+  --motion-fast: 160ms;
+  --motion-base: 220ms;
+}

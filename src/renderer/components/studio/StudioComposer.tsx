@@ -1,0 +1,262 @@
+import { AtSign, Paperclip, Send, Square } from 'lucide-react';
+import { useGeneralSettings } from '../../app/useGeneralSettings';
+import { isMessageSendKey } from '../../app/sendShortcut';
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
+import type { StudioMention } from '../../../shared/studioRuntime';
+import { Avatar } from '../ui/Avatar';
+
+export interface StudioMentionOption {
+  partnerId: string;
+  displayName: string;
+  mentionName: string;
+  expertise: string;
+  avatarDataUrl?: string;
+  accent?: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+interface StudioComposerProps {
+  placeholder: string;
+  draftKey?: string;
+  disabled?: boolean;
+  busy?: boolean;
+  mentionsEnabled?: boolean;
+  members: StudioMentionOption[];
+  onSend: (value: string, mentions: StudioMention[]) => void | boolean | Promise<void | boolean>;
+  onCancel?: () => void;
+}
+
+const studioDrafts = new Map<string, { value: string; mentions: StudioMention[] }>();
+
+interface MentionQuery {
+  start: number;
+  end: number;
+  value: string;
+}
+
+export function StudioComposer({ placeholder, draftKey, disabled = false, busy = false, mentionsEnabled = true, members, onSend, onCancel }: StudioComposerProps) {
+  const { settings: { sendShortcut }, available: sendShortcutReady } = useGeneralSettings();
+  const initialDraft = draftKey ? studioDrafts.get(draftKey) : undefined;
+  const [value, setValue] = useState(() => initialDraft?.value ?? '');
+  const [mentions, setMentions] = useState<StudioMention[]>(() => initialDraft?.mentions ?? []);
+  const [query, setQuery] = useState<MentionQuery>();
+  const [activeOption, setActiveOption] = useState(0);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const highlightsRef = useRef<HTMLDivElement>(null);
+
+  const syncHighlights = () => {
+    const input = inputRef.current, highlights = highlightsRef.current;
+    if (input && highlights) { highlights.scrollTop = input.scrollTop; highlights.scrollLeft = input.scrollLeft; }
+  };
+
+  const options = useMemo(() => {
+    if (!query) return [];
+    const needle = query.value.toLocaleLowerCase();
+    return members.filter((member) => !needle
+      || member.mentionName.toLocaleLowerCase().includes(needle)
+      || member.displayName.toLocaleLowerCase().includes(needle));
+  }, [members, query]);
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = '0px';
+    const height = Math.min(Math.max(input.scrollHeight, 48), 144);
+    input.style.height = `${height}px`;
+    input.style.overflowY = input.scrollHeight > 144 ? 'auto' : 'hidden';
+    syncHighlights();
+  }, [value]);
+
+  const refreshQuery = (text: string, caret: number, currentMentions: StudioMention[]) => {
+    if (!mentionsEnabled) return setQuery(undefined);
+    const prefix = text.slice(0, caret);
+    // A mention may begin directly after normal prose (for example
+    // “请问@本地伙伴”), matching familiar chat-app behavior.
+    const match = prefix.match(/@([^\s@，。！？、：:()（）[\]【】{}「」『』]*)$/u);
+    if (!match) return setQuery(undefined);
+    const valuePart = match[1] ?? '';
+    const start = caret - valuePart.length - 1;
+    if (currentMentions.some((mention) => mention.start !== undefined && mention.end !== undefined && start >= mention.start && start < mention.end)) return setQuery(undefined);
+    setActiveOption(0);
+    setQuery({ start, end: caret, value: valuePart });
+  };
+
+  const handleChange = (next: string, caret: number) => {
+    const rebased = rebaseMentions(value, next, mentions);
+    const detected = mentionsEnabled ? detectUniqueMentions(next, members, rebased) : [];
+    setValue(next);
+    setMentions(detected);
+    if (draftKey) studioDrafts.set(draftKey, { value: next, mentions: detected });
+    refreshQuery(next, caret, detected);
+  };
+
+  const chooseMention = (member: StudioMentionOption) => {
+    if (!query || member.disabled) return;
+    const label = member.mentionName || member.displayName;
+    const token = `@${label}`;
+    const next = `${value.slice(0, query.start)}${token} ${value.slice(query.end)}`;
+    const shifted = rebaseMentions(value, next, mentions).filter((mention) => mention.end! <= query.start || mention.start! >= query.start + token.length);
+    const mention: StudioMention = { partnerId: member.partnerId, label, start: query.start, end: query.start + token.length, source: 'user' };
+    const nextMentions = normalizeMentions([...shifted, mention]);
+    setValue(next);
+    setMentions(nextMentions);
+    if (draftKey) studioDrafts.set(draftKey, { value: next, mentions: nextMentions });
+    setQuery(undefined);
+    requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      const caret = query.start + token.length + 1;
+      input.focus();
+      input.setSelectionRange(caret, caret);
+    });
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = value.trim();
+    if (!text || disabled || busy) return;
+    const leading = value.indexOf(text);
+    const selected = (mentionsEnabled ? mentions : [])
+      .filter((mention) => mention.start !== undefined && mention.end !== undefined && mention.start >= leading && mention.end <= leading + text.length)
+      .map((mention) => ({ ...mention, start: mention.start! - leading, end: mention.end! - leading }));
+    const sent = await onSend(text, selected);
+    if (sent === false) return;
+    setValue('');
+    if (draftKey) studioDrafts.delete(draftKey);
+    setMentions([]);
+    setQuery(undefined);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (query && options.length) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveOption((current) => (current + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length);
+        return;
+      }
+      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+        event.preventDefault();
+        chooseMention(options[activeOption]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setQuery(undefined);
+        return;
+      }
+    }
+    if (window.asteriumGeneralSettings && !sendShortcutReady) return;
+    if (!isMessageSendKey(event.nativeEvent, sendShortcut)) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  };
+
+  return <form className="studio-composer" onSubmit={submit}>
+    <div className="studio-composer__editor">
+      <div className="studio-composer__highlights" ref={highlightsRef} aria-hidden="true">{highlightedText(value, mentionsEnabled ? mentions : [])}{value.endsWith('\n') ? '\u200b' : null}</div>
+      <textarea
+        ref={inputRef}
+        rows={2}
+        value={value}
+        disabled={disabled}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        onChange={(event) => handleChange(event.target.value, event.target.selectionStart)}
+        onScroll={syncHighlights}
+        onClick={(event) => refreshQuery(value, event.currentTarget.selectionStart, mentions)}
+        onKeyUp={(event) => {
+          if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) refreshQuery(value, event.currentTarget.selectionStart, mentions);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      {query && <div className="studio-mention-picker" role="listbox" aria-label="选择要提到的伙伴">
+        <header><AtSign size={14} /><span>{query.value ? '匹配的群聊成员' : '选择群聊成员'}</span></header>
+        {options.map((member, index) => <button
+          className={index === activeOption ? 'active' : ''}
+          type="button"
+          role="option"
+          aria-selected={index === activeOption}
+          disabled={member.disabled}
+          title={member.disabledReason}
+          key={member.partnerId}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => chooseMention(member)}
+        >
+          <Avatar partnerId={member.partnerId} name={member.displayName} src={member.avatarDataUrl} accent={member.accent} size="sm" />
+          <span><strong>@{member.mentionName}</strong><small>{member.expertise || '尚未填写擅长'}</small></span>
+          {member.disabled && <em>{member.disabledReason || '当前不可用'}</em>}
+        </button>)}
+        {!options.length && <p>没有唯一匹配的伙伴</p>}
+      </div>}
+    </div>
+    <div className="studio-composer__toolbar">
+      <button className="composer-tool-button studio-attachment-placeholder" type="button" disabled aria-label="添加图片或文件（后续开放）" title="群聊附件将在后续接入"><Paperclip size={18} /><span>附件</span></button>
+      {busy ? <button className="round-button round-button--primary" type="button" disabled={!onCancel} onClick={onCancel} aria-label="停止本轮" title="停止当前伙伴并取消本轮剩余发言"><Square size={17} fill="currentColor" /></button>
+        : <button className="round-button round-button--primary" type="submit" disabled={disabled || !value.trim()} aria-label="发送"><Send size={20} /></button>}
+    </div>
+  </form>;
+}
+
+function highlightedText(value: string, mentions: StudioMention[]) {
+  const nodes: Array<string | ReactElement> = [];
+  let cursor = 0;
+  for (const mention of normalizeMentions(mentions)) {
+    if (mention.start === undefined || mention.end === undefined || mention.start < cursor || mention.end > value.length) continue;
+    nodes.push(value.slice(cursor, mention.start));
+    nodes.push(<mark key={`${mention.partnerId}:${mention.start}`}>{value.slice(mention.start, mention.end)}</mark>);
+    cursor = mention.end;
+  }
+  nodes.push(value.slice(cursor));
+  return nodes;
+}
+
+function rebaseMentions(before: string, after: string, mentions: StudioMention[]) {
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (suffix < before.length - prefix && suffix < after.length - prefix
+    && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix += 1;
+  const removedEnd = before.length - suffix;
+  const insertedEnd = after.length - suffix;
+  const delta = insertedEnd - removedEnd;
+  return mentions.flatMap((mention) => {
+    if (mention.start === undefined || mention.end === undefined) return [];
+    if (mention.end <= prefix) return [mention];
+    if (mention.start >= removedEnd) return [{ ...mention, start: mention.start + delta, end: mention.end + delta }];
+    return [];
+  });
+}
+
+function detectUniqueMentions(value: string, members: StudioMentionOption[], existing: StudioMention[]) {
+  const aliases = new Map<string, StudioMentionOption[]>();
+  for (const member of members) {
+    if (member.disabled) continue;
+    for (const alias of new Set([member.mentionName, member.displayName].map((item) => item.trim()).filter(Boolean))) {
+      aliases.set(alias, [...(aliases.get(alias) ?? []), member]);
+    }
+  }
+  const detected = [...existing];
+  for (const [alias, matches] of aliases) {
+    if (matches.length !== 1) continue;
+    const expression = new RegExp(`@${escapeRegExp(alias)}(?=$|[\\s，。！？、：:()（）\\[\\]【】{}「」『』])`, 'gu');
+    for (const match of value.matchAll(expression)) {
+      const start = match.index;
+      const end = start + match[0].length;
+      if (detected.some((mention) => mention.start === start && mention.end === end)) continue;
+      detected.push({ partnerId: matches[0].partnerId, label: alias, start, end, source: 'user' });
+    }
+  }
+  return normalizeMentions(detected);
+}
+
+function normalizeMentions(mentions: StudioMention[]) {
+  return [...mentions]
+    .filter((mention) => mention.start !== undefined && mention.end !== undefined && mention.start < mention.end)
+    .sort((left, right) => left.start! - right.start!)
+    .filter((mention, index, all) => index === 0 || mention.start! >= all[index - 1].end!);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

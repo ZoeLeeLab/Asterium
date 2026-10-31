@@ -1,0 +1,76 @@
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --page-bg: #edf3fa;
+  --page-image: url('../assets/asterium-light-bg.png');
+  --surface: rgba(247, 250, 254, 0.62);
+  --surface-strong: rgba(255, 255, 255, 0.76);
+  --surface-soft: rgba(198, 215, 238, 0.44);
+  --surface-hover: rgba(198, 215, 238, 0.68);
+  --popover-bg: #f7fafe;
+  --border: rgba(255, 255, 255, 0.8);
+  --border-strong: rgba(93, 127, 174, 0.3);
+  --text: #385474;
+  --text-strong: #294767;
+  --muted: #758ba7;
+  --accent: #8eaad0;
+  --accent-strong: #587aa7;
+  --accent-soft: rgba(198, 215, 238, 0.56);
+  --button-primary-start: var(--accent-strong);
+  --button-primary-end: var(--accent);
+  --button-primary-border: color-mix(in srgb, var(--accent) 70%, white);
+  --button-primary-shadow-base: var(--accent);
+  --button-action-border: color-mix(in srgb, var(--accent) 55%, var(--border));
+  --button-mode-start: color-mix(in srgb, var(--accent) 82%, #244f95);
+  --button-mode-end: var(--accent);
+  --button-surface: var(--surface-soft);
+  --button-hover: var(--surface-hover);
+  --button-selected: var(--accent-soft);
+  --button-selected-hover: color-mix(in srgb, var(--accent-soft) 78%, var(--surface-hover));
+  --button-selected-border: var(--accent);
+  --button-selected-text: var(--accent-strong);
+  --success: #35b88a;
+  --warning: #e8a83b;
+  --danger: #d95e6f;
+  --shadow: 0 24px 70px rgba(76, 124, 190, 0.16);
+  --shadow-soft: 0 12px 36px rgba(74, 117, 176, 0.1);
+  --scrim: rgba(230, 241, 255, 0.68);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page-bg: #071321;
+  --page-image: url('../assets/asterium-dark-bg.png');
+  --surface: rgba(14, 28, 48, 0.76);
+  --surface-strong: rgba(20, 36, 59, 0.88);
+  --surface-soft: rgba(31, 49, 76, 0.68);
+  --surface-hover: rgba(42, 66, 102, 0.7);
+  --popover-bg: #14243b;
+  --border: rgba(135, 174, 230, 0.22);
+  --border-strong: rgba(102, 155, 237, 0.42);
+  --text: #dce7f5;
+  --text-strong: #f3f7fc;
+  --muted: #91a6c0;
+  --accent: #c6d7ee;
+  --accent-strong: #dbe7f6;
+  --accent-soft: rgba(198, 215, 238, 0.2);
+  --button-primary-start: #486f9f;
+  --button-primary-end: #2f527c;
+  --button-primary-border: rgba(116, 161, 218, 0.58);
+  --button-primary-shadow-base: #020914;
+  --button-action-border: rgba(116, 161, 218, 0.58);
+  --button-mode-start: #486f9f;
+  --button-mode-end: #2f527c;
+  --button-surface: rgba(19, 38, 63, 0.9);
+  --button-hover: rgba(31, 55, 86, 0.92);
+  --button-selected: rgba(45, 72, 108, 0.82);
+  --button-selected-hover: rgba(31, 55, 86, 0.92);
+  --button-selected-border: rgba(99, 145, 205, 0.62);
+  --button-selected-text: #e4edf9;
+  --success: #53d5a1;
+  --warning: #f0b64f;
+  --danger: #f47d8c;
+  --shadow: 0 26px 80px rgba(0, 0, 0, 0.34);
+  --shadow-soft: 0 14px 38px rgba(0, 0, 0, 0.24);
+  --scrim: rgba(6, 16, 30, 0.7);
+}
