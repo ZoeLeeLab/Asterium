@@ -79,7 +79,7 @@ describe('Claude CLI bootstrap transport', () => {
     const canary = path.join(protectedRoot, 'canary.txt');
     await writeFile(canary, 'ASTERIUM_PROTECTED_FIXTURE_CANARY');
     const adapter = new ClaudeCodeAdapter('claude.exe', workspace, undefined, undefined, [], undefined, undefined, [protectedRoot]);
-    const run = adapter.sendMessage({ ...command(), execution: { permissionMode: 'full', planMode: 'default' } });
+    const run = adapter.sendMessage({ ...command(), execution: { permissionMode: 'full', planMode: 'default' } })[Symbol.asyncIterator]();
     try {
       await run.next(); // Keep the real adapter run active while inspecting its main approval callback.
       const options = sdk.query.mock.calls.at(-1)![0].options as Options;
@@ -90,7 +90,7 @@ describe('Claude CLI bootstrap transport', () => {
       // Expected protection is deliberately retained. This fails until the native
       // execution boundary is resolved; it must not be skipped to produce a candidate.
       expect(await options.canUseTool!('PowerShell', { command: script }, context)).toMatchObject({ behavior: 'deny' });
-    } finally { await run.return(undefined); await adapter.dispose(); await rm(fixture, { recursive: true, force: true }); }
+    } finally { await run.return?.(undefined); await adapter.dispose(); await rm(fixture, { recursive: true, force: true }); }
   });
 
   it('puts the exact snapshot in system append, preserving user input and reusing it on resume', async () => {
