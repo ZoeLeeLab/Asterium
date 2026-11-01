@@ -104,7 +104,7 @@ describe('PartnerQuickCard directory presentation', () => {
   it.each([true, false])('preserves the explicit tool switch %s when changing a generic API model', async tools => {
     const oldBridge = window.asteriumAgents;
     const profile = { id: 'm', serviceId: 's', model: 'deepseek-chat', name: '模型', tools, images: false };
-    const configuration = { version: 1, revision: 1, models: [profile], services: [], bindings: [{ partnerId: apiPartner.id, modelId: 'm' }] };
+    const configuration = { version: 1, revision: 1, models: [profile], services: [{ id: 's', name: '合成站点', protocol: 'chat_completions', endpoint: 'https://fixture.invalid/v1', credentialRef: 'synthetic-ref' }], bindings: [{ partnerId: apiPartner.id, modelId: 'm' }] };
     const mutate = vi.fn<(request: unknown) => Promise<typeof configuration>>(async () => ({ ...configuration, revision: 2 }));
     window.asteriumAgents = { ...oldBridge!, apiConnectionsGet: async () => configuration, apiConnectionsMutate: mutate, listApiModels: async () => [{ id: 'next-model' }] } as never;
     try {
@@ -112,7 +112,22 @@ describe('PartnerQuickCard directory presentation', () => {
       const selector = screen.getByRole('combobox', { name: '选择 API 模型' }); fireEvent.focus(selector);
       await screen.findByRole('option', { name: 'next-model' }); fireEvent.change(selector, { target: { value: 'next-model' } });
       await waitFor(() => expect(update).toHaveBeenCalled());
-      expect(mutate.mock.calls[0]?.[0]).toMatchObject({ action: 'model', value: { tools } });
+      expect(mutate.mock.calls[0]?.[0]).toMatchObject({ action: 'model', value: { tools, images: true } });
+    } finally { window.asteriumAgents = oldBridge; }
+  });
+
+  it.each([true, false])('retains the saved image preference %s when selecting an existing model', async images => {
+    const oldBridge = window.asteriumAgents;
+    const profile = { id: 'm', serviceId: 's', model: 'deepseek-chat', name: '当前模型', tools: true, images: false };
+    const saved = { ...profile, id: 'saved', model: 'saved-model', images };
+    const config = { version: 1, revision: 1, models: [profile, saved], services: [{ id: 's', name: '合成站点', protocol: 'chat_completions', endpoint: 'https://fixture.invalid/v1', credentialRef: 'synthetic-ref' }], bindings: [{ partnerId: apiPartner.id, modelId: 'm' }] };
+    const mutate = vi.fn(async () => ({ ...config, revision: 2 }));
+    window.asteriumAgents = { apiConnectionsGet: async () => config, apiConnectionsMutate: mutate, listApiModels: async () => [{ id: 'saved-model' }] } as never;
+    try {
+      const update = vi.fn(); render(<PartnerQuickCard partner={{ ...apiPartner, provider: 'openai', credentialRef: 'synthetic-ref' }} onUpdatePartner={update} onUpdateWorkspaceGrants={vi.fn()} />);
+      const selector = screen.getByRole('combobox', { name: '选择 API 模型' }); fireEvent.focus(selector); await screen.findByRole('option', { name: 'saved-model' });
+      fireEvent.change(selector, { target: { value: 'saved-model' } }); await waitFor(() => expect(update).toHaveBeenCalled());
+      expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ action: 'model', value: expect.objectContaining({ images }) }));
     } finally { window.asteriumAgents = oldBridge; }
   });
 

@@ -1,6 +1,11 @@
 import { z } from 'zod';
 export const API_DEFAULT_TOOLS_ENABLED = true;
 
+/** A creation default, not a migration of saved or legacy image preferences. */
+export function defaultApiModelImages(service: { legacyDeepSeek?: boolean }) {
+  return service.legacyDeepSeek !== true;
+}
+
 // Messages requires max_tokens even for the minimal Key + model setup.
 export const API_ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 

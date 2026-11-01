@@ -25,7 +25,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { copyFile, mkdir, realpath, stat, writeFile } from 'node:fs/promises';
-import { app, BrowserWindow, clipboard, dialog, nativeImage, safeStorage, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, safeStorage, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron';
+import { createAttachmentThumbnail } from './security/attachmentThumbnail';
 import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import { readClaudeSessionFile } from './adapters/claudeSessionFile';
@@ -1388,9 +1389,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       ? await messageAttachments.pendingPath(value.id)
       : typeof value.conversationId === 'string' ? await messageAttachments.pathFor(value.id, value.conversationId) : undefined;
     if (!sourcePath) throw new Error('ATTACHMENT_CONVERSATION_REQUIRED');
-    const image = await nativeImage.createThumbnailFromPath(sourcePath, { width: 960, height: 720 });
-    if (image.isEmpty()) throw new Error('ATTACHMENT_IMAGE_UNREADABLE');
-    return image.toDataURL();
+    return createAttachmentThumbnail(sourcePath);
   });
   ipcMain.handle(AGENT_IPC.attachmentDeleteConversation, async (event, value: unknown) => {
     requireSender(event);

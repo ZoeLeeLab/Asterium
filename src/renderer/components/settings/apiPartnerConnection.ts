@@ -1,4 +1,4 @@
-import { API_DEFAULT_TOOLS_ENABLED, API_ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS, apiConfigurationSchema, apiModelSchema, apiServiceSchema, type ApiModel, type ApiService } from '../../../shared/apiConnections';
+import { API_DEFAULT_TOOLS_ENABLED, API_ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS, apiConfigurationSchema, apiModelSchema, apiServiceSchema, defaultApiModelImages, type ApiModel, type ApiService } from '../../../shared/apiConnections';
 import type { ApiPartner } from '../../types/domain';
 
 export interface ApiConnectionValue {
@@ -14,7 +14,7 @@ export interface ApiConnectionValue {
 }
 
 export function newApiModel(service: ApiService, model: string): ApiModel {
-  return { id: '', serviceId: service.id, name: model.slice(0, 120), model, tools: API_DEFAULT_TOOLS_ENABLED, images: false,
+  return { id: '', serviceId: service.id, name: model.slice(0, 120), model, tools: API_DEFAULT_TOOLS_ENABLED, images: defaultApiModelImages(service),
     ...(service.protocol === 'anthropic_messages' ? { settings: { maxOutputTokens: API_ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS, autoCompact: false } } : {}) };
 }
 

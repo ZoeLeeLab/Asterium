@@ -129,4 +129,18 @@ describe('API partner site configuration', () => {
     }
     expect(newApiModel(apiSitePreset('preset-anthropic')!, 'claude-model')).toMatchObject({ tools: true, settings: { maxOutputTokens: 4096 } });
   });
+
+  it('enables image input for new supported model profiles while retaining the legacy DeepSeek exception', () => {
+    for (const id of ['preset-kimi', 'preset-openai', 'preset-anthropic', 'preset-siliconflow']) {
+      expect(newApiModel(apiSitePreset(id)!, 'synthetic-model').images).toBe(true);
+    }
+    expect(newApiModel(apiSitePreset('preset-deepseek')!, 'synthetic-model').images).toBe(false);
+  });
+
+  it('starts the advanced image checkbox enabled for a new model, but preserves a saved explicit off', async () => {
+    setup(); const view = render(<Form value={{ ...initial, service: configuration.services[0], model: 'new-synthetic-model' }} />);
+    fireEvent.click(screen.getByText('高级模型设置')); expect(screen.getByRole('checkbox', { name: '启用聊天图片输入' })).toBeChecked();
+    view.unmount(); render(<Form value={{ ...initial, service: configuration.services[0], model: 'exact-model', modelConfig: configuration.models[0] }} />);
+    fireEvent.click(screen.getByText('高级模型设置')); expect(screen.getByRole('checkbox', { name: '启用聊天图片输入' })).not.toBeChecked();
+  });
 });

@@ -1,6 +1,7 @@
 import { Check, ChevronDown, ChevronRight, FolderPlus, LoaderCircle, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { WorkspaceGrant } from '../../../shared/agentProtocol';
+import { defaultApiModelImages } from '../../../shared/apiConnections';
 import type { Conversation, Partner, Project } from '../../types/domain';
 import { Avatar } from './Avatar';
 
@@ -60,7 +61,10 @@ export function PartnerQuickCard({ partner, conversation, projects = [], onUpdat
       const profile = config?.models.find(m => m.id === binding?.modelId);
       let modelId = partner.modelId;
       if (config && binding && profile && bridge?.apiConnectionsMutate) {
-        const nextModel = { ...profile, id: crypto.randomUUID(), model, name: model, tools: profile.tools, images: false };
+        const service = config.services.find(item => item.id === profile.serviceId);
+        if (!service) throw new Error('API_CONFIGURATION_INVALID_BINDING');
+        const saved = config.models.find(item => item.serviceId === service.id && item.model === model);
+        const nextModel = { ...profile, id: crypto.randomUUID(), model, name: model, tools: profile.tools, images: saved?.images ?? defaultApiModelImages(service) };
         const next = await bridge.apiConnectionsMutate({ action: 'model', expectedRevision: config.revision, value: nextModel });
         await bridge.apiConnectionsMutate({ action: 'bind', expectedRevision: next.revision, partnerId: partner.id, modelId: nextModel.id });
         modelId = nextModel.id;
