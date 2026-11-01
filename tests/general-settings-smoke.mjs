@@ -40,8 +40,8 @@ try {
   await page.waitForFunction(() => !globalThis.document.querySelector('select[aria-label="发送快捷键"]').disabled);
   await page.getByRole('navigation', { name: '设置菜单' }).getByRole('button', { name: '关于', exact: true }).click();
   await page.getByRole('heading', { name: '星丛 Asterium', exact: true }).waitFor();
-  assert.equal(await page.getByRole('status').textContent(), '更新源待配置');
   await page.waitForFunction(async () => (await globalThis.asteriumUpdates.get()).configured === true);
+  await page.waitForFunction(() => globalThis.document.querySelector('[role="status"]')?.textContent !== '更新源待配置');
   assert.equal(await page.getByRole('checkbox', { name: /启动时自动检查更新/ }).isDisabled(), false);
   assert.equal(await page.evaluate(async () => (await globalThis.asteriumUpdates.get()).repository), 'ZoeLeeLab/Asterium');
   assert.equal(await page.getByRole('button', { name: 'ZoeLeeLab/Asterium', exact: true }).isVisible(), true);
