@@ -16,6 +16,8 @@
 
 `tests/unit/claudeCliBootstrap.test.ts` 中的 `blocks protected data hidden inside an encoded native command in Full mode` 保持期望 deny，当前实际 allow，测试失败。测试提交为 `03090febab50d9eb3935310f370098a1339b6526`。本用例不应改成通过、跳过或 TODO 来生成候选。
 
+迭代器类型按接口修正于 `39f6d300cf9a9918b166bb01f144d8fc089fb451`；不改变安全断言或生产权限实现。另有 Wake adapter mock 入队断言重复失败，单独保留待定位，没有借此轮停止改写其断言。
+
 开发机交付目录内的 `audit/native-boundary-active-run.log` 指向该次原始 `native-result.json`，包含来源提交、CLI 哈希、主审批决策、合成请求和事件。其机器路径、诊断缓存和原始日志不作为公开源码内容。先前标准测试、失败尝试及当前失败用例分别保留。
 
 ## 停止边界
