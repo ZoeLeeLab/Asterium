@@ -16,6 +16,8 @@
   "codeEntries": [
     "src/main/api/ApiConnectionStore.ts",
     "src/renderer/components/settings/ApiPartnerConnectionFields.tsx",
+    "src/renderer/components/settings/apiPartnerConnection.ts",
+    "src/renderer/components/ui/PartnerQuickCard.tsx",
     "src/shared/apiPresets.ts",
     "src/main/api/listApiSiteModels.ts",
     "src/shared/apiConnections.ts",
@@ -24,6 +26,8 @@
   "tests": [
     "tests/unit/apiConnectionStore.test.ts",
     "tests/renderer/ApiConnectionsSettings.test.tsx",
+    "tests/renderer/PartnerQuickCard.test.tsx",
+    "tests/renderer/PartnerQuickSave.test.tsx",
     "tests/unit/apiSiteModels.test.ts",
     "tests/unit/desktopIpc.test.ts",
     "tests/api-providers-acceptance.mjs"
@@ -32,7 +36,7 @@
     "docs/release-status.md",
     "docs/api-connections-guide.md"
   ],
-  "lastVerifiedCommit": "39122d3a15ba44f14568d6826b7dc5b590266cea"
+  "lastVerifiedCommit": "a2c23abe4e2462e5a32660c56c875026f2164e45"
 }
 ---
 
@@ -47,3 +51,5 @@
 ## 图片默认值修复
 
 新建 API 模型及快速切换到新模型时，图片输入默认开启；已保存模型的明确开关值保持不变，旧 DeepSeek 适配器继续关闭图片。新增创建默认函数位于 src/shared/apiConnections.ts，两个入口为 apiPartnerConnection.ts 和 PartnerQuickCard.tsx；schema 对旧配置缺省字段仍保留原行为，不自动开启旧连接，不改凭据或用户资料。模拟 UI/存储/请求测试与真实服务验收区分记录。代码基线在提交存在后以纯文档核验绑定，不把开发版反馈当作新安装包验收。
+
+本纯文档核验绑定已存在代码提交 `a2c23abe4e2462e5a32660c56c875026f2164e45`。代码/测试字节与此前通过 209 文件、1636 项全套测试和 95 项专项的工作区一致，实际打包结果另记新 r4 收据；未读取维护者 Key 或把用户开发版反馈写成安装包通过。其他协议、工具权限及凭据处理未改。

@@ -23,6 +23,9 @@
     "src/main/execution/WindowsSandboxProcess.ts",
     "native/sandbox/WindowsSandboxHelper.cs",
     "src/main/security/ConversationAttachmentStore.ts",
+    "src/main/security/attachmentThumbnail.ts",
+    "src/main/agentIpc.ts",
+    "src/renderer/components/chat/MessageAttachmentCards.tsx",
     "src/main/studio/StudioAttachments.ts"
   ],
   "tests": [
@@ -37,6 +40,9 @@
     "tests/unit/nativeCommandApproval.test.ts",
     "tests/native-command-approval-smoke.mjs",
     "tests/unit/conversationAttachmentStore.test.ts",
+    "tests/unit/attachmentThumbnail.test.ts",
+    "tests/renderer/MessageAttachmentCards.test.tsx",
+    "tests/attachment-thumbnail-electron-smoke.mjs",
     "tests/unit/studioAttachments.test.ts"
   ],
   "docs": [
@@ -45,7 +51,7 @@
     "docs/native-command-approval.md",
     "docs/studio-attachments.md"
   ],
-  "lastVerifiedCommit": "a4a5ace1446b0a2601099cae337c21fbb56a8fb8"
+  "lastVerifiedCommit": "a2c23abe4e2462e5a32660c56c875026f2164e45"
 }
 ---
 
@@ -54,6 +60,8 @@
 ## 缩略图修复
 
 src/main/security/attachmentThumbnail.ts 从主进程已解析授权的快照路径读取字节并生成有尺寸上限的缩略图；无扩展名快照不再交 Windows Shell 缓存。解码失败返回无缩略图，文件不存在/体积超限继续拒绝。MessageAttachmentCards.tsx 以会话与附件 ID 隔离卡片状态，缩略图失败不改写快照可用性，避免状态更新取消自身请求。附件读取、发送、会话及群聊授权沿用原存储校验，无数据迁移、无新命令权限。新增 unit/renderer 测试和 tests/attachment-thumbnail-electron-smoke.mjs 使用合成图片、独立临时目录，不读取用户连接或 Key；具体结果另记本轮收据。新代码提交存在后再绑定 lastVerifiedCommit，不以旧包或旧提交冒充本轮新基线。
+
+本纯文档核验绑定已存在代码提交 `a2c23abe4e2462e5a32660c56c875026f2164e45`，其代码/测试与已通过的工作区字节一致。9 项真实 Electron 合成图片用例通过：无扩展名 PNG/JPEG 可生成缩略图，WebP/GIF 实测图标降级；这些是开发机合成验收，不代替新 r4 安装包的普通账户/真实伙伴验收。
 
 Windows 沙箱为实验能力；Full 使用 Native，普通审批不授予沙箱外执行能力。
 
