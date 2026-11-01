@@ -40,7 +40,7 @@
     "docs/release-status.md",
     "docs/claude-cli-compatibility.md"
   ],
-  "lastVerifiedCommit": "10437a8d41a665073d7c091ce2dc31ad805ba0ad"
+  "lastVerifiedCommit": "bff2507f7dfab0cfca4436e7b754b2557554d3de"
 }
 ---
 
@@ -48,4 +48,6 @@
 
 Claude 运行通道改为官方 CLI 与 stdio MCP；复用既有记忆、笔记、任务与协作工具，不另建业务服务。资料重读、恢复及压缩保留原服务与合成测试；官方 CLI 的主审批、取消、断连等有单独 Windows 本地合成验证，完整真实协作仍待验收。
 
-本条核验绑定已存在代码提交 `10437a8d41a665073d7c091ce2dc31ad805ba0ad`，不继承旧候选验收归属。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。
+本条核验绑定已存在代码提交 `bff2507f7dfab0cfca4436e7b754b2557554d3de`，不继承旧候选验收归属。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。
+
+官方 CLI 合成回归还覆盖明确 session ID 恢复及部分流事件；不等于真实订阅已验收。
