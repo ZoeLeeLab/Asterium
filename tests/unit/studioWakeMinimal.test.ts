@@ -151,6 +151,30 @@ describe('minimal notification positions and group-isolated manual review', () =
     await expect(new WakeDeliveryStore(h.file).read()).rejects.toThrow('STUDIO_WAKE_CHECKPOINT_INVALID');
   });
 
+  it('does not mistake a persisted scan cursor for a completed SSE checkpoint', async () => {
+    const h = await fixture(), s = stream();
+    let release!: () => void, entered!: () => void;
+    const checkpointEntered = new Promise<void>(resolve => { entered = resolve; });
+    const checkpointGate = new Promise<void>(resolve => { release = resolve; });
+    const originalCheckpoint = h.store.checkpoint.bind(h.store);
+    vi.spyOn(h.store, 'checkpoint').mockImplementationOnce(async eventId => {
+      entered(); await checkpointGate; return originalCheckpoint(eventId);
+    });
+    const session = new WakeBridgeSession('binding', 'http://127.0.0.1:17361', 'token', { enqueue: h.enqueue }, h.store, async () => s.response);
+    try {
+      await session.control({ protocolVersion: 2, source: 'asterium', action: 'connect_once', connectionBindingId: 'binding', requestId: randomUUID() });
+      s.push(encode(hint(1)) + 'id: 1\nevent: checkpoint\ndata: {"latestEventId":1,"caughtUp":true}\n\n');
+      await checkpointEntered;
+      expect((await h.store.read()).scanCursor).toBe(1);
+      await session.tick(Date.now() + 2100);
+      expect(h.enqueue).not.toHaveBeenCalled();
+      release();
+      await vi.waitFor(async () => { await session.tick(Date.now() + 2100); expect(h.enqueue).toHaveBeenCalledTimes(1); });
+      await session.tick(Date.now() + 10000);
+      expect(h.enqueue).toHaveBeenCalledTimes(1);
+    } finally { release(); await session.dispose(); }
+  });
+
   it('deduplicates connect controls, never auto-starts a session, and pumps only a fully caught-up live connection', async () => {
     const h = await fixture(), s = stream(), fetcher = vi.fn(async () => s.response);
     const session = new WakeBridgeSession('binding', 'http://127.0.0.1:17361', 'token', { enqueue: h.enqueue }, h.store, fetcher);

@@ -72,14 +72,14 @@ describe('Claude CLI bootstrap transport', () => {
     } finally { await adapter.dispose(); await rm(workspace, { recursive: true, force: true }); }
   });
 
-  it('blocks protected data hidden inside an encoded native command in Full mode', async () => {
+  it.each(['full', 'read_only'] as const)('applies the authorized %s native command policy rather than claiming a filesystem sandbox', async mode => {
     const fixture = await mkdtemp(path.join(os.tmpdir(), 'asterium-cli-native-boundary-'));
     const workspace = path.join(fixture, 'workspace'), protectedRoot = path.join(fixture, 'protected');
     await mkdir(workspace); await mkdir(protectedRoot);
     const canary = path.join(protectedRoot, 'canary.txt');
     await writeFile(canary, 'ASTERIUM_PROTECTED_FIXTURE_CANARY');
     const adapter = new ClaudeCodeAdapter('claude.exe', workspace, undefined, undefined, [], undefined, undefined, [protectedRoot]);
-    const run = adapter.sendMessage({ ...command(), execution: { permissionMode: 'full', planMode: 'default' } })[Symbol.asyncIterator]();
+    const run = adapter.sendMessage({ ...command(), execution: { permissionMode: mode, planMode: 'default' } })[Symbol.asyncIterator]();
     try {
       await run.next(); // Keep the real adapter run active while inspecting its main approval callback.
       const options = sdk.query.mock.calls.at(-1)![0].options as Options;
@@ -87,10 +87,34 @@ describe('Claude CLI bootstrap transport', () => {
       expect(await options.canUseTool!('Read', { file_path: canary }, context)).toMatchObject({ behavior: 'deny' });
       const encoded = Buffer.from(canary, 'utf16le').toString('base64');
       const script = `$p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encoded}'));Get-Content -LiteralPath $p`;
-      // Expected protection is deliberately retained. This fails until the native
-      // execution boundary is resolved; it must not be skipped to produce a candidate.
-      expect(await options.canUseTool!('PowerShell', { command: script }, context)).toMatchObject({ behavior: 'deny' });
+      // User-confirmed contract: Full grants native execution under the current
+      // Windows account. Explicit managed-path checks remain best-effort guards;
+      // they cannot constrain a command's indirect filesystem operations.
+      expect(await options.canUseTool!('PowerShell', { command: script }, context)).toMatchObject({ behavior: mode === 'full' ? 'allow' : 'deny' });
     } finally { await run.return?.(undefined); await adapter.dispose(); await rm(fixture, { recursive: true, force: true }); }
+  });
+
+  it.each(['deny', 'allow_once'] as const)('waits for manual approval of a native PowerShell command and honors %s', async decision => {
+    let result: PermissionResult | undefined;
+    const script = "$p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('ZgBpAHgAdAB1AHIAZQA='));Write-Output $p";
+    sdk.query.mockImplementation(({ options }: { options: Options }) => Object.assign((async function* () {
+      result = await options.canUseTool!('PowerShell', { command: script }, { signal: options.abortController!.signal, toolUseID: 'manual-command', requestId: 'manual-command' });
+      yield { type: 'result', subtype: 'success', result: 'fixture' };
+    })(), { close: vi.fn() }));
+    const adapter = new ClaudeCodeAdapter('claude.exe', process.cwd());
+    let cards = 0;
+    try {
+      for await (const event of adapter.sendMessage({ ...command(), execution: { permissionMode: 'manual', planMode: 'default' } })) {
+        if (event.type !== 'authorization.requested') continue;
+        cards++;
+        expect(result).toBeUndefined();
+        expect(event.action).toBe('run_command');
+        expect(event.targets).toContain(script);
+        await adapter.resolveAuthorization({ protocolVersion: AGENT_PROTOCOL_VERSION, type: 'authorization.resolve', commandId: 'decision', partnerId: event.partnerId, conversationId: event.conversationId, connectionSource: event.connectionSource, clientMessageId: event.clientMessageId, sessionId: event.sessionId, runId: event.runId, authorizationId: event.authorizationId, decision });
+      }
+      expect(cards).toBe(1);
+      expect(result).toMatchObject({ behavior: decision === 'allow_once' ? 'allow' : 'deny' });
+    } finally { await adapter.dispose(); }
   });
 
   it('puts the exact snapshot in system append, preserving user input and reusing it on resume', async () => {

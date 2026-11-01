@@ -594,9 +594,9 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
             queueMicrotask(() => abortController.abort());
             return { behavior: 'deny', message: '用户选择暂不执行计划。', interrupt: true };
           }
-          // Keep the host callback active in full mode so Asterium's question
-          // bridge and protected-root checks still run. Ordinary tools are
-          // approved here without showing an authorization card.
+          // Selecting Full authorizes ordinary native operations as this Windows
+          // user. Keep the bridge for questions and explicit path checks; these
+          // checks do not sandbox arbitrary commands or their filesystem access.
           if (permissionMode === 'full') return claudeApprovalAllow(input);
           const authorizationId = `claude-auth-${options.toolUseID}`;
           queue.push({ type: 'work.status', state: 'waiting_authorization', summary: options.title ?? 'Claude Code 等待你的确认' });
@@ -845,7 +845,7 @@ export function claudeNativeAnswers(
 function claudeAuthorizationAction(toolName: string) {
   if (/^(Write|Edit|MultiEdit|NotebookEdit)$/i.test(toolName)) return 'write_file' as const;
   if (/delete/i.test(toolName)) return 'delete_file' as const;
-  if (/^(Bash|Shell|Terminal)/i.test(toolName)) return 'run_command' as const;
+  if (/^(Bash|PowerShell|Shell|Terminal)/i.test(toolName)) return 'run_command' as const;
   if (/computer|desktop|browser/i.test(toolName)) return 'computer_control' as const;
   if (/^(Read|Glob|Grep)$/i.test(toolName)) return 'read_file' as const;
   return 'external_side_effect' as const;

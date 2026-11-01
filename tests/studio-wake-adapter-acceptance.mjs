@@ -65,7 +65,11 @@ async function mock() {
     await session.control(start); await session.control(request('connect_once')); assert.equal(connections, 1);
     cases.push('no-autostart-one-connection-idempotent-duplicate-start');
     live.write(': heartbeat\n\n'); emit(1, 'A');
-    await waitFor(async () => (await store.read()).scanCursor === 1); await session.tick(Date.now() + 2100);
+    await waitFor(async () => (await store.read()).scanCursor === 1);
+    // observe() persists scanCursor before offer() and the following checkpoint
+    // finish. Pump only succeeds after that checkpoint marks the stream caught up.
+    // Wait for the actual enqueue, not an earlier intermediate disk write.
+    await waitFor(async () => { await session.tick(Date.now() + 2100); return accepted.length === 1; });
     assert.equal(accepted.length, 1); assert.equal((await status()).reviews.length, 0);
     cases.push('actual-http-sse-heartbeat-and-original-thread-enqueue-acceptance');
     failNext = true; emit(2, 'A'); emit(3, 'B');
