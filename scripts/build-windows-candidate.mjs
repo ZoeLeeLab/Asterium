@@ -26,8 +26,11 @@ const requiredChecks = ['typecheck', 'lint', 'capabilities', 'dependencies', 'un
 if (checks.commit !== commit || checks.status !== 'passed' || !Array.isArray(checks.checks) || checks.checks.some(c => c.exitCode !== 0) || requiredChecks.some(name => !checks.checks.some(c => c.name === name && c.exitCode === 0))) throw new Error('Missing passing source checks for the frozen commit');
 const environment = { ...process.env, TEMP: path.join(destination, 'tmp'), TMP: path.join(destination, 'tmp'), npm_config_cache: path.join(destination, 'cache/npm'), electron_config_cache: path.join(destination, 'cache/electron'), ELECTRON_CACHE: path.join(destination, 'cache/electron'), ELECTRON_BUILDER_CACHE: path.join(destination, 'cache/electron-builder'), npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' };
 for (const key of Object.keys(environment)) if (/^(?:GH_TOKEN|GITHUB_TOKEN|CSC_|WIN_CSC_|ANTHROPIC_|OPENAI_|AWS_|AZURE_)/.test(key)) delete environment[key];
-const npmConfig = path.join(destination, 'cache/empty-npmrc'); fs.writeFileSync(npmConfig, '');
-environment.npm_config_userconfig = npmConfig; environment.npm_config_globalconfig = npmConfig;
+// npm rejects loading one file as both user and global configuration.
+const npmUserConfig = path.join(destination, 'cache/empty-user.npmrc');
+const npmGlobalConfig = path.join(destination, 'cache/empty-global.npmrc');
+fs.writeFileSync(npmUserConfig, ''); fs.writeFileSync(npmGlobalConfig, '');
+environment.npm_config_userconfig = npmUserConfig; environment.npm_config_globalconfig = npmGlobalConfig;
 Object.assign(process.env, environment);
 for (const key of Object.keys(process.env)) if (/^(?:GH_TOKEN|GITHUB_TOKEN|CSC_|WIN_CSC_|ANTHROPIC_|OPENAI_|AWS_|AZURE_)/.test(key)) delete process.env[key];
 environment.CSC_IDENTITY_AUTO_DISCOVERY = process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
