@@ -34,7 +34,7 @@ loaded.require = name => name === 'electron' ? { app: { isPackaged: false } } : 
     settings.hooks = { PreToolUse: [{ hooks: [{ type: 'command', onFailure: 'block', ...hook }] }] };
     fs.writeFileSync(file, JSON.stringify(settings));
   }
-  const child = cp.spawn(...args), instance = { child, executable: args[0], arguments: args[1], diagnostics: '' };
+  const child = cp.spawn(...args), instance = { child, executable: args[0], arguments: args[1], autoUpdaterDisabled: args[2]?.env?.DISABLE_AUTOUPDATER === '1', diagnostics: '' };
   if (String(args[0]).endsWith('AsteriumClaudePipeHost.exe')) child.stdout.on('data', bytes => { instance.diagnostics += bytes; });
   activeChildren.push(instance); return child;
 } } : requireOriginal(name);
@@ -139,6 +139,7 @@ async function testCase(spec) {
   function check(condition, label) { result.assertions.push({ label, passed: Boolean(condition) }); }
   if (spec.missingExecutable) check(Boolean(error) && !result.writeOccurred, 'missing executable cannot perform a write');
   else {
+    check(activeChildren.some(c => c.executable === cli && c.autoUpdaterDisabled), 'official CLI child disables background updates without changing global settings');
     check(result.toolOffered, 'official CLI exposed the requested native/managed tool');
     check(result.hostRequests > 0 || spec.hookFault && results.some(r => r.is_error && /hook/i.test(JSON.stringify(r.content))), 'tool reached MCP host or the injected faulty hook already blocked it');
     if (toolName === 'Read') check(result.canaryReturned === Boolean(spec.allow), 'read content follows host decision');

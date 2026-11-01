@@ -164,7 +164,9 @@ async function* run(prompt: string, options: Options, controller: AbortControlle
       args.push(typeof options.systemPrompt === 'string' ? '--system-prompt-file' : '--append-system-prompt-file', promptFile, '--system-prompt-snapshot', 'off');
     }
     if (closed()) controller.abort(); controller.signal.throwIfAborted();
-    cli = spawn(options.pathToClaudeCodeExecutable, args, { cwd: options.cwd, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] }); children.add(cli);
+    // Pin background update behavior for this child only; never change the user's
+    // CLI installation or global settings while running a partner turn.
+    cli = spawn(options.pathToClaudeCodeExecutable, args, { cwd: options.cwd, env: { ...process.env, DISABLE_AUTOUPDATER: '1' }, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] }); children.add(cli);
     if (host && cli.pid) host.stdin.write(`${JSON.stringify({ type: 'bind', cliPid: cli.pid })}\n`);
     let spawnError: Error | undefined, stderr = '';
     cli.on('error', error => { spawnError = error; }); cli.stderr.on('data', bytes => { stderr = (stderr + String(bytes)).slice(-2000); }); cli.stdin.on('error', () => {});

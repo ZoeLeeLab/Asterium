@@ -2,6 +2,8 @@
 
 本地伙伴使用用户自行安装、登录的官方 Claude Code。星丛不实现新的登录或订阅令牌服务，也不要求本地伙伴改用 API；API 伙伴仍是独立入口。星丛只管理自己启动的子进程，不自动更新用户的 CLI。
 
+星丛仅在自己启动的 CLI 子进程环境中设置 `DISABLE_AUTOUPDATER=1`，避免会话启动触发后台自更新，不修改用户全局设置或官方二进制。变量含义见[官方更新说明](https://code.claude.com/docs/en/setup#disable-auto-updates)；用户仍自行管理 CLI 版本。
+
 维护者已明确：Claude 原生命令沿用现有审批桥接；Full 模式表示授权使用当前 Windows 用户权限，允许后读取该账户可访问的路径属于预期行为。本轮不为 Claude 新建权限架构或沙箱。前次编码路径诊断及语义澄清保留在[原始诊断记录](claude-cli-release-blocker.md)，不将该观察改写成历史测试已通过。
 
 ## 当前实现
