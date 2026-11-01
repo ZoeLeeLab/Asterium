@@ -40,6 +40,8 @@ export class SandboxExtensionLaunchBackend implements ExtensionLaunchBackend {
     // Dot invocation otherwise masks a final non-terminating PowerShell error.
     const body = `${request.command}\nif (-not $?) { exit 1 }`;
     const setup = [
+      '[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)',
+      '$OutputEncoding=[Console]::OutputEncoding',
       `Microsoft.PowerShell.Management\\New-PSDrive -Name ${workspaceDrive} -PSProvider FileSystem -Root ${powerShellLiteral(location.root)} -Scope Local -ErrorAction Stop | Out-Null`,
       `Microsoft.PowerShell.Management\\Set-Location -LiteralPath ${powerShellLiteral(location.location)} -ErrorAction Stop`,
       `if (-not [string]::Equals((Get-Location).ProviderPath.TrimEnd('\\'), ${powerShellLiteral(location.cwd)}.TrimEnd('\\'), [StringComparison]::OrdinalIgnoreCase)) { throw 'SANDBOX_COMMAND_CWD_MISMATCH' }`,

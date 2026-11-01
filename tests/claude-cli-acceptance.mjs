@@ -60,7 +60,8 @@ async function testCase(spec) {
   const canary = path.join(workspace, 'fixture.txt'), target = path.join(workspace, 'result.txt');
   fs.writeFileSync(canary, 'ASTERIUM_SYNTHETIC_CANARY');
   const env = { ...baseEnv, HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'AppData/Roaming'), LOCALAPPDATA: path.join(home, 'AppData/Local'), CLAUDE_CONFIG_DIR: path.join(home, '.claude'), TEMP: directory, TMP: directory, ANTHROPIC_API_KEY: syntheticKey, DISABLE_AUTOUPDATER: '1', DISABLE_TELEMETRY: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_USE_POWERSHELL_TOOL: '1', MCP_TIMEOUT: '5000' };
-  const modelRequests = [], hostRequests = [], events = []; let statusCalls = 0, wrongProcessRejected = false;
+  const modelRequests = [], hostRequests = [], events = []; let statusCalls = 0, wrongProcessRejected = false, resumed = false;
+  const sessionId = crypto.randomUUID();
   const toolName = spec.tool ?? 'Write';
   const toolInput = toolName === 'Read' ? { file_path: canary } : toolName === 'ExitPlanMode' ? { plan: 'Synthetic plan. No file changes.' } : toolName === 'Bash' ? { command: `echo ASTERIUM_SYNTHETIC > '${target.replaceAll('\\', '/')}'` } : toolName === 'PowerShell' ? { command: `[IO.File]::WriteAllText('${target.replaceAll("'", "''")}','ASTERIUM_SYNTHETIC')` } : toolName === 'AskUserQuestion' ? { questions: [{ question: 'Choose fixture', header: 'Fixture', options: [{ label: 'A', description: 'Synthetic A' }, { label: 'B', description: 'Synthetic B' }], multiSelect: false }] } : toolName.startsWith('mcp__') ? { key: 'time' } : { file_path: target, content: 'ASTERIUM_SYNTHETIC_WRITE' };
   const server = http.createServer(async (req, res) => {
@@ -82,11 +83,12 @@ async function testCase(spec) {
   activeFault = spec.hookFault;
   const controller = new AbortController(); let timedOut = false, error;
   let timer = setTimeout(() => { timedOut = true; controller.abort(); }, 20000);
-  const query = transport.query({ prompt: 'Run only the synthetic fixture request.', options: {
+  const options = {
     cwd: workspace, pathToClaudeCodeExecutable: spec.missingExecutable ? path.join(directory, 'missing.exe') : cli,
     abortController: controller, settingSources: [], settings: { disableAllHooks: !spec.hooksActive }, strictMcpConfig: true,
     ...(spec.hooksActive ? { hooks: { PreToolUse: [{ hooks: [async () => ({ continue: true })] }] } } : {}),
-    model: 'claude-sonnet-4-5', tools: ['Read', 'Write', 'Bash', 'PowerShell', 'AskUserQuestion', 'ExitPlanMode'], persistSession: false, maxTurns: 3,
+    model: 'claude-sonnet-4-5', tools: ['Read', 'Write', 'Bash', 'PowerShell', 'AskUserQuestion', 'ExitPlanMode'], persistSession: Boolean(spec.resume), maxTurns: 3,
+    ...(spec.resume ? { sessionId } : {}),
     ...(spec.plan ? { permissionMode: 'plan' } : {}),
     mcpServers: { asterium: transport.createClaudeToolSet({ name: 'asterium', version: '1.0.0', tools: [transport.tool('fixture_status', 'Read synthetic status only.', {}, async () => { statusCalls++; return { content: [{ type: 'text', text: 'ASTERIUM_STATUS_FIXTURE' }] }; })] }) },
     canUseTool: async (name, input, context) => {
@@ -107,8 +109,25 @@ async function testCase(spec) {
       if (name === 'AskUserQuestion') return { behavior: 'allow', updatedInput: { ...input, answers: { 'Choose fixture': 'A' } } };
       return spec.allow || name === 'mcp__asterium__fixture_status' ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'ASTERIUM_FIXTURE_DENIED' };
     },
-  } });
-  try { for await (const event of query) events.push(event); }
+  };
+  const query = transport.query({ prompt: 'Run only the synthetic fixture request.', options });
+  try {
+    for await (const event of query) events.push(event);
+    if (spec.resume) {
+      const before = modelRequests.length;
+      const { sessionId: _initialSession, ...resumeOptions } = options;
+      void _initialSession;
+      const resumedQuery = transport.query({ prompt: 'ASTERIUM_SYNTHETIC_RESUME_CHECK', options: { ...resumeOptions, resume: sessionId } });
+      try {
+        const resumedEvents = [];
+        for await (const event of resumedQuery) { events.push(event); resumedEvents.push(event); }
+        const messages = modelRequests.slice(before).flatMap(r => r.messages ?? []);
+        resumed = resumedEvents.some(e => e.type === 'result' && e.session_id === sessionId)
+          && JSON.stringify(messages).includes('ASTERIUM_FIXTURE_COMPLETE')
+          && JSON.stringify(messages).includes('ASTERIUM_SYNTHETIC_RESUME_CHECK');
+      } finally { resumedQuery.close(); }
+    }
+  }
   catch (failure) { error = failure.message; }
   finally {
     clearTimeout(timer); query.close();
@@ -129,6 +148,8 @@ async function testCase(spec) {
     else check(result.writeOccurred === Boolean(spec.allow), 'write follows host decision, including late allows');
     if (spec.wrongProcess) check(wrongProcessRejected && statusCalls === 0, 'same-account client outside the bound CLI process tree cannot invoke a tool');
     if (spec.timeout) check(timedOut && !result.writeOccurred, 'expired approval never executed');
+    if (spec.resume) check(resumed, 'official CLI restored the explicit session and retained earlier conversation');
+    if (spec.resume) check(events.some(e => e.type === 'stream_event'), 'partial streaming events reached the adapter transport');
     if (!spec.disconnect && !spec.cancel && !spec.timeout) check(!timedOut && !error && result.resultReceived, 'turn completed without timeout or transport error');
   }
   result.passed = result.assertions.every(a => a.passed);
@@ -148,6 +169,7 @@ for (const spec of [
   { id: 'bash-denied', tool: 'Bash' }, { id: 'powershell-denied', tool: 'PowerShell' },
   { id: 'managed-tool', tool: 'mcp__asterium__fixture_status' }, { id: 'question', tool: 'AskUserQuestion' },
   { id: 'plan-approved', tool: 'ExitPlanMode', plan: true, allow: true },
+  { id: 'session-resumed', tool: 'Read', allow: true, resume: true },
   { id: 'approval-disconnected', disconnect: true }, { id: 'approval-cancelled', cancel: true },
   { id: 'approval-expired', timeout: true }, { id: 'wrong-process-tree', wrongProcess: true },
   { id: 'hooks-active-primary-deny', hooksActive: true },
