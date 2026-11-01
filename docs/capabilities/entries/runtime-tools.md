@@ -17,7 +17,9 @@
     "src/main/api/ApiAgentRuntime.ts",
     "src/renderer/components/chat/toolPresentation.ts",
     "src/renderer/components/chat/TurnTimeline.tsx",
-    "src/shared/contracts/runtime.ts"
+    "src/shared/contracts/runtime.ts",
+    "src/main/adapters/ClaudeCliTransport.ts",
+    "src/main/adapters/ClaudeCodeAdapter.ts"
   ],
   "tests": [
     "tests/unit/asteriumRuntimeTools.test.ts",
@@ -26,20 +28,24 @@
     "tests/api-providers-acceptance.mjs",
     "tests/renderer/TurnTimelinePresentation.test.tsx",
     "tests/renderer/AutomationsView.test.tsx",
-    "tests/unit/agentProtocol.test.ts"
+    "tests/unit/agentProtocol.test.ts",
+    "tests/unit/claudeCliBootstrap.test.ts",
+    "tests/unit/nativeProfileReload.test.ts",
+    "tests/unit/nativeProfileRecovery.test.ts",
+    "tests/unit/nativeSessionCompaction.test.ts",
+    "tests/claude-cli-acceptance.mjs"
   ],
   "docs": [
     "docs/capabilities/schema.md",
-    "docs/release-status.md"
+    "docs/release-status.md",
+    "docs/claude-cli-compatibility.md"
   ],
-  "lastVerifiedCommit": "39122d3a15ba44f14568d6826b7dc5b590266cea"
+  "lastVerifiedCommit": "10437a8d41a665073d7c091ce2dc31ad805ba0ad"
 }
 ---
 
 运行状态、项目与协作工具的当前代码入口、测试和权限边界见以上元数据。
 
-真实模型、外部宿主及操作系统集成须以各自实际验收结果为准。
+Claude 运行通道改为官方 CLI 与 stdio MCP；复用既有记忆、笔记、任务与协作工具，不另建业务服务。资料重读、恢复及压缩保留原服务与合成测试；官方 CLI 的主审批、取消、断连等有单独 Windows 本地合成验证，完整真实协作仍待验收。
 
-本条绑定本仓库首笔代码基线 `39122d3a15ba44f14568d6826b7dc5b590266cea`，已核对所列代码、测试和文档在该提交中存在。此绑定说明实现来源，不继承旧开发仓库、旧候选包或旧测试电脑的验收归属。
-
-维护者已确认发布副本首次启动为空白。最终提交的完整自动检查、安装器构建及后续普通账户安装验收分别记录于独立候选报告；源码核验或模拟结果不代表真实 API、外部宿主或普通账户安装通过。
+本条核验绑定已存在代码提交 `10437a8d41a665073d7c091ce2dc31ad805ba0ad`，不继承旧候选验收归属。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。

@@ -9,7 +9,7 @@
   ],
   "protocols": [
     "codex-cli",
-    "claude-agent-sdk",
+    "claude-cli",
     "deepseek-chat",
     "cyberboss-bridge"
   ],
@@ -19,25 +19,30 @@
     "src/main/adapters/CodexCliAdapter.ts",
     "src/main/adapters/ClaudeCodeAdapter.ts",
     "src/main/adapters/ExistingThreadAdapter.ts",
-    "src/main/api/ApiProviderRegistry.ts"
+    "src/main/api/ApiProviderRegistry.ts",
+    "src/main/adapters/ClaudeCliTransport.ts",
+    "src/main/adapters/claudeStdioProxy.cjs",
+    "native/claude-bridge/ClaudePipeHost.cs"
   ],
   "tests": [
     "tests/unit/codexCliAdapter.test.ts",
     "tests/unit/claudeCodeAdapter.test.ts",
     "tests/unit/existingThreadAdapter.test.ts",
-    "tests/unit/apiProviderRegistry.test.ts"
+    "tests/unit/apiProviderRegistry.test.ts",
+    "tests/unit/claudeCliBootstrap.test.ts",
+    "tests/unit/claudePlanRevision.test.ts",
+    "tests/claude-cli-acceptance.mjs"
   ],
   "docs": [
-    "docs/capabilities/schema.md"
+    "docs/capabilities/schema.md",
+    "docs/claude-cli-compatibility.md"
   ],
-  "lastVerifiedCommit": "39122d3a15ba44f14568d6826b7dc5b590266cea"
+  "lastVerifiedCommit": "10437a8d41a665073d7c091ce2dc31ad805ba0ad"
 }
 ---
 
 伙伴接入的当前代码入口、测试和权限边界见以上元数据。
 
-真实模型、外部宿主及操作系统集成须以各自实际验收结果为准。
+Claude 改为未修改官方 CLI，MCP 使用 stdio，经账户和当前 CLI 进程树绑定的本机 IPC 调用主进程业务与审批。原生工具显式 ask，路径检查与卡片归属为主，Hooks 仅为额外防线；无 SDK 回退或产品 HTTP 桥接。真实订阅仍待验收，版本支持以 Windows 合成服务实测报告为准，不推断更高版本。
 
-本条绑定本仓库首笔代码基线 `39122d3a15ba44f14568d6826b7dc5b590266cea`，已核对所列代码、测试和文档在该提交中存在。此绑定说明实现来源，不继承旧开发仓库、旧候选包或旧测试电脑的验收归属。
-
-维护者已确认发布副本首次启动为空白。最终提交的完整自动检查、安装器构建及后续普通账户安装验收分别记录于独立候选报告；源码核验或模拟结果不代表真实 API、外部宿主或普通账户安装通过。
+本条核验绑定已存在代码提交 `10437a8d41a665073d7c091ce2dc31ad805ba0ad`，不继承旧候选验收归属。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。

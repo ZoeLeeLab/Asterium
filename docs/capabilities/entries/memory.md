@@ -13,23 +13,29 @@
   "status": "stable",
   "codeEntries": [
     "src/main/memory/PartnerMemoryToolService.ts",
-    "src/main/memory/PartnerMemoryService.ts"
+    "src/main/memory/PartnerMemoryService.ts",
+    "src/main/diary/DiaryGenerators.ts",
+    "src/main/adapters/ClaudeCliTransport.ts"
   ],
   "tests": [
     "tests/unit/partnerMemoryToolService.test.ts",
-    "tests/unit/partnerMemoryService.test.ts"
+    "tests/unit/partnerMemoryService.test.ts",
+    "tests/unit/diaryGenerators.test.ts",
+    "tests/unit/partnerDiaryScheduler.test.ts",
+    "tests/unit/nativeProfileReload.test.ts",
+    "tests/unit/nativeSessionCompaction.test.ts"
   ],
   "docs": [
-    "docs/capabilities/schema.md"
+    "docs/capabilities/schema.md",
+    "docs/claude-cli-compatibility.md",
+    "docs/data-isolation.md"
   ],
-  "lastVerifiedCommit": "39122d3a15ba44f14568d6826b7dc5b590266cea"
+  "lastVerifiedCommit": "10437a8d41a665073d7c091ce2dc31ad805ba0ad"
 }
 ---
 
 伙伴记忆的当前代码入口、测试和权限边界见以上元数据。
 
-真实模型、外部宿主及操作系统集成须以各自实际验收结果为准。
+记忆业务权限不变，Claude 调用改经官方 CLI；日记生成继续禁用工具并不保存原生会话。已有记忆导入能力仍在确认，尚未提供通用导入，不自动继承外部历史。日记、重读与压缩的合成回归不等于真实订阅通过。
 
-本条绑定本仓库首笔代码基线 `39122d3a15ba44f14568d6826b7dc5b590266cea`，已核对所列代码、测试和文档在该提交中存在。此绑定说明实现来源，不继承旧开发仓库、旧候选包或旧测试电脑的验收归属。
-
-维护者已确认发布副本首次启动为空白。最终提交的完整自动检查、安装器构建及后续普通账户安装验收分别记录于独立候选报告；源码核验或模拟结果不代表真实 API、外部宿主或普通账户安装通过。
+本条核验绑定已存在代码提交 `10437a8d41a665073d7c091ce2dc31ad805ba0ad`，不继承旧候选验收归属。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。
