@@ -30,7 +30,10 @@
     "src/shared/appRelease.ts",
     "scripts/windows-installer-config.mjs",
     "scripts/build-windows-candidate.mjs",
+    "scripts/windows-installer-templates.mjs",
+    "scripts/prepare-source-materials.mjs",
     "tools/installer/installer.nsh",
+    "tools/installer/windows-shell.nsh",
     "src/shared/appUpdates.ts",
     "src/main/settings/AppUpdateService.ts",
     "src/renderer/app/useAppUpdates.ts",
@@ -50,6 +53,9 @@
     "tests/unit/executionBackendRouter.test.ts",
     "tests/unit/betaIdentity.test.ts",
     "tests/unit/windowsInstallerConfig.test.ts",
+    "tests/unit/windowsInstallerTemplates.test.ts",
+    "tests/unit/sourceMaterials.test.ts",
+    "tests/windows-installer-shell-smoke.mjs",
     "tests/unit/appUpdateService.test.ts",
     "tests/renderer/AppUpdates.test.tsx"
   ],
@@ -60,9 +66,14 @@
     "docs/releases/0.1.0-beta.1-r1.md",
     "docs/releases/0.1.0-beta.1-about-fix.md",
     "docs/client-updates.md",
-    "docs/releases/0.1.0-beta.1-r2.md"
+    "docs/releases/0.1.0-beta.1-r2.md",
+    "docs/releases/0.1.0-beta.1-r3-licensing.md",
+    "COPYRIGHT.md",
+    "ASSET_LICENSE.md",
+    "BRANDING.md",
+    "CREDITS.md"
   ],
-  "lastVerifiedCommit": "9de9e5390fad6f4893ec4fce01ccd532bcbd7084"
+  "lastVerifiedCommit": "b9ceac7c15e337bc7f39cb328c8ca617b388b12b"
 }
 ---
 
@@ -94,4 +105,4 @@ Beta 固定使用独立安装身份和默认资料目录，保留显式 user-dat
 
 本阶段源码已加入项目许可、素材范围、品牌说明和致谢，关于页按需展示实际原文；此前段落中的“许可证尚未落地”描述原阶段候选。安装器的 shell 操作改用 Windows COM 与现有 System 插件，保持当前用户、Beta 身份和资料边界，没有改变伙伴工具、连接认证或原生权限模式。原生诊断仅验证合成链接与合成 AppID，不代表新安装器、真实固定项或卸载重装已验收。详见 [本轮版本记录](../../releases/0.1.0-beta.1-r3-licensing.md)。
 
-新代码引用将在真实代码基线提交存在后以纯文档核验提交更新；以上引用只对应此前阶段，不能充当本阶段新代码的提交归属。
+本阶段绑定已存在代码提交 `b9ceac7c15e337bc7f39cb328c8ca617b388b12b`，以纯文档核验提交更新来源；不改变前述历史阶段的实际归属。207 个测试文件中 1623 项通过、0 失败、2 个既有 TODO；类型、lint、能力、依赖、源码隐私与链接、声明原文、14 份源码材料、隔离浏览器和原生诊断检查通过。未构建本阶段产品安装包，完整包与普通账户人工验收仍待后续候选。其余 15 条能力条目未受功能影响，保留各自原真实引用。
