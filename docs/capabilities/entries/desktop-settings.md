@@ -16,6 +16,8 @@
     "src/shared/generalSettings.ts",
     "src/main/settings/GeneralSettingsStore.ts",
     "src/renderer/components/settings/GeneralSettingsView.tsx",
+    "src/renderer/components/settings/AboutSettingsView.tsx",
+    "src/renderer/pages/SettingsPage.tsx",
     "src/main/settings/DesktopLifecycle.ts",
     "src/main/main.ts",
     "src/renderer/app/sendShortcut.ts",
@@ -33,6 +35,8 @@
   "tests": [
     "tests/unit/generalSettings.test.ts",
     "tests/renderer/GeneralSettings.test.tsx",
+    "tests/renderer/AboutSettings.test.tsx",
+    "tests/empty-start-browser-smoke.mjs",
     "tests/unit/desktopIpc.test.ts",
     "tests/unit/desktopLifecycle.test.ts",
     "tests/general-settings-smoke.mjs",
@@ -47,9 +51,10 @@
     "docs/release-status.md",
     "docs/data-isolation.md",
     "docs/development-and-validation.md",
-    "docs/releases/0.1.0-beta.1-r1.md"
+    "docs/releases/0.1.0-beta.1-r1.md",
+    "docs/releases/0.1.0-beta.1-about-fix.md"
   ],
-  "lastVerifiedCommit": "a8e9907cb3c56510000f04902ed9d84005a87fe4"
+  "lastVerifiedCommit": "ae4e3e55f9afc1d07ed9d97d6b8927ca83f782d1"
 }
 ---
 
@@ -57,10 +62,12 @@
 
 Beta 固定使用独立安装身份和默认资料目录，保留显式 user-data-dir，不自动迁移旧资料。安装器为当前用户提供首次默认勾选的快捷方式选择及默认不勾选的完成页启动；记住取消选择，卸载保留资料。源码配置与单元检查不代表普通账户安装、重装、提权或实际页面已通过。
 
-本条核验绑定已存在代码提交 `a8e9907cb3c56510000f04902ed9d84005a87fe4`，不继承旧候选验收归属。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。
+本条核验绑定已存在代码提交 `ae4e3e55f9afc1d07ed9d97d6b8927ca83f782d1`，不继承旧候选验收归属。安装器配置此前绑定的代码提交 `a8e9907cb3c56510000f04902ed9d84005a87fe4` 保留在历史中，本次未修改该实现。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。
 
 安装器自定义函数移到对应页面钩子内声明，确保 NSIS UI 宏与可执行文件常量已加载。首次失败的编译日志及中间产物独立保留；普通账户实际安装仍待验收。
 
 默认安装文件夹固定为 Asterium Beta，程序仍为 Asterium.exe；NSIS 中文 include 使用明确 UTF-8 BOM。安装标识、资料目录和快捷方式继续独立，后续 Beta 沿用。
 
 当前用户安装明确关闭 packElevateHelper，不将未使用的 elevate.exe 注入应用载荷。最终安装器须与审计的应用文件逐项一致，源配置检查不代替普通账户安装验收。
+
+关于页已启用，展示来源于 package.json 的版本、产品定位、数据与连接简述和当前发行状态。第三方声明及收集的许可证原文按需离线加载为纯文本，不触发外部访问或授予新权限；项目许可证、签名及更新功能的未完成状态明确展示。相关设置 32 项回归及 7 项隔离浏览器检查通过，未重新运行 CLI 联调或完整产品验收；此修复尚未纳入新的应用包，具体边界见关于页补齐记录。
