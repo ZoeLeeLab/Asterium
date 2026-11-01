@@ -1,5 +1,5 @@
 /** Bind this public owner/repository before public distribution. Never put a token here. */
-export const PUBLIC_UPDATE_REPOSITORY = '';
+export const PUBLIC_UPDATE_REPOSITORY = 'ZoeLeeLab/Asterium';
 
 export type UpdatePhase = 'unconfigured' | 'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'installing' | 'error';
 export interface UpdateRelease {

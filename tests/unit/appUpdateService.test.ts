@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppUpdateService, selectUpdate } from '../../src/main/settings/AppUpdateService';
-import { compareReleaseVersions, parseReleaseVersion } from '../../src/shared/appUpdates';
+import { PUBLIC_UPDATE_REPOSITORY, compareReleaseVersions, parseReleaseVersion } from '../../src/shared/appUpdates';
 
 const temporary: string[] = [];
 afterEach(async () => { await Promise.all(temporary.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
@@ -52,6 +52,16 @@ describe('public GitHub update selection', () => {
 });
 
 describe('update download and installation consent', () => {
+  it('uses the configured public source and does not download or install from an empty release catalog', async () => {
+    const fetcher = vi.fn(async () => new Response('[]', { status: 200 }));
+    const { service, directory, install, openExternal } = await setup({ repository: PUBLIC_UPDATE_REPOSITORY, fetch: fetcher as typeof fetch });
+    expect(service.get().configured).toBe(true);
+    expect((await service.check()).phase).toBe('up-to-date');
+    expect(fetcher).toHaveBeenCalledWith(`https://api.github.com/repos/${PUBLIC_UPDATE_REPOSITORY}/releases?per_page=20`, expect.objectContaining({ credentials: 'omit', redirect: 'error' }));
+    await service.download(); await service.install(); await service.openReleases();
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(await readdir(directory)).toEqual([]); expect(install).not.toHaveBeenCalled();
+    expect(openExternal).toHaveBeenCalledWith(`https://github.com/${PUBLIC_UPDATE_REPOSITORY}/releases`);
+  });
   it('makes no network request when the public repository is not configured', async () => {
     const { service, fetcher, install } = await setup({ repository: '' });
     expect((await service.check()).phase).toBe('unconfigured');
