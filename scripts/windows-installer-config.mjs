@@ -11,6 +11,6 @@ export function betaInstallerConfiguration({ projectRoot, outputDirectory, versi
     directories: { output: outputDirectory, buildResources: path.join(projectRoot, 'assets') },
     publish: null, compression: 'normal',
     win: { executableName: 'Asterium', target: [{ target: 'nsis', arch: ['x64'] }], signAndEditExecutable: false, icon: path.join(projectRoot, 'assets/asterium.ico'), artifactName: `Asterium-${version}-win-x64-${commit.slice(0, 12)}-setup.\${ext}` },
-    nsis: { guid, oneClick: false, perMachine: false, allowElevation: false, selectPerMachineByDefault: false, allowToChangeInstallationDirectory: true, runAfterFinish: false, deleteAppDataOnUninstall: false, createDesktopShortcut: false, createStartMenuShortcut: true, shortcutName: 'Asterium Beta', include: path.join(projectRoot, 'tools/installer/installer.nsh'), differentialPackage: false },
+    nsis: { guid, oneClick: false, perMachine: false, allowElevation: false, packElevateHelper: false, selectPerMachineByDefault: false, allowToChangeInstallationDirectory: true, runAfterFinish: false, deleteAppDataOnUninstall: false, createDesktopShortcut: false, createStartMenuShortcut: true, shortcutName: 'Asterium Beta', include: path.join(projectRoot, 'tools/installer/installer.nsh'), differentialPackage: false },
   };
 }

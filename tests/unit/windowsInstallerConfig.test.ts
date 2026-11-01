@@ -12,7 +12,7 @@ describe('Beta Windows installer channel', () => {
     expect(next.win.artifactName).not.toBe(first.win.artifactName);
   });
   it('requires current-user installation and retains application data', () => {
-    expect(create().nsis).toMatchObject({ perMachine: false, allowElevation: false, deleteAppDataOnUninstall: false, runAfterFinish: false, createDesktopShortcut: false });
+    expect(create().nsis).toMatchObject({ perMachine: false, allowElevation: false, packElevateHelper: false, deleteAppDataOnUninstall: false, runAfterFinish: false, createDesktopShortcut: false });
     expect(create().publish).toBeNull();
   });
   it('rejects an unbound commit and a version from the old candidate channel', () => {
