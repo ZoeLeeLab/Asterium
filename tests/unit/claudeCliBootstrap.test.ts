@@ -72,6 +72,27 @@ describe('Claude CLI bootstrap transport', () => {
     } finally { await adapter.dispose(); await rm(workspace, { recursive: true, force: true }); }
   });
 
+  it('blocks protected data hidden inside an encoded native command in Full mode', async () => {
+    const fixture = await mkdtemp(path.join(os.tmpdir(), 'asterium-cli-native-boundary-'));
+    const workspace = path.join(fixture, 'workspace'), protectedRoot = path.join(fixture, 'protected');
+    await mkdir(workspace); await mkdir(protectedRoot);
+    const canary = path.join(protectedRoot, 'canary.txt');
+    await writeFile(canary, 'ASTERIUM_PROTECTED_FIXTURE_CANARY');
+    const adapter = new ClaudeCodeAdapter('claude.exe', workspace, undefined, undefined, [], undefined, undefined, [protectedRoot]);
+    const run = adapter.sendMessage({ ...command(), execution: { permissionMode: 'full', planMode: 'default' } });
+    try {
+      await run.next(); // Keep the real adapter run active while inspecting its main approval callback.
+      const options = sdk.query.mock.calls.at(-1)![0].options as Options;
+      const context = { signal: new AbortController().signal, toolUseID: 'boundary', requestId: 'boundary' };
+      expect(await options.canUseTool!('Read', { file_path: canary }, context)).toMatchObject({ behavior: 'deny' });
+      const encoded = Buffer.from(canary, 'utf16le').toString('base64');
+      const script = `$p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encoded}'));Get-Content -LiteralPath $p`;
+      // Expected protection is deliberately retained. This fails until the native
+      // execution boundary is resolved; it must not be skipped to produce a candidate.
+      expect(await options.canUseTool!('PowerShell', { command: script }, context)).toMatchObject({ behavior: 'deny' });
+    } finally { await run.return(undefined); await adapter.dispose(); await rm(fixture, { recursive: true, force: true }); }
+  });
+
   it('puts the exact snapshot in system append, preserving user input and reusing it on resume', async () => {
     const controller = memoryController();
     const adapter = new ClaudeCodeAdapter('claude.exe', 'K:\\qa', undefined, undefined, [], undefined, controller);
