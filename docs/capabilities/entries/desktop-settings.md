@@ -62,7 +62,7 @@
     "docs/client-updates.md",
     "docs/releases/0.1.0-beta.1-r2.md"
   ],
-  "lastVerifiedCommit": "a4a5ace1446b0a2601099cae337c21fbb56a8fb8"
+  "lastVerifiedCommit": "9de9e5390fad6f4893ec4fce01ccd532bcbd7084"
 }
 ---
 
@@ -86,3 +86,6 @@ Beta 固定使用独立安装身份和默认资料目录，保留显式 user-dat
 本轮精简关于页，接入用户控制的 GitHub Releases 检查、下载、取消、大小及 SHA-256 校验、安装前复核和退出确认；自动检查与测试版偏好持久化。更新固定使用维护者配置的公开源，无私人 Token，不向伙伴工具开放，不自动下载或安装。当前公开仓库未绑定，候选显示未配置并且不请求网络；模拟测试与真实 GitHub 升级严格区分。未配置代码签名，项目许可证尚未落地。
 
 当前 lastVerifiedCommit 绑定已存在代码提交 `a4a5ace1446b0a2601099cae337c21fbb56a8fb8`，之前的真实来源 `ae4e3e55f9afc1d07ed9d97d6b8927ca83f782d1` 仍在历史中保留。全套检查及新包验收结果另见独立候选报告；不继承旧候选验收归属。
+
+
+桌面测试维护阶段将 general-settings-smoke 的旧入口与示例状态假设更新为明确的隔离合成夹具，并核对关于页未配置更新源。产品实现未变，当前核验源更新为已存在提交 `9de9e5390fad6f4893ec4fce01ccd532bcbd7084`；实际打包桌面执行仍以新候选报告为准，不把脚本静态检查写成运行通过。其他四条首版补齐能力继续引用原实现提交。
