@@ -24,12 +24,13 @@ const save = (name, value) => fs.writeFileSync(path.join(audit, name), JSON.stri
 const checks = json(path.join(audit, 'source-checks.json'));
 const requiredChecks = ['typecheck', 'lint', 'capabilities', 'dependencies', 'unit', 'empty-start', 'renderer', 'sandbox', 'claude-bridge', 'studio-wake-build', 'studio-wake-test', 'automation-build', 'automation-test', 'notices', 'source-audit', 'claude-cli'];
 if (checks.commit !== commit || checks.status !== 'passed' || !Array.isArray(checks.checks) || checks.checks.some(c => c.exitCode !== 0) || requiredChecks.some(name => !checks.checks.some(c => c.name === name && c.exitCode === 0))) throw new Error('Missing passing source checks for the frozen commit');
-const environment = { ...process.env, TEMP: path.join(destination, 'tmp'), TMP: path.join(destination, 'tmp'), npm_config_cache: path.join(destination, 'cache/npm'), ELECTRON_CACHE: path.join(destination, 'cache/electron'), ELECTRON_BUILDER_CACHE: path.join(destination, 'cache/electron-builder'), CSC_IDENTITY_AUTO_DISCOVERY: 'false', npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' };
+const environment = { ...process.env, TEMP: path.join(destination, 'tmp'), TMP: path.join(destination, 'tmp'), npm_config_cache: path.join(destination, 'cache/npm'), electron_config_cache: path.join(destination, 'cache/electron'), ELECTRON_CACHE: path.join(destination, 'cache/electron'), ELECTRON_BUILDER_CACHE: path.join(destination, 'cache/electron-builder'), npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' };
 for (const key of Object.keys(environment)) if (/^(?:GH_TOKEN|GITHUB_TOKEN|CSC_|WIN_CSC_|ANTHROPIC_|OPENAI_|AWS_|AZURE_)/.test(key)) delete environment[key];
 const npmConfig = path.join(destination, 'cache/empty-npmrc'); fs.writeFileSync(npmConfig, '');
 environment.npm_config_userconfig = npmConfig; environment.npm_config_globalconfig = npmConfig;
 Object.assign(process.env, environment);
 for (const key of Object.keys(process.env)) if (/^(?:GH_TOKEN|GITHUB_TOKEN|CSC_|WIN_CSC_|ANTHROPIC_|OPENAI_|AWS_|AZURE_)/.test(key)) delete process.env[key];
+environment.CSC_IDENTITY_AUTO_DISCOVERY = process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
 function command(label, executable, args, cwd) {
   const log = fs.openSync(path.join(audit, `${label}.log`), 'wx');
   try { execFileSync(executable, args, { cwd, env: environment, windowsHide: true, stdio: ['ignore', log, log], maxBuffer: 2 * 1024 * 1024 }); }
@@ -91,6 +92,7 @@ if (phase === 'application') {
   console.log(JSON.stringify({ status: 'built', commit, application }));
 } else {
   const receipt = json(path.join(audit, 'application-build.json'));
+  if (typeof receipt.application !== 'string' || !path.resolve(receipt.application).startsWith(path.join(destination, 'application') + path.sep)) throw new Error('Application receipt must refer to this candidate directory');
   const packaged = json(path.join(audit, 'packaged-checks.json'));
   const payload = json(path.join(audit, 'application-audit.json'));
   const requiredPackaged = ['startup', 'memory-sqlite', 'extensions', 'api-providers'];
