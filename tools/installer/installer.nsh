@@ -27,7 +27,6 @@
 
   !macro customPageAfterChangeDir
     Page custom AsteriumOptionsPage AsteriumOptionsLeave
-  !macroend
 
   Function AsteriumOptionsPage
     !insertmacro MUI_HEADER_TEXT "安装选项" "选择是否创建桌面快捷方式。"
@@ -45,6 +44,7 @@
   Function AsteriumOptionsLeave
     ${NSD_GetState} $AsteriumDesktopCheckbox $AsteriumDesktopChoice
   FunctionEnd
+  !macroend
 
   !macro customInstall
     SetShellVarContext current
@@ -62,11 +62,11 @@
     !define MUI_FINISHPAGE_RUN_NOTCHECKED
     !define MUI_FINISHPAGE_RUN_FUNCTION "AsteriumLaunchAfterFinish"
     !insertmacro MUI_PAGE_FINISH
-  !macroend
 
   Function AsteriumLaunchAfterFinish
     ${StdUtils.ExecShellAsUser} $0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "open" ""
   FunctionEnd
+  !macroend
 !else
   !macro customUnInstall
     SetShellVarContext current
