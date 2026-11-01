@@ -86,6 +86,12 @@
 .general-settings-card { padding: 18px 22px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
 .general-settings-card h2 { margin: 0 0 10px; font-size: 15px; }
 .general-settings-card p, .general-settings-row small { color: var(--muted); font-size: 12px; }
+.about-settings p { line-height: 1.85; }
+.about-release { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 20px; font-size: var(--form-label-size); }
+.about-release dt { color: var(--muted); }
+.about-release dd { margin: 0; overflow-wrap: anywhere; }
+.about-notice { margin-top: 12px; }
+.about-notice-text { max-height: 420px; overflow: auto; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .general-settings-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; min-height: 52px; padding: 8px 0; }
 .general-settings-row > span { display: grid; gap: 5px; }
 .general-settings-row strong { font-size: var(--form-label-size); font-weight: 600; }
