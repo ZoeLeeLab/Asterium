@@ -8,9 +8,15 @@
 
 ## 产品截图
 
-![产品截图占位：单聊、工作室及伙伴记忆管理；尚未添加实际截图](docs/images/product-preview-placeholder.svg)
+**单聊 · 默认星海主题**
 
-此处是明确标识的占位图，不代表实际界面。后续补充使用通用测试内容的截图，展示单聊、工作室和伙伴记忆管理；发布前移除真实姓名、账号、私人聊天、Key、项目内容和个人路径。
+![默认星海主题下，与策划伙伴讨论阅读记录网页的单聊界面](docs/images/single-chat-default.png)
+
+**工作室 · 雨窗书房（深色模式）**
+
+![雨夜书房背景下，三位伙伴围绕同一份需求讨论分工与复核的工作室界面](docs/images/studio-rainy-study-dark.png)
+
+截图使用通用演示内容，本机路径已遮挡；示例伙伴、聊天与项目不随应用预置，首次启动为空白工作台。示例对话用于展示界面，不代表真实模型联调结果。
 
 ## 核心功能
 
@@ -24,15 +30,15 @@
 
 ## 下载与安装
 
-[Releases：尚无公开发行版本](https://github.com/ZoeLeeLab/Asterium/releases)
+[前往 GitHub Releases 查看版本与下载](https://github.com/ZoeLeeLab/Asterium/releases)
 
-目前准备 Windows x64 的 **0.1.0-beta.1** 本地候选，尚无公开下载；不声明支持 macOS 或 Linux。使用安装包不需要 Git、Node.js 或开发环境。获得候选后，先核对随包版本说明和文件哈希，再以普通账户安装到新目录。
+当前版本为 Windows x64 **0.1.0-beta.1**；不声明支持 macOS 或 Linux。下载以 Releases 中已公开的资产为准；页面未列出安装包时，表示尚未开放下载。使用安装包不需要 Git、Node.js 或开发环境。安装前核对版本说明和 `SHA256SUMS.txt`，再以普通账户安装到新目录；配套源码与第三方源码材料在同一发行页提供。
 
 Claude 本地原生命令沿用星丛审批：手动模式等待允许，Full 模式授权使用当前 Windows 账户的原生权限，不提供操作系统级文件隔离；只读模式继续拒绝命令操作。选择权限前请确认工作目录和任务范围，详见[权限说明](docs/claude-cli-compatibility.md)。
 
-Beta 安装器按当前用户安装，无需提权，默认使用独立的 `Asterium Beta` 程序文件夹。安装选项“创建桌面快捷方式”首次默认勾选；完成页“立即打开星丛”默认不勾选。重装保留此前取消快捷方式的选择，卸载保留资料；这些行为还须由测试电脑完成普通账户验收。当前未做代码签名，Windows 可能显示未知发布者提示。
+Beta 安装器按当前用户安装，无需提权，默认使用独立的 `Asterium Beta` 程序文件夹。安装选项“创建桌面快捷方式”首次默认勾选；完成页“立即打开星丛”默认不勾选。重装保留此前取消快捷方式的选择，卸载保留资料。当前未做代码签名，Windows 或浏览器可能显示未知发布者、下载不常见等提示；请核对官方来源与哈希，不需要关闭安全防护。
 
-“关于”页提供版本和更新入口：由你选择下载、再确认退出安装。当前源码已绑定公开空仓库 `ZoeLeeLab/Asterium`，尚未发布任何版本；旧候选仍显示“更新源待配置”。新包及真实升级仍待验收，见[客户端更新](docs/client-updates.md)。
+“关于”页提供版本和更新入口，已绑定 `ZoeLeeLab/Asterium` 的公开 Releases：由你选择下载、再确认退出安装。没有符合通道的更高版本时不会提供升级；同版本的旧本地候选不会自动替换成新包。首次真实在线升级仍待后续更高版本单独验收，见[客户端更新](docs/client-updates.md)。
 
 ## 五步快速开始
 
@@ -67,7 +73,7 @@ npm start
 
 ## 当前状态
 
-项目处于开发预览阶段，已进行自动检查和部分人工验收，完整功能、真实服务连接及卸载重装仍待继续。外部宿主集成、实验自动化和可选 Windows 沙箱有各自边界，不应从模拟测试推断全部可用。
+项目处于早期 Beta，已完成当前候选的自动检查，维护者反馈本轮试用测试通过；这不代表全部功能、模型服务和 Windows 环境均已验证。外部宿主集成、实验自动化和可选 Windows 沙箱有各自边界，不应从模拟测试推断全部可用。
 
 对应候选的来源、检查范围及待办，见 [本地 r4 Release Notes](docs/releases/0.1.0-beta.1-r4.md)；最终文件哈希与检查证据随候选交付。旧候选记录独立保留，后续文档更新不会改变已有安装包的构建归属。
 
@@ -78,8 +84,8 @@ npm start
 - [群聊附件](docs/studio-attachments.md) · [客户端更新](docs/client-updates.md)
 - [数据目录与隔离验收](docs/data-isolation.md) · [文件与命令审批](docs/native-command-approval.md)
 - [开发、检查与验收](docs/development-and-validation.md) · [能力范围索引](docs/capabilities/index.md)
-- [Beta Release Notes](docs/releases/0.1.0-beta.1-r1.md) · [旧候选记录](docs/releases/0.1.0-candidate-20261031-r1.md)
+- [当前候选 Release Notes](docs/releases/0.1.0-beta.1-r4.md) · [Beta 初始记录](docs/releases/0.1.0-beta.1-r1.md) · [旧候选记录](docs/releases/0.1.0-candidate-20261031-r1.md)
 
 ## 许可证
 
-星丛自有客户端代码采用 [MPL-2.0](LICENSE)，文档、默认头像和主题图片采用 [CC BY 4.0](ASSET_LICENSE.md)，Logo 另见[品牌说明](BRANDING.md)。Copyright © 2026 ZoeLeeLab；小Co&小川（Codex）协助开发，详见[致谢](CREDITS.md)。第三方组件保留各自许可，见[第三方声明](THIRD_PARTY_NOTICES.md)。源码许可落地不代表旧候选已更新或全部发行检查通过；新声明随包及安装器替代仍须新候选验证。
+星丛自有客户端代码采用 [MPL-2.0](LICENSE)，文档、默认头像和主题图片采用 [CC BY 4.0](ASSET_LICENSE.md)，Logo 另见[品牌说明](BRANDING.md)。Copyright © 2026 ZoeLeeLab；小Co&小川（Codex）协助开发，详见[致谢](CREDITS.md)。第三方组件保留各自许可，见[第三方声明](THIRD_PARTY_NOTICES.md)。发行时同时提供相应源码与许可材料；第三方来源核对范围和剩余限制见各版本说明。
