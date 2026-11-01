@@ -61,6 +61,19 @@ if (phase === 'application') {
   const { createJiti } = requireSource('jiti');
   const loadedConfig = await createJiti(path.join(source, 'package.json')).import(path.join(source, 'forge.config.ts'));
   const config = loadedConfig.default ?? loadedConfig;
+  // A verified local official archive also supports builds when GitHub downloads
+  // are unavailable. The expected digest comes from the integrity-pinned npm
+  // Electron package, never from a caller-supplied unchecked hash.
+  const electronPackage = requireSource('electron/package.json');
+  const electronArchiveName = `electron-v${electronPackage.version}-win32-x64.zip`;
+  const localElectronArchive = path.join(destination, 'cache/electron', electronArchiveName);
+  if (fs.existsSync(localElectronArchive)) {
+    const expectedDigest = requireSource('electron/checksums.json')[electronArchiveName];
+    const actualDigest = digest(fs.readFileSync(localElectronArchive));
+    if (!expectedDigest || actualDigest !== expectedDigest) throw new Error('Local official Electron archive checksum mismatch');
+    config.packagerConfig.electronZipDir = path.dirname(localElectronArchive);
+    save('electron-archive.json', { version: electronPackage.version, sha256: actualDigest, verificationSource: 'integrity-pinned electron npm package checksums.json' });
+  }
   config.packagerConfig.afterCopy = [...(config.packagerConfig.afterCopy ?? []), (buildPath, _version, _platform, _arch, done) => {
     try {
       const walk = directory => { for (const item of fs.readdirSync(directory, { withFileTypes: true })) { const file = path.join(directory, item.name); if (item.isDirectory()) walk(file); else if (file.endsWith('.map')) fs.unlinkSync(file); else if (/\.(?:js|mjs|cjs)$/.test(file)) { const text = fs.readFileSync(file, 'utf8'); const clean = text.replace(/^\/\/# sourceMappingURL=.*(?:\r?\n|$)/gm, ''); if (clean !== text) fs.writeFileSync(file, clean); } } };
