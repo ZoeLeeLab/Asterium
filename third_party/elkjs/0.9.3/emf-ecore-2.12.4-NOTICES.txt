@@ -1,0 +1,719 @@
+emf-ecore 2.12.4: original source-file headers
+
+Conservative collection from the fixed upstream source JAR. Headers are preserved as bytes, including copyright and license notices; this does not claim every source file is included in Asterium. Full preferred source: https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-ecore/2.12.4/emf-ecore-2.12.4-sources.jar
+Archive SHA-256: dd3b8c1c3bd0a27c1fbba908bcf0ff21a999148da4e68b3546bcde1dbce7b13a
+
+========================================================================
+Header SHA-256: 254b303bbe8e4452c7653193ba5c56df3ff836c7b5d006a8b36825f26cd1e02d
+org/eclipse/emf/ecore/impl/MinimalEObjectImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2009-2010 Ed Merks and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   Ed Merks - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 3fea6cc80787b22589c0558765038b11d3551fce5ca71338d531e3733514080d
+org/eclipse/emf/ecore/EValidator.java
+org/eclipse/emf/ecore/impl/DynamicEStoreEObjectImpl.java
+org/eclipse/emf/ecore/impl/EValidatorRegistryImpl.java
+org/eclipse/emf/ecore/util/Diagnostician.java
+org/eclipse/emf/ecore/util/EObjectValidator.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2004-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 44535dead83cc73c8917ebc4fba1f33abc1a82ef87b8b82bc27ff349632339eb
+org/eclipse/emf/ecore/resource/impl/ExtensibleURIConverterImpl.java
+org/eclipse/emf/ecore/resource/impl/ResourceImpl.java
+org/eclipse/emf/ecore/util/DelegatingEcoreEList.java
+org/eclipse/emf/ecore/util/EcoreEList.java
+org/eclipse/emf/ecore/util/EcoreUtil.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 45493e5433ddc4edbc7da6def6eab71b225a18ec7a279ba1c01a650354368f9e
+org/eclipse/emf/ecore/util/BasicInvocationDelegate.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2008-2010 Zeligsoft Inc. and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors:
+ *   Zeligsoft - Initial API and implementation
+ */
+
+
+
+========================================================================
+Header SHA-256: 4eb60b73c2f7016518d2d7d4c8d633ba92c15bf4602330b8f7ae19a3911d6795
+org/eclipse/emf/ecore/util/ComposedSwitch.java
+org/eclipse/emf/ecore/util/Switch.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2009 TIBCO Software Inc. and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   Adrian Price
+ */
+
+
+========================================================================
+Header SHA-256: 5e71583f58be1c84048d9d3862eed8dc491518c2e4c2e74b1685d9f7aca27c63
+org/eclipse/emf/ecore/EcorePackage.java
+org/eclipse/emf/ecore/EObject.java
+org/eclipse/emf/ecore/EOperation.java
+org/eclipse/emf/ecore/impl/EcoreFactoryImpl.java
+org/eclipse/emf/ecore/impl/EcorePackageImpl.java
+org/eclipse/emf/ecore/impl/EOperationImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ *   Christian Damus (Zeligsoft) - 255469
+ */
+
+
+========================================================================
+Header SHA-256: 5e9b75dcd4876564d1a9fde75d60af42fafe577e5c8a773ee3a03537078cf630
+org/eclipse/emf/ecore/impl/BasicEObjectImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ *   Christian Damus (Zeligsoft) - 255469
+ */
+
+
+========================================================================
+Header SHA-256: 626bdc1ba993fe4228df8cc1d09fe5f1b6bf9830894b7ef5f3ac2a3d01ea6a68
+org/eclipse/emf/ecore/impl/BasicEObjectImpl_CustomFieldSerializer.java
+org/eclipse/emf/ecore/resource/URIService.java
+org/eclipse/emf/ecore/resource/URIServiceAsync.java
+org/eclipse/emf/server/ecore/resource/URIServiceImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2010 Ed Merks and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   Ed Merks - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 698eda5e1a02bc58cb326cf196ff65e7a66c739a518556d0bbdc3df16daa696f
+org/eclipse/emf/ecore/resource/impl/ContentHandlerRegistryImpl.java
+org/eclipse/emf/ecore/util/AbstractSequentialInternalEList.java
+org/eclipse/emf/ecore/util/DelegatingNotifyingInternalEListImpl.java
+org/eclipse/emf/ecore/util/NotifyingInternalEListImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2007-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 6b0576686c8c786f4a4b4966794768785deff43b08b34f1875ff8614b806a9be
+org/eclipse/emf/ecore/xml/type/impl/ProcessingInstructionImpl.java
+org/eclipse/emf/ecore/xml/type/ProcessingInstruction.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2006-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   Peter Nehrer and IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 6cb8cb16d165677c3ca12b4478525aa1dc03e3b9c8e0b89062799eb91ccd6bbc
+org/eclipse/emf/ecore/impl/EFactoryImpl.java
+org/eclipse/emf/ecore/impl/ENotificationImpl.java
+org/eclipse/emf/ecore/impl/EStructuralFeatureImpl.java
+org/eclipse/emf/ecore/plugin/EcorePlugin.java
+org/eclipse/emf/ecore/util/EContentAdapter.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 71d2cb549e22a22dcd8fb62fe99b8fff5c7d8a76c107743f1e832179912344ac
+org/eclipse/emf/ecore/util/BasicSettingDelegate.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2008-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 7274abe6944956589caeb4d73c8e7310871d8c3b5bac37ee5e94ff0e3ecbebf9
+org/eclipse/emf/ecore/EGenericType.java
+org/eclipse/emf/ecore/ETypeParameter.java
+org/eclipse/emf/ecore/impl/EGenericTypeImpl.java
+org/eclipse/emf/ecore/impl/ETypeParameterImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2006-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 7e04d9ae7b45eec13d5eae29afeb81ea5bc320fb837213c64374dedab5cadce9
+org/eclipse/emf/ecore/resource/impl/BinaryResourceImpl.java
+org/eclipse/emf/ecore/resource/URIHandler.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2007-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 86a7534c44ccb160f8f9d7fa36a90dc29b3befdfcc3a083f9acfc1c864026f03
+org/eclipse/emf/ecore/util/EcoreValidator.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2006-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ *   Christian Damus (Zeligsoft) - 255469
+ */
+
+
+========================================================================
+Header SHA-256: 8ab65dc129b84f414b7034d808c150e5da3cda8b4edeb1912ae60654db7eb890
+org/eclipse/emf/ecore/EAnnotation.java
+org/eclipse/emf/ecore/impl/EAnnotationImpl.java
+org/eclipse/emf/ecore/impl/EStringToStringMapEntryImpl.java
+org/eclipse/emf/ecore/impl/ETypedElementImpl.java
+org/eclipse/emf/ecore/InternalEObject.java
+org/eclipse/emf/ecore/resource/impl/ResourceFactoryImpl.java
+org/eclipse/emf/ecore/resource/impl/ResourceFactoryRegistryImpl.java
+org/eclipse/emf/ecore/resource/impl/ResourceSetImpl.java
+org/eclipse/emf/ecore/resource/impl/URIMappingRegistryImpl.java
+org/eclipse/emf/ecore/resource/ResourceSet.java
+org/eclipse/emf/ecore/util/EcoreAdapterFactory.java
+org/eclipse/emf/ecore/util/EcoreEMap.java
+org/eclipse/emf/ecore/util/EcoreSwitch.java
+org/eclipse/emf/ecore/util/ECrossReferenceEList.java
+org/eclipse/emf/ecore/util/EDataTypeEList.java
+org/eclipse/emf/ecore/util/EDataTypeUniqueEList.java
+org/eclipse/emf/ecore/util/EObjectContainmentEList.java
+org/eclipse/emf/ecore/util/EObjectContainmentWithInverseEList.java
+org/eclipse/emf/ecore/util/EObjectEList.java
+org/eclipse/emf/ecore/util/EObjectResolvingEList.java
+org/eclipse/emf/ecore/util/EObjectWithInverseEList.java
+org/eclipse/emf/ecore/util/EObjectWithInverseResolvingEList.java
+org/eclipse/emf/ecore/util/InternalEList.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 8b480b03dfa0b9067fa79a85818b97ccb5e5fed5d7497b8ffd24709d2b695539
+org/eclipse/emf/ecore/xml/type/internal/DataValue.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2003-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ *
+ * ---------------------------------------------------------------------
+ *
+ * The Apache Software License, Version 1.1
+ *
+ *
+ * Copyright (c) 1999-2004 The Apache Software Foundation.  All rights
+ * reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ *
+ * 3. The end-user documentation included with the redistribution,
+ *    if any, must include the following acknowledgment:
+ *       "This product includes software developed by the
+ *        Apache Software Foundation (http://www.apache.org/)."
+ *    Alternately, this acknowledgment may appear in the software itself,
+ *    if and wherever such third-party acknowledgments normally appear.
+ *
+ * 4. The names "Xerces" and "Apache Software Foundation" must
+ *    not be used to endorse or promote products derived from this
+ *    software without prior written permission. For written
+ *    permission, please contact apache@apache.org.
+ *
+ * 5. Products derived from this software may not be called "Apache",
+ *    nor may "Apache" appear in their name, without prior written
+ *    permission of the Apache Software Foundation.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE APACHE SOFTWARE FOUNDATION OR
+ * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+ * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ * ====================================================================
+ *
+ * This software consists of voluntary contributions made by many
+ * individuals on behalf of the Apache Software Foundation and was
+ * originally based on software copyright (c) 1999, International
+ * Business Machines, Inc., http://www.apache.org.  For more
+ * information on the Apache Software Foundation, please see
+ * <http://www.apache.org/>.
+ */
+
+
+========================================================================
+Header SHA-256: 9a38f77719d9da5fb33fa7cd169c993d73f1129c57b9069f950d85be0ee83d34
+org/eclipse/emf/ecore/xml/type/internal/RegEx.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2004-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ *
+ * ---------------------------------------------------------------------
+ *
+ * The Apache Software License, Version 1.1
+ *
+ *
+ * Copyright (c) 1999-2004 The Apache Software Foundation.  All rights
+ * reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ *
+ * 3. The end-user documentation included with the redistribution,
+ *    if any, must include the following acknowledgment:
+ *       "This product includes software developed by the
+ *        Apache Software Foundation (http://www.apache.org/)."
+ *    Alternately, this acknowledgment may appear in the software itself,
+ *    if and wherever such third-party acknowledgments normally appear.
+ *
+ * 4. The names "Xerces" and "Apache Software Foundation" must
+ *    not be used to endorse or promote products derived from this
+ *    software without prior written permission. For written
+ *    permission, please contact apache@apache.org.
+ *
+ * 5. Products derived from this software may not be called "Apache",
+ *    nor may "Apache" appear in their name, without prior written
+ *    permission of the Apache Software Foundation.
+ *
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE APACHE SOFTWARE FOUNDATION OR
+ * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+ * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ * ====================================================================
+ *
+ * This software consists of voluntary contributions made by many
+ * individuals on behalf of the Apache Software Foundation and was
+ * originally based on software copyright (c) 1999-2003, International
+ * Business Machines, Inc., http://www.apache.org.  For more
+ * information on the Apache Software Foundation, please see
+ * <http://www.apache.org/>.
+ */
+
+
+
+========================================================================
+Header SHA-256: a23fbad98d8efc98f3c3541addda37bb09ac031e7db645da2f7d70f04b00f564
+org/eclipse/emf/ecore/impl/FlatEObjectImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2006-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: aef2e8dd05041f50f26f60f445bf43448aa77af4027858208456812721e73c49
+org/eclipse/emf/ecore/util/BasicInternalEList.java
+org/eclipse/emf/ecore/xml/namespace/util/XMLNamespaceValidator.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2005-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: bad0583b24afcf93d146ff318ee5eaac0b2f94b88b3b8cec1afecc7e0a2a9f54
+org/eclipse/emf/ecore/util/BasicExtendedMetaData.java
+org/eclipse/emf/ecore/util/BasicFeatureMap.java
+org/eclipse/emf/ecore/util/DelegatingFeatureMap.java
+org/eclipse/emf/ecore/util/ExtendedMetaData.java
+org/eclipse/emf/ecore/util/FeatureMap.java
+org/eclipse/emf/ecore/xml/namespace/impl/XMLNamespaceDocumentRootImpl.java
+org/eclipse/emf/ecore/xml/namespace/impl/XMLNamespaceFactoryImpl.java
+org/eclipse/emf/ecore/xml/namespace/impl/XMLNamespacePackageImpl.java
+org/eclipse/emf/ecore/xml/namespace/SpaceType.java
+org/eclipse/emf/ecore/xml/namespace/XMLNamespaceDocumentRoot.java
+org/eclipse/emf/ecore/xml/namespace/XMLNamespaceFactory.java
+org/eclipse/emf/ecore/xml/namespace/XMLNamespacePackage.java
+org/eclipse/emf/ecore/xml/type/AnyType.java
+org/eclipse/emf/ecore/xml/type/impl/AnyTypeImpl.java
+org/eclipse/emf/ecore/xml/type/impl/SimpleAnyTypeImpl.java
+org/eclipse/emf/ecore/xml/type/impl/XMLTypeDocumentRootImpl.java
+org/eclipse/emf/ecore/xml/type/impl/XMLTypeFactoryImpl.java
+org/eclipse/emf/ecore/xml/type/impl/XMLTypePackageImpl.java
+org/eclipse/emf/ecore/xml/type/InvalidDatatypeValueException.java
+org/eclipse/emf/ecore/xml/type/SimpleAnyType.java
+org/eclipse/emf/ecore/xml/type/XMLTypeDocumentRoot.java
+org/eclipse/emf/ecore/xml/type/XMLTypeFactory.java
+org/eclipse/emf/ecore/xml/type/XMLTypePackage.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2003-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: c494d579aaf5dcefbd15905dd7a6ec736b4599d1084d24f9754fe9ab884c56ee
+org/eclipse/emf/ecore/util/ECrossReferenceAdapter.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2005-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: c9624baf1f485987de6e79acbf27d6e1f6c5c677757cc8eb8a5ce1e51223b0a2
+org/eclipse/emf/ecore/resource/Resource.java
+org/eclipse/emf/ecore/resource/URIConverter.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2011 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: c9945728e42ce42c5570e393990ce929af774a6f4aeefded1a32e50b1370a786
+org/eclipse/emf/ecore/resource/ContentHandler.java
+org/eclipse/emf/ecore/resource/impl/ContentHandlerImpl.java
+org/eclipse/emf/ecore/resource/impl/PlatformResourceURIHandlerImpl.java
+org/eclipse/emf/ecore/resource/impl/URIHandlerImpl.java
+org/eclipse/emf/server/ecore/resource/URIHandlerImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2007-2011 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: cf77ed58d3579cfed524204d73429632912180342cfcff5416a352ac5220b112
+org/eclipse/emf/ecore/util/EContentsEList.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2014 IBM Corporation, itemis AG, CEA, and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ *   Ed Merks (itemis AG) - bug 433027
+ *   Christian W. Damus (CEA) - bug 433027
+ */
+
+
+========================================================================
+Header SHA-256: ddeacc568e6bf954a01bb52c5a3c01c2b1de4ba1342775e4807051009dd6bd33
+org/eclipse/emf/ecore/xml/type/util/XMLTypeUtil.java
+org/eclipse/emf/ecore/xml/type/util/XMLTypeValidator.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2004-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: e1effbcfc8e162a28f3da8b893ca0bbef6fa38d52001fbe836acfee3f4dafb45
+org/eclipse/emf/ecore/util/FeatureMapUtil.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2003-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+
+========================================================================
+Header SHA-256: f1039da0ad9415ceda5f62d824f145da2f47d9b24fcd26b37d4cc8e4b5c2b1ce
+org/eclipse/emf/ecore/resource/impl/LocalURIHandlerImpl.java
+org/eclipse/emf/ecore/resource/URIServiceCallback.java
+org/eclipse/emf/server/ecore/resource/DatastoreURIHandlerImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2010-2011 Ed Merks and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   Ed Merks - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: f3f4e7b7a48a77dd312a87cde9406f89da4300d9aaf6cd64302b3836f48d32d9
+org/eclipse/emf/ecore/impl/ValidationDelegateRegistryImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2009-2010 Kenn Hussey and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   Kenn Hussey - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: ff3e4ae534e27b08108fc7371a08729a914d7ea527ca6fd68f1893f13ba46882
+org/eclipse/emf/ecore/EAttribute.java
+org/eclipse/emf/ecore/EClass.java
+org/eclipse/emf/ecore/EClassifier.java
+org/eclipse/emf/ecore/EcoreFactory.java
+org/eclipse/emf/ecore/EDataType.java
+org/eclipse/emf/ecore/EEnum.java
+org/eclipse/emf/ecore/EEnumLiteral.java
+org/eclipse/emf/ecore/EFactory.java
+org/eclipse/emf/ecore/EModelElement.java
+org/eclipse/emf/ecore/ENamedElement.java
+org/eclipse/emf/ecore/EPackage.java
+org/eclipse/emf/ecore/EParameter.java
+org/eclipse/emf/ecore/EReference.java
+org/eclipse/emf/ecore/EStructuralFeature.java
+org/eclipse/emf/ecore/ETypedElement.java
+org/eclipse/emf/ecore/impl/DynamicEObjectImpl.java
+org/eclipse/emf/ecore/impl/EAttributeImpl.java
+org/eclipse/emf/ecore/impl/EClassifierImpl.java
+org/eclipse/emf/ecore/impl/EClassImpl.java
+org/eclipse/emf/ecore/impl/EDataTypeImpl.java
+org/eclipse/emf/ecore/impl/EEnumImpl.java
+org/eclipse/emf/ecore/impl/EEnumLiteralImpl.java
+org/eclipse/emf/ecore/impl/EModelElementImpl.java
+org/eclipse/emf/ecore/impl/ENamedElementImpl.java
+org/eclipse/emf/ecore/impl/EObjectImpl.java
+org/eclipse/emf/ecore/impl/EPackageImpl.java
+org/eclipse/emf/ecore/impl/EPackageRegistryImpl.java
+org/eclipse/emf/ecore/impl/EParameterImpl.java
+org/eclipse/emf/ecore/impl/EReferenceImpl.java
+org/eclipse/emf/ecore/impl/EStoreEObjectImpl.java
+org/eclipse/emf/ecore/impl/ESuperAdapter.java
+org/eclipse/emf/ecore/plugin/EcorePluginProperties.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+

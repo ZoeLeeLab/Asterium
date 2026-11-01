@@ -6,6 +6,11 @@ import { SettingsPage } from '../../src/renderer/pages/SettingsPage';
 import { APP_VERSION } from '../../src/shared/appRelease';
 import notices from '../../THIRD_PARTY_NOTICES.md?raw';
 import licenses from '../../third_party/licenses/THIRD_PARTY_LICENSES.txt?raw';
+import projectLicense from '../../LICENSE?raw';
+import credits from '../../CREDITS.md?raw';
+import assets from '../../ASSET_LICENSE.md?raw';
+import branding from '../../BRANDING.md?raw';
+import assetLicense from '../../LICENSES/CC-BY-4.0.txt?raw';
 
 function renderSettings(route = '/settings') {
   return render(<MemoryRouter initialEntries={[route]}><PrototypeProvider><SettingsPage /></PrototypeProvider></MemoryRouter>);
@@ -26,7 +31,8 @@ it('opens About from the settings menu and can return to other settings', () => 
 it('supports a direct About route and accurately describes incomplete release features', () => {
   renderSettings('/settings?section=about');
   expect(screen.getByRole('heading', { name: '星丛 Asterium' })).toBeInTheDocument();
-  expect(screen.getByText('待正式确定（拟 MPL-2.0）')).toBeInTheDocument();
+  expect(screen.getByText('MPL-2.0', { exact: true })).toBeInTheDocument();
+  expect(screen.getByText('© 2026 ZoeLeeLab')).toBeInTheDocument();
   expect(screen.getByText('未签名 · Beta')).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('更新源待配置');
   expect(screen.getByRole('button', { name: '检查更新' })).toBeDisabled();
@@ -35,7 +41,13 @@ it('supports a direct About route and accurately describes incomplete release fe
 it('displays the exact bundled third-party texts on demand without remote navigation', async () => {
   renderSettings('/settings?section=about');
   expect(screen.queryByLabelText('第三方声明')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText('第三方声明与许可证'));
+  fireEvent.click(screen.getByText('许可证与致谢'));
+  fireEvent.click(screen.getByRole('button', { name: '查看项目许可证（MPL-2.0）' }));
+  expect((await screen.findByLabelText('项目许可证（MPL-2.0）')).textContent).toBe(projectLicense);
+  fireEvent.click(screen.getByRole('button', { name: '查看致谢' }));
+  expect((await screen.findByLabelText('致谢')).textContent).toBe(credits);
+  fireEvent.click(screen.getByRole('button', { name: '查看素材许可与品牌说明' }));
+  expect((await screen.findByLabelText('素材许可与品牌说明')).textContent).toBe([assets, branding, assetLicense].join('\n\n'));
   fireEvent.click(screen.getByRole('button', { name: '查看第三方声明' }));
   expect((await screen.findByLabelText('第三方声明')).textContent).toBe(notices);
   fireEvent.click(screen.getByRole('button', { name: '收起第三方声明' }));

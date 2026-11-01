@@ -80,5 +80,7 @@
   },
   "engines": {
     "node": "^24.0.0"
-  }
+  },
+  "author": "ZoeLeeLab",
+  "license": "MPL-2.0"
 }

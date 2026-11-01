@@ -82,4 +82,4 @@ npm start
 
 ## 许可证
 
-项目拟采用客户端全开源与 MPL-2.0，当前尚未正式落地项目级 `LICENSE`；公开发布前还需关闭剩余许可问题。第三方组件的许可证和版权声明已保留在 `third_party/`，详见[第三方声明](THIRD_PARTY_NOTICES.md)；它们不替代星丛自身的许可证。
+星丛自有客户端代码采用 [MPL-2.0](LICENSE)，文档、默认头像和主题图片采用 [CC BY 4.0](ASSET_LICENSE.md)，Logo 另见[品牌说明](BRANDING.md)。Copyright © 2026 ZoeLeeLab；小Co&小川（Codex）协助开发，详见[致谢](CREDITS.md)。第三方组件保留各自许可，见[第三方声明](THIRD_PARTY_NOTICES.md)。源码许可落地不代表旧候选已更新或全部发行检查通过；新声明随包及安装器替代仍须新候选验证。

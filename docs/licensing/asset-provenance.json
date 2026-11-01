@@ -1,79 +1,92 @@
 {
   "reviewDate": "2026-11-01",
   "termsReference": "https://openai.com/policies/terms-of-use/",
-  "projectOrAssetLicenseGranted": false,
+  "projectOrAssetLicenseGranted": true,
   "assets": [
     {
       "path": "assets/asterium-icon.png",
       "bytes": 444232,
       "sha256": "bf766ca3854cffa0c89bbad8e2098f2dcc78c5ef56e5d1a341ee0c57cbc25cae",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "LicenseRef-Asterium-Branding"
     },
     {
       "path": "assets/asterium.ico",
       "bytes": 194993,
       "sha256": "5d3604c0ca7be7dfcdd3632be0069edd259a506340b102e79beec8ee99204448",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "LicenseRef-Asterium-Branding"
     },
     {
       "path": "src/renderer/assets/asterium-dark-bg.png",
       "bytes": 1517442,
       "sha256": "6e1b64c21288cb04eb4d7fdf4f21eb24266dee40aa9d37fd0a14409be206fe60",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/asterium-light-bg.png",
       "bytes": 1574631,
       "sha256": "d261ecd20563a8f73e334cc67df04ec0befb007e7cc87632a2e5b4057100e224",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/default-partner-avatar.png",
       "bytes": 992250,
       "sha256": "8f6862941821cc96f743eb25939a68103c799b57ac23218a2d16d994b2797ee9",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/olympian-garden-dark.png",
       "bytes": 2678298,
       "sha256": "9726952f63dd78884c58aeedaffe784dff7a62a2e8866a8e0a4c6b62004b8b5f",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/olympian-garden-light.png",
       "bytes": 2628414,
       "sha256": "663668908e95d577bc865c5371de738d4a9588fe26187709d2e969a58e066a5c",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/rainy-study-dark.png",
       "bytes": 2633637,
       "sha256": "15a6800d39a341427f6ae10065fc604afbd17644c1f74e42e62bb8d076ff2e01",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/rainy-study-light.png",
       "bytes": 2713662,
       "sha256": "90cee8b99d1c2c49ba1a6ec9c9cd2f02c361bd736a275af382134d6703992d84",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/sea-letter-dark.png",
       "bytes": 2201158,
       "sha256": "1ac483e60414674a6745e5e9272db3a389c66881a654ce33a08214348889859f",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/sea-letter-light.png",
       "bytes": 2009409,
       "sha256": "2d0e530057052630b7f4d3c52a5b0a1e2fbcfae9a21763b57f1cd7994382ee6c",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced."
+      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "docs/images/product-preview-placeholder.svg",
       "bytes": 1015,
       "sha256": "84dbb8c23af77b9609baeddddf62f80e3e3e353d0df1a81eb9d3e26961f22fcc",
-      "provenance": "Documentation screenshot placeholder, not product screenshot or generated artwork"
+      "provenance": "Documentation screenshot placeholder, not product screenshot or generated artwork",
+      "license": "CC-BY-4.0"
     }
-  ]
+  ],
+  "scopeReference": "COPYRIGHT.md; ASSET_LICENSE.md; BRANDING.md"
 }

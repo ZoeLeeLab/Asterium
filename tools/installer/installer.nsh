@@ -1,5 +1,6 @@
 ﻿!include "nsDialogs.nsh"
 !include "LogicLib.nsh"
+!include "${PROJECT_DIR}\tools\installer\windows-shell.nsh"
 
 ; Keep the executable named Asterium.exe, but isolate the Beta install folder.
 !define /redef APP_FILENAME "Asterium Beta"
@@ -53,6 +54,7 @@
     SetShellVarContext current
     ${If} $AsteriumDesktopChoice == ${BST_CHECKED}
       CreateShortCut "$DESKTOP\${ASTERIUM_BETA_LINK}" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+      !insertmacro AsteriumSetLinkAppId "$DESKTOP\${ASTERIUM_BETA_LINK}" "${APP_ID}"
     ${Else}
       Delete "$DESKTOP\${ASTERIUM_BETA_LINK}"
     ${EndIf}
@@ -73,6 +75,7 @@
 !else
   !macro customUnInstall
     SetShellVarContext current
+    !insertmacro AsteriumUnpinShortcut "$DESKTOP\${ASTERIUM_BETA_LINK}"
     Delete "$DESKTOP\${ASTERIUM_BETA_LINK}"
     ; Keep the preference and application data. Never touch another channel.
   !macroend

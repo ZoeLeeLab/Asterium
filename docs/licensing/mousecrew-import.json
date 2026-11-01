@@ -1,0 +1,54 @@
+{
+  "repository": "https://github.com/anqinou-art/mousecrew",
+  "commit": "a405854543eeb3a8c18800d17b07455b0f9bf2d6",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 mousecrew contributors",
+  "scope": "Nine upstream files restored to exact fixed-revision bytes; only trailing whitespace from earlier import removed. Stage-loading adapter and native workflow methodology adaptations are separate Asterium source with attribution.",
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 1079,
+      "sha256": "c1c12c526c2db22360cb1f64fb4152a985f191f6c9d584f3953ad213efbce2d1"
+    },
+    {
+      "path": "skills/frontend-builder/SKILL.md",
+      "bytes": 5358,
+      "sha256": "0fabfd1a0d388579164ca93c0263bdb68e6a5fdcd06f5e4c06396c5c32f1a409"
+    },
+    {
+      "path": "skills/frontend-builder/agents/openai.yaml",
+      "bytes": 345,
+      "sha256": "6979c0ac2fd2f263086568e8dde0cb5166c14dab2744a07c17512a8b79b75315"
+    },
+    {
+      "path": "skills/frontend-builder/references/delivery.md",
+      "bytes": 4173,
+      "sha256": "8a31bf33e85c9bf4c6e907f6ebcaf66ff61407fa116f3d0c888658384cc5d7ce"
+    },
+    {
+      "path": "skills/frontend-builder/references/implementation.md",
+      "bytes": 7508,
+      "sha256": "b48fac7ffa4f01ff0d90df17956879e8750dc14f2ab051f9bb26cc0d0f939a89"
+    },
+    {
+      "path": "skills/frontend-builder/references/integration.md",
+      "bytes": 3605,
+      "sha256": "91e80cdf6ff1780bfbda4dc9e805ef4fc0dca899b1212435a5107ed136284544"
+    },
+    {
+      "path": "skills/frontend-builder/references/requirements.md",
+      "bytes": 9781,
+      "sha256": "cb793f8a63a1e71a025ecf02e019e7b634117f328c1b00f5e1b007cc0a40a280"
+    },
+    {
+      "path": "skills/frontend-builder/references/visual-assets.md",
+      "bytes": 6511,
+      "sha256": "15c10f918d0e8134365476b0c9317795afb58591051456dc5f26407ede761cf7"
+    },
+    {
+      "path": "skills/frontend-builder/references/workflow.md",
+      "bytes": 9846,
+      "sha256": "175980e7ad61e214c4450a28a1412c1389bfd1e89eccec64c2d0d55fed1708ac"
+    }
+  ]
+}

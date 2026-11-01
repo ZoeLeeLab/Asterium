@@ -6,6 +6,10 @@ import { useAppUpdates, updateStatusText } from '../../app/useAppUpdates';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
 
 const noticeDocuments = [
+  { title: '项目许可证（MPL-2.0）', load: () => import('../../../../LICENSE?raw') },
+  { title: '版权与授权范围', load: () => import('../../../../COPYRIGHT.md?raw') },
+  { title: '素材许可与品牌说明', load: async () => ({ default: [(await import('../../../../ASSET_LICENSE.md?raw')).default, (await import('../../../../BRANDING.md?raw')).default, (await import('../../../../LICENSES/CC-BY-4.0.txt?raw')).default].join('\n\n') }) },
+  { title: '致谢', load: () => import('../../../../CREDITS.md?raw') },
   { title: '第三方声明', load: () => import('../../../../THIRD_PARTY_NOTICES.md?raw') },
   { title: '第三方许可证原文', load: () => import('../../../../third_party/licenses/THIRD_PARTY_LICENSES.txt?raw') },
 ];
@@ -65,7 +69,8 @@ export function AboutSettingsView() {
       </div>
     </header>
     <section className="about-info" aria-label="版本与发行信息">
-      <div><span>许可证</span><span>待正式确定（拟 MPL-2.0）</span></div>
+      <div><span>许可证</span><span>MPL-2.0</span></div>
+      <div><span>版权</span><span>© 2026 ZoeLeeLab</span></div>
       <div><span>代码签名</span><span>未签名 · Beta</span></div>
       <div><span>GitHub</span>{snapshot.repository ? <button type="button" className="text-button" onClick={() => void run(window.asteriumUpdates?.openReleases)}>{snapshot.repository}</button> : <span>待配置</span>}</div>
       <label><span>启动时自动检查更新</span><input type="checkbox" checked={settings.checkUpdatesAtStartup} disabled={!snapshot.configured || !available || saving} onChange={event => void update({ checkUpdatesAtStartup: event.target.checked })} /></label>
@@ -73,8 +78,8 @@ export function AboutSettingsView() {
     </section>
     {settingsError && <p role="alert">{settingsError}</p>}
     {snapshot.release?.notes && <details className="about-details"><summary>新版本说明 · {snapshot.release.version}</summary><pre className="about-notice-text">{snapshot.release.notes}</pre></details>}
-    <details className="about-details"><summary>第三方声明与许可证</summary>
-      <p>第三方原始条款各自适用。Electron 与 Chromium 声明另随应用目录提供。</p>
+    <details className="about-details"><summary>许可证与致谢</summary>
+      <p>自有代码采用 MPL-2.0，素材与品牌范围另列。第三方条款各自适用；Electron 与 Chromium 声明另随应用目录提供。</p>
       {noticeDocuments.map(document => <NoticeDocument key={document.title} {...document} />)}
     </details>
     {confirmInstall && <Modal title="退出星丛并安装更新？" description="这会结束当前任务并打开新版安装向导。已有 Beta 资料会保留；请先保存正在编辑的内容。" onClose={() => setConfirmInstall(false)}>

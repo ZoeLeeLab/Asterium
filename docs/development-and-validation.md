@@ -52,7 +52,7 @@ npm run package
 
 Forge 会编译主进程、Preload、Renderer 和 Windows helper，输出到 `out/`。仓库默认没有设置安装器 maker 或签名，此命令只生成应用目录。
 
-旧候选安装器的冻结配方和证据不作修改。Beta 新配方为 `scripts/build-windows-candidate.mjs`、`scripts/windows-installer-config.mjs` 和 `tools/installer/installer.nsh`，从项目自身位置和显式输出参数解析路径，不依赖搬迁前的绝对路径。`package` 只生成开发应用，正式候选使用下列两阶段流程。
+旧候选安装器的冻结配方和证据不作修改。Beta 新配方为 `scripts/build-windows-candidate.mjs`、`scripts/windows-installer-config.mjs`、`scripts/windows-installer-templates.mjs` 和 `tools/installer/installer.nsh`，从项目自身位置和显式输出参数解析路径，不依赖搬迁前的绝对路径。模板适配器按 `tools/installer/upstream-template-manifest.json` 核验锁定工具的全部模板，仅在独立构建副本中把 WinShell 调用替换成 `tools/installer/windows-shell.nsh` 的 Windows COM 实现；依赖模板或版本变化时阻断，不直接改 node_modules。`package` 只生成开发应用，正式候选使用下列两阶段流程。
 
 指定仓库外的独立交付目录，将临时目录和缓存设在该目录所在盘；冻结已存在提交并确认工作区干净。先在 `audit/source-checks.json` 记录该提交的全部检查，结构为 `{ "commit": "完整 SHA", "status": "passed", "checks": [{ "name": "检查名", "exitCode": 0 }] }`；任何失败不能改写为 0。然后执行（占位必须替换）：
 
@@ -63,10 +63,20 @@ npm run build:candidate -- --phase application --commit '<冻结的完整 SHA>' 
 脚本导出 Git 提交并逐文件对比，重新 `npm ci`，使用锁定 Forge 工具构建 Windows x64 应用，只清理导出应用中的 sourcemap。执行下述四项打包后检查，记录 `audit/packaged-checks.json` 中同一提交和四条真实退出码；完成内容扫描、声明交付核对后写入 `audit/application-audit.json` 的同一提交和 `status: passed`。这些收据是阻断条件，不能代替实际检查。最后执行：
 
 ```powershell
-npm run build:candidate -- --phase installer --commit '<同一冻结的完整 SHA>' --output '<同一交付目录>'
+npm run build:candidate -- --phase installer --commit '<同一冻结的完整 SHA>' --output '<同一交付目录>' --source-cache '<已核对的第三方源码归档缓存>'
 ```
 
-安装标识固定为 `Asterium.Beta`，默认资料为 `%APPDATA%/Asterium-Beta`。安装器只面向当前用户、无提权；快捷方式首次默认勾选，完成页启动默认不勾选；卸载保留资料，快捷方式偏好保存在当前用户的 Beta 专用注册表项。未配置签名，未启用自动更新。候选名包含构建提交；构建脚本不创建远端、不上传、不执行安装器。拒绝覆盖已有构建收据，失败尝试需留档。
+安装标识固定为 `Asterium.Beta`，默认资料为 `%APPDATA%/Asterium-Beta`。安装器只面向当前用户、无提权；快捷方式首次默认勾选，完成页启动默认不勾选；卸载保留资料，快捷方式偏好保存在当前用户的 Beta 专用注册表项。本轮选择未签名 Beta；客户端更新实现已存在，但公开更新源仍待绑定，当前不发起更新请求。候选名包含构建提交；构建脚本不创建远端、不上传、不执行安装器。拒绝覆盖已有构建收据，失败尝试需留档。
+
+新增的原生 shell 诊断使用已核验的 NSIS 编译器，在仓库外的新目录内创建合成快捷方式和唯一合成 AppID；不安装产品，不访问真实项目或连接。显式传入编译器与新目录，示例中的占位必须替换：
+
+```powershell
+node tests/windows-installer-shell-smoke.mjs --nsis '<已核验的 makensis.exe>' --output '<仓库外的新诊断目录>'
+```
+
+诊断通过不能代替安装向导、真实固定快捷方式、升级或卸载重装验收。新候选还需解包核对安装器及其卸载器均不含 WinShell.dll，并检查新项目许可、素材、品牌、致谢与扩展后的第三方声明实际随包。公开仓库建立前交付试用包，应同时提供与构建提交一致的源码归档和相应第三方源码材料/获取说明。
+
+第三方源码缓存必须包含 `third_party/licenses/source-archives.json` 中的固定输入。`scripts/prepare-source-materials.mjs` 只读取并核对本地归档，不下载、不执行其中代码；缺失或哈希不符时在创建输出前失败。安装器配方核对原 Git 源码归档后，将其与这些材料一起导出为 `Asterium-<版本>-sources-<提交>.zip`，与安装器配套交付，不包含 `.git` 或历史。该源码 ZIP 也需记录独立大小、哈希及内容核对；生成源码材料不等于产品验收通过。
 
 新构建应导出并核对已存在的源码提交，记录构建配方的产物处理、平台与架构，核对 x64 应用和 helper。解包安装器，将应用文件与已审计的应用目录比对，检查是否混入私人路径、账号、凭据、测试资料、日志、缓存、源码映射或开发产物。第三方代码扫描命中需逐项复核，保留原命中与结论，不能只删掉记录。
 

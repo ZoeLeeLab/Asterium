@@ -1,6 +1,6 @@
 # Third-party notices
 
-This document identifies third-party material used by Asterium. It does not grant a project-level license for Asterium and does not replace any component's original terms. A project license has not yet been applied.
+This document identifies third-party material used by Asterium. It does not replace any component's original terms. Asterium-owned code is separately licensed under [MPL-2.0](LICENSE); documentation, artwork and branding have the scopes stated in [COPYRIGHT.md](COPYRIGHT.md). This notice collection does not itself grant those rights or declare all release checks passed.
 
 ## Collected license texts and review scope
 
@@ -29,7 +29,9 @@ The collected texts cover React and React DOM, React Router, React Markdown, rem
 
 ### ELK layout code
 
-Mermaid includes `elkjs` 0.9.3, licensed under EPL-2.0. Its original license is retained. The verified npm publishing revision and available wrapper source are listed in SOURCES.md; the exact Java/GWT upstream source correspondence remains under review. Do not relabel ELK source as Asterium's license or treat the wrapper source link alone as proof that all corresponding source obligations have been fulfilled.
+Mermaid includes `elkjs` 0.9.3, licensed under EPL-2.0. Its upstream release identifies ELK 0.9.1 plus the port-placement change in ELK PR 955. Fixed wrapper, Java baseline, patch and preferred-source references are listed in SOURCES.md; no byte-identical rebuild is claimed. ELK is not relicensed as Asterium code.
+
+The published worker also embeds Java/GWT library code. Original source-file headers and complete license texts are retained for GWT 2.10.0 and Guava/Guava-GWT 31.1-jre (Apache-2.0), EMF-GWT common/ecore 2.12.4 (original EPL-1.0 headers), and Xtext xbase library 2.28.0 (EPL-2.0). The fixed source JARs, hashes and conservative header collection are recorded at `third_party/elkjs/0.9.3/`; all notices are also included in the aggregate. Current EMF licensing is not substituted for the fixed old version. This conservative collection is not a claim that every class in those source archives is shipped.
 
 ### PPTX renderer and embedded font processing
 
@@ -55,8 +57,9 @@ The frozen NSIS 3.0.4.1 stock COPYING file is preserved in [third_party/installe
 
 - UAC 0.2.4c: the official ZIP's x86-unicode DLL matches the candidate byte for byte; its original zlib-style license is preserved.
 - StdUtils 1.14: its version definitions match the candidate PE version 1.1.4.0. The upstream LGPL-2.1-or-later text, NSIS interface clarification and README are preserved, with a fixed source revision. This is not a reproducible-build claim.
-- nsis7z 19.00: the official archive's x86-unicode DLL matches the candidate byte for byte. Preserve its plugin README, supplied LZMA public-domain text and the matching LZMA SDK 19.00 source/documentation reference separately. The plugin README's LGPL statement does not specify a version; the SDK's public-domain grant must not be assumed to cover every plugin author's contribution. This remains a clarification item.
-- WinShell: the official ZIP's unicode DLL matches the candidate, but contains no license text or source, and its page only labels it `Freeware`. Explicit redistribution/source terms or a replacement must be resolved before treating this item as cleared.
+- nsis7z 19.00: its official x86-unicode DLL matches the historical r2 candidate byte for byte. The original plugin's unversioned LGPL grant is retained; Asterium selects compliance with LGPL-2.1 under its section 13, rather than changing the upstream text. The full LGPL text, NSIS API's zlib/libpng notice and stock license text are included. The original LZMA SDK public-domain notice remains separate and is not assumed to cover plugin contributions. Corresponding plugin/SDK source and build references accompany the distribution process described in SOURCES.md.
+- electron-builder 26.18.1: installer templates are MIT, copyright Loopline Systems. Its original license is retained. The source-owned packaging adapter checks the exact locked templates and changes shell calls only in a temporary build copy; installed dependencies are not patched.
+- WinShell: historical r2 and older candidates include this unresolved Freeware-only plugin and retain their original evidence. The current source recipe replaces its calls with Asterium's Windows COM implementation through the stock System plug-in. A new installer must be unpacked to verify that WinShell.dll is absent before distribution; source changes do not change any old binary or prove new package acceptance.
 
 Source archives, versions and remaining limits are recorded in [SOURCES.md](third_party/licenses/SOURCES.md). The collection preserves available notices; it does not imply every installer authorization issue is closed.
 
@@ -76,7 +79,7 @@ Asterium includes the `frontend-builder` skill from [MouseCrew](https://github.c
 
 Copyright (c) 2026 mousecrew contributors, as stated in the upstream license. Licensed under the MIT License. The unchanged upstream files and license are stored in `third_party/mousecrew/a4058545/`.
 
-Asterium's adapter and runtime integration are separate files and are not represented as upstream MouseCrew work.
+Asterium's stage-loading adapter is separate application code. Its native project method/workflow templates adapt the frontend-builder methodology and retain the fixed revision and MIT source attribution; these are not represented as new upstream MouseCrew code. This round restored the nine vendored files to exact upstream bytes, removing only extra trailing whitespace introduced by the earlier import. The historical candidates are unchanged.
 
 ## YAML
 

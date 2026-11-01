@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "sourceReviewDate": "2026-11-01",
-  "scope": "Production bundle tracing preparation baseline plus retained conservative runtime/peer closure, upstream prebundled notices and vendored/installer texts. Claude Agent SDK dependency removed; not an exact binary SBOM. No project license granted.",
+  "scope": "Production bundle tracing preparation baseline plus retained conservative runtime/peer closure, upstream prebundled notices and vendored/installer texts. Claude Agent SDK dependency removed; not an exact binary SBOM. Project-owned code is separately MPL-2.0; this corpus does not grant project rights or certify release clearance.",
   "components": [
     {
       "id": "@aiden0z/pptx-renderer@1.3.0",
@@ -2922,13 +2922,17 @@
     },
     {
       "id": "nsis7z 19.00 and LZMA SDK 19.00",
-      "declaredLicense": "LicenseRef-Nsis7z-Unresolved (plugin LGPL statement and LZMA public-domain text retained)",
-      "inclusionReason": "candidate x86-unicode DLL byte-identical to official plugin archive; plugin license-version clarification remains open",
+      "declaredLicense": "Unversioned LGPL grant (plugin); public-domain LZMA SDK; zlib/libpng NSIS plugin API",
+      "inclusionReason": "Official plugin DLL byte-identical to r2; source and notice delivery must accompany a new candidate",
       "noticeFiles": [
         "third_party/installer/nsis7z-19.00/License.txt",
         "third_party/installer/nsis7z-19.00/nsis7z.txt",
-        "third_party/installer/nsis7z-19.00/LZMA-SDK-19.00-License.txt"
-      ]
+        "third_party/installer/nsis7z-19.00/LZMA-SDK-19.00-License.txt",
+        "third_party/installer/stdutils-1.14/LGPL.txt",
+        "third_party/installer/nsis7z-19.00/NSIS-api-notice.txt",
+        "third_party/installer/nsis-3.0.4.1/COPYING"
+      ],
+      "selectedLicense": "LGPL-2.1 for plugin under the unversioned grant and LGPL section 13; not a relicensing of the SDK or NSIS API"
     },
     {
       "id": "once@1.4.0",
@@ -3801,15 +3805,75 @@
         "node_modules/zwitch/license"
       ],
       "upstreamRepository": "wooorm/zwitch"
+    },
+    {
+      "id": "GWT gwt-user 2.10.0 (elkjs embedded)",
+      "declaredLicense": "Apache-2.0",
+      "inclusionReason": "Declared elkjs 0.9.3 Java/GWT build dependency, with matching namespace in the published worker; conservative original-source headers, not per-class binary SBOM",
+      "noticeFiles": [
+        "third_party/elkjs/0.9.3/gwt-user-2.10.0-NOTICES.txt",
+        "third_party/elkjs/0.9.3/Apache-2.0.txt"
+      ],
+      "upstreamRepository": "https://github.com/gwtproject/gwt/tree/2.10.0"
+    },
+    {
+      "id": "Guava 31.1-jre (elkjs embedded)",
+      "declaredLicense": "Apache-2.0",
+      "inclusionReason": "Declared elkjs 0.9.3 Java/GWT build dependency, with matching namespace in the published worker; conservative original-source headers, not per-class binary SBOM",
+      "noticeFiles": [
+        "third_party/elkjs/0.9.3/guava-31.1-jre-NOTICES.txt",
+        "third_party/elkjs/0.9.3/Apache-2.0.txt",
+        "third_party/elkjs/0.9.3/guava-gwt-31.1-jre-NOTICES.txt"
+      ],
+      "upstreamRepository": "https://github.com/google/guava/tree/v31.1"
+    },
+    {
+      "id": "EMF-GWT emf-common 2.12.4 (elkjs embedded)",
+      "declaredLicense": "EPL-1.0 (original fixed source-file headers)",
+      "inclusionReason": "Declared elkjs 0.9.3 Java/GWT build dependency, with matching namespace in the published worker; conservative original-source headers, not per-class binary SBOM",
+      "noticeFiles": [
+        "third_party/elkjs/0.9.3/emf-common-2.12.4-NOTICES.txt",
+        "third_party/elkjs/0.9.3/EPL-1.0.html"
+      ],
+      "upstreamRepository": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-common/2.12.4/"
+    },
+    {
+      "id": "EMF-GWT emf-ecore 2.12.4 (elkjs embedded)",
+      "declaredLicense": "EPL-1.0 (original fixed source-file headers)",
+      "inclusionReason": "Declared elkjs 0.9.3 Java/GWT build dependency, with matching namespace in the published worker; conservative original-source headers, not per-class binary SBOM",
+      "noticeFiles": [
+        "third_party/elkjs/0.9.3/emf-ecore-2.12.4-NOTICES.txt",
+        "third_party/elkjs/0.9.3/EPL-1.0.html"
+      ],
+      "upstreamRepository": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-ecore/2.12.4/"
+    },
+    {
+      "id": "Xtext xbase library 2.28.0 (elkjs embedded)",
+      "declaredLicense": "EPL-2.0",
+      "inclusionReason": "Declared elkjs 0.9.3 Java/GWT build dependency, with matching namespace in the published worker; conservative original-source headers, not per-class binary SBOM",
+      "noticeFiles": [
+        "third_party/elkjs/0.9.3/xtext-xbase-lib-2.28.0-NOTICES.txt",
+        "third_party/elkjs/0.9.3/EPL-2.0.txt"
+      ],
+      "upstreamRepository": "https://github.com/eclipse-xtext/xtext/tree/v2.28.0"
+    },
+    {
+      "id": "electron-builder installer templates 26.18.1",
+      "declaredLicense": "MIT",
+      "inclusionReason": "Declared elkjs 0.9.3 Java/GWT build dependency, with matching namespace in the published worker; conservative original-source headers, not per-class binary SBOM",
+      "noticeFiles": [
+        "third_party/installer/electron-builder-26.18.1/LICENSE"
+      ],
+      "upstreamRepository": "https://github.com/electron-userland/electron-builder"
     }
   ],
   "excludedOptionalPlatforms": [],
   "unresolvedItems": [
     "Official native Claude CLI integration authentication/use-case terms remain separate; npm Agent SDK removed from current dependencies and package roots",
-    "ELK Java/GWT preferred-source correspondence beyond verified npm wrapper gitHead",
-    "WinShell freeware label without explicit redistribution/source terms; nsis7z plugin LGPL version and relation to LZMA public-domain base",
+    "ELK 0.9.1 plus upstream PR 955 source correspondence documented; nested source/header coverage is conservative, not a reproducible binary proof",
+    "WinShell removed in source recipe via native System/COM adapter; real new-candidate packaging and ordinary-account install acceptance still required; nsis7z source obligations must accompany new distribution",
     "Complete provenance of nested/prebundled code beyond declared upstream notices; inventory is a conservative superset",
-    "Artwork historical generation-date record and future asset/brand license choices; own GPT account/no references attested",
-    "Next-candidate verification that license corpus is actually shipped; frozen candidate unchanged"
+    "Historical AI-asset generation dates remain unknown; maintainer-approved CC BY 4.0 documentation/ordinary assets and separate branding scope are documented",
+    "r2 shipped the previous corpus; current expanded corpus requires a new candidate, preserving previous package and evidence"
   ]
 }

@@ -94,4 +94,3 @@
 ## 方法依据
 
 流程按前端交付用途归纳，不是强制行业标准。可进一步参考 [Design Council 的 Double Diamond](https://www.designcouncil.org.uk/resources/the-double-diamond/) 理解探索与收敛，[GOV.UK 原型方法](https://www.gov.uk/service-manual/design/making-prototypes) 选择原型深度，[Storybook 状态示例](https://storybook.js.org/docs/writing-stories) 组织组件预览，以及 [W3C WAI 评价方法](https://www.w3.org/WAI/test-evaluate/) 理解工具与人工评价的边界。采用方法不意味着必须安装其工具或照搬其产品风格。
-

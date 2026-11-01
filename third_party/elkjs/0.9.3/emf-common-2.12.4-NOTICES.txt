@@ -1,0 +1,272 @@
+emf-common 2.12.4: original source-file headers
+
+Conservative collection from the fixed upstream source JAR. Headers are preserved as bytes, including copyright and license notices; this does not claim every source file is included in Asterium. Full preferred source: https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-common/2.12.4/emf-common-2.12.4-sources.jar
+Archive SHA-256: 8dfc4e97ca8eee5474927e2b0c5f3bdbd9a52dcd5dff8c0b433b1e938b843bbe
+
+========================================================================
+Header SHA-256: 1e9125bc2a2718cf488baca26042b11caca3f3f036e0f7fc68f2378d1b195098
+org/eclipse/emf/common/util/AbstractEList.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2009-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 44535dead83cc73c8917ebc4fba1f33abc1a82ef87b8b82bc27ff349632339eb
+org/eclipse/emf/common/util/BasicEMap.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 4bdd1736ee64f5c10732ccbf96d61178cd4d1ea41e38ac5b89b4f994d4298cfe
+org/eclipse/emf/common/util/BasicEList.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2009 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 626bdc1ba993fe4228df8cc1d09fe5f1b6bf9830894b7ef5f3ac2a3d01ea6a68
+org/eclipse/emf/common/util/Array.java
+org/eclipse/emf/common/util/Callback.java
+org/eclipse/emf/common/util/InvocationTargetException.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2010 Ed Merks and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   Ed Merks - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 6cb8cb16d165677c3ca12b4478525aa1dc03e3b9c8e0b89062799eb91ccd6bbc
+org/eclipse/emf/common/CommonPlugin.java
+org/eclipse/emf/common/notify/Notification.java
+org/eclipse/emf/common/util/ECollections.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 71d2cb549e22a22dcd8fb62fe99b8fff5c7d8a76c107743f1e832179912344ac
+org/eclipse/emf/common/command/AbortExecutionException.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2008-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 7cd2381be1322f5c596e262e977a96efc51f8c95746b14f913eac4424be13ae0
+org/eclipse/emf/common/CommonPluginProperties.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2010 Ed Merks and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   Ed Merks - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 822cfe568cd150d541ff76e3b300d9ce6382818fd86c70fd91a453b08099a3fb
+org/eclipse/emf/common/util/BasicMonitor.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2005-2012 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: 97109352c10cec216a401fe155ec6377f25afc0e6da767a1679c5620d1c4b820
+org/eclipse/emf/common/util/ArrayDelegatingEList.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2009-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: a23fbad98d8efc98f3c3541addda37bb09ac031e7db645da2f7d70f04b00f564
+org/eclipse/emf/common/notify/impl/SingletonAdapterImpl.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2006-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: aef2e8dd05041f50f26f60f445bf43448aa77af4027858208456812721e73c49
+org/eclipse/emf/common/util/DiagnosticException.java
+org/eclipse/emf/common/util/Monitor.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2005-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: ddeacc568e6bf954a01bb52c5a3c01c2b1de4ba1342775e4807051009dd6bd33
+org/eclipse/emf/common/util/BasicDiagnostic.java
+org/eclipse/emf/common/util/Diagnostic.java
+org/eclipse/emf/common/util/DiagnosticChain.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2004-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *   IBM - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: f1039da0ad9415ceda5f62d824f145da2f47d9b24fcd26b37d4cc8e4b5c2b1ce
+org/eclipse/emf/common/util/Reflect.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2010-2011 Ed Merks and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   Ed Merks - Initial API and implementation
+ */
+
+
+========================================================================
+Header SHA-256: ff3e4ae534e27b08108fc7371a08729a914d7ea527ca6fd68f1893f13ba46882
+org/eclipse/emf/common/command/AbstractCommand.java
+org/eclipse/emf/common/command/BasicCommandStack.java
+org/eclipse/emf/common/command/Command.java
+org/eclipse/emf/common/command/CommandStack.java
+org/eclipse/emf/common/command/CommandStackListener.java
+org/eclipse/emf/common/command/CommandWrapper.java
+org/eclipse/emf/common/command/CompoundCommand.java
+org/eclipse/emf/common/command/IdentityCommand.java
+org/eclipse/emf/common/command/StrictCompoundCommand.java
+org/eclipse/emf/common/command/UnexecutableCommand.java
+org/eclipse/emf/common/EMFPlugin.java
+org/eclipse/emf/common/notify/Adapter.java
+org/eclipse/emf/common/notify/AdapterFactory.java
+org/eclipse/emf/common/notify/impl/AdapterFactoryImpl.java
+org/eclipse/emf/common/notify/impl/AdapterImpl.java
+org/eclipse/emf/common/notify/impl/BasicNotifierImpl.java
+org/eclipse/emf/common/notify/impl/DelegatingNotifyingListImpl.java
+org/eclipse/emf/common/notify/impl/NotificationChainImpl.java
+org/eclipse/emf/common/notify/impl/NotificationImpl.java
+org/eclipse/emf/common/notify/impl/NotifierImpl.java
+org/eclipse/emf/common/notify/impl/NotifyingListImpl.java
+org/eclipse/emf/common/notify/NotificationChain.java
+org/eclipse/emf/common/notify/NotificationWrapper.java
+org/eclipse/emf/common/notify/Notifier.java
+org/eclipse/emf/common/notify/NotifyingList.java
+org/eclipse/emf/common/util/AbstractEnumerator.java
+org/eclipse/emf/common/util/AbstractTreeIterator.java
+org/eclipse/emf/common/util/DelegatingEList.java
+org/eclipse/emf/common/util/DelegatingResourceLocator.java
+org/eclipse/emf/common/util/EList.java
+org/eclipse/emf/common/util/EMap.java
+org/eclipse/emf/common/util/Enumerator.java
+org/eclipse/emf/common/util/Logger.java
+org/eclipse/emf/common/util/ResourceLocator.java
+org/eclipse/emf/common/util/TreeIterator.java
+org/eclipse/emf/common/util/UniqueEList.java
+org/eclipse/emf/common/util/URI.java
+org/eclipse/emf/common/util/WrappedException.java
+------------------------------------------------------------------------
+/**
+ * Copyright (c) 2002-2010 IBM Corporation and others.
+ * All rights reserved.   This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ * 
+ * Contributors: 
+ *   IBM - Initial API and implementation
+ */
+

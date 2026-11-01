@@ -40,8 +40,8 @@ try {
   const packageInfo = JSON.parse(await readFile('package.json', 'utf8'));
   assert.equal(await page.getByText(packageInfo.version, { exact: true }).count(), 1);
   await page.screenshot({ path: path.join(evidence, 'about.png'), fullPage: true });
-  await page.getByText('第三方声明与许可证', { exact: true }).click();
-  for (const [title, file] of [['第三方声明', 'THIRD_PARTY_NOTICES.md'], ['第三方许可证原文', 'third_party/licenses/THIRD_PARTY_LICENSES.txt']]) {
+  await page.getByText('许可证与致谢', { exact: true }).click();
+  for (const [title, file] of [['项目许可证（MPL-2.0）', 'LICENSE'], ['致谢', 'CREDITS.md'], ['第三方声明', 'THIRD_PARTY_NOTICES.md'], ['第三方许可证原文', 'third_party/licenses/THIRD_PARTY_LICENSES.txt']]) {
     await page.getByRole('button', { name: `查看${title}`, exact: true }).click();
     const text = page.getByLabel(title, { exact: true });
     await text.waitFor();

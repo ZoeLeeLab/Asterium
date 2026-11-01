@@ -20,7 +20,7 @@ const config: ForgeConfig = {
     icon: 'assets/asterium.ico',
     asar: true,
     prune: false,
-    extraResource: ['src/main/adapters/deliverFileMcp.cjs', 'third_party/mousecrew', 'third_party/mcp-client', 'third_party/yaml', 'third_party/licenses', '.sandbox-build/claude-bridge', 'THIRD_PARTY_NOTICES.md', '.sandbox-build/sandbox'],
+    extraResource: ['src/main/adapters/deliverFileMcp.cjs', 'third_party/mousecrew', 'third_party/mcp-client', 'third_party/yaml', 'third_party/licenses', 'third_party/elkjs', 'third_party/installer', '.sandbox-build/claude-bridge', 'THIRD_PARTY_NOTICES.md', '.sandbox-build/sandbox', 'LICENSE', 'LICENSES', 'COPYRIGHT.md', 'ASSET_LICENSE.md', 'BRANDING.md', 'CREDITS.md'],
     ignore: (file) => !keepPackagedRuntimePath(file),
   },
   rebuildConfig: {},

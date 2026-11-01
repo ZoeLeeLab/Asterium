@@ -12,7 +12,11 @@ Review date: 2026-11-01. This records third-party evidence, not a project licens
 - Download: <https://codeload.github.com/kieler/elkjs/tar.gz/a8304cf79fde75bc2ab1a89d28320f53f8637436>
 - Downloaded archive SHA-256: `850418c89dd35dbd94ea0100a7becbc09d320c153fda4c4ea4a88c67e12121a9`.
 
-The source package version was checked against the npm version. However, its build uses a separate ELK Java source checkout and GWT. The upstream README explicitly says elkjs patch/revision numbers can diverge from ELK's. The exact upstream Java/GWT source correspondence is **not yet closed**; an identically numbered ELK tag must not be assumed to exist. This link supplies verified wrapper source, not an assertion that it is the entire preferred source form of the compiled algorithms.
+The source package version was checked against the npm version. The [upstream 0.9.3 release](https://github.com/kieler/elkjs/releases/tag/0.9.3) expressly identifies ELK **0.9.1** plus [ELK PR 955](https://github.com/eclipse-elk/elk/pull/955), not a same-numbered Java tag. Preferred Java source is available at [the fixed v0.9.1 commit](https://github.com/eclipse-elk/elk/tree/62d5909f96fad541bc101ad52dabaece6b7eab7e), with the [upstream patch](https://patch-diff.githubusercontent.com/raw/eclipse-elk/elk/pull/955.patch) (SHA-256 `7f204a6e304031b7898dca1f09865d4bb6c9b9b58bd185e56f82931ff1551ec3`). The PR merge is `7ca51784e42a24201f29bc13e458728b6fc61cdc`; its entire master tree is not assumed to equal the published npm binary. This records upstream-declared source correspondence, not a byte-identical rebuild.
+
+The fixed wrapper [build.gradle](https://github.com/kieler/elkjs/blob/a8304cf79fde75bc2ab1a89d28320f53f8637436/build.gradle) specifies GWT 2.10.0, Guava/Guava-GWT 31.1-jre, EMF-GWT 2.12.4 and Xtext 2.28.0. Their exact Maven source archives, archive hashes, original copyright headers and notice block offsets are recorded in [source-notices.json](../elkjs/0.9.3/source-notices.json). The full EMF-GWT source-file notices are EPL-1.0; they are not replaced with the license of a modern EMF checkout. The Apache-2.0 and EPL-1.0 texts were obtained from their licensors' official sites; EPL-2.0 is preserved from the locked elkjs package.
+
+To reproduce the original-header collection, download the fixed archives from the manifest and run `node scripts/collect-elk-notices.mjs --sources <archive-directory>`, then `--check`. No network or model account is used by the generator; archive hashes are required before reading. It conservatively retains source headers, including classes not proven present in the binary. One GWT source file has no leading header (`org/hibernate/validator/ValidationMessages.java`); this exception is recorded rather than fabricated, and no Hibernate namespace was observed in the published ELK worker. Nested coverage is not represented as an exact binary SBOM.
 
 ### mtx-decompressor 1.4.2 — MPL-2.0, embedded by PPTX renderer
 
@@ -65,17 +69,22 @@ The npm package declares MIT but omits the license file. The matching source rev
 - The x86-unicode DLL is byte-identical to the candidate: `b393f05e8ff919ef071181050e1873c9a776e1a0ae8329aefff7007d0cadf592`.
 - The archive supplies plugin C/C++ files and explicitly instructs using the C/CPP folders of LZMA SDK 19.00, not 7-Zip 4.64 from the older paragraph.
 - Matching base source: <https://www.7-zip.org/a/lzma1900.7z>; downloaded SHA-256 `00f569e624b3d9ed89cf8d40136662c4c5207eaceb92a70b1044c77f84234bad`.
-- Original plugin `License.txt`, `nsis7z.txt`, and complete SDK `DOC/lzma-sdk.txt` are preserved in the aggregate. The SDK text places the original LZMA SDK in the public domain. The plugin README separately mentions LGPL without specifying a version. The scope/version of the plugin authors' grant remains a clarification item; do not label the entire plugin public domain or silently assign an LGPL version.
+- Original plugin `License.txt`, `nsis7z.txt`, and complete SDK `DOC/lzma-sdk.txt` are preserved in the aggregate. The SDK text places the original LZMA SDK in the public domain. The plugin README separately supplies an unversioned LGPL grant. For that grant Asterium selects compliance with LGPL-2.1, relying on its section 13's rule for a library that does not specify a version. This is an explicit downstream choice, not a claim that upstream specified 2.1, nor a public-domain reclassification of the plugin. The full LGPL-2.1 text and the NSIS API's unchanged zlib/libpng copyright header are retained.
+- A new distribution must provide the corresponding plugin source and matching LZMA SDK archive through the accompanying source materials or an appropriate source-delivery method. The archive instructions specify VS 2017, `Contrib/nsis7z/CPP/7zip/Bundles/Nsis7z/Nsis7z.sln`, with the SDK's C/CPP folders overlaid as documented. Do not replace its modified NSIS UI sources with a different SDK version. Preserve the original archives so these inputs can be reconstructed; this is not a reproducible-build claim.
 
-### WinShell 20121005 — unresolved
+### WinShell 20121005 — historical candidates only; source replacement
 
 - Official page: <https://nsis.sourceforge.io/WinShell_plug-in>
 - Official archive: <https://nsis.sourceforge.io/mediawiki/images/5/54/WinShell.zip>
 - Archive SHA-256: `34e111f8aacf64c540d848fd06b9d6f3e2c10cb825ec9329a01d1141973e749b`.
 - Its unicode DLL is byte-identical to the candidate: `9be85b986ea66a6997dde658abe82b3147ed2a1a3dcb784bb5176f41d22815a6`.
-- The ZIP contains only two DLLs, no license text or source. The official page says `Freeware`; this alone does not establish open-source or sufficiently explicit redistribution terms. The page also describes a System-plugin alternative for some operations. Obtain applicable terms/source or assess replacement in a separate installer change; maintainer approval cannot grant another author's rights.
+- The ZIP contains only two DLLs, no license text or source. The official page says `Freeware`; this was not treated as complete permission or as open-source.
+- The current source recipe uses `scripts/windows-installer-templates.mjs`, a locked-version/hash adapter replacing five AppUserModelID setters, four unpin calls and one destination-list cleanup in a temporary template copy. Native operations are implemented in `tools/installer/windows-shell.nsh` with the stock System plug-in and Windows COM. Desktop preference/finish-page behavior, Beta identity, current-user installation and retained user data remain in the existing installer recipe.
+- The original electron-builder MIT license is preserved at `third_party/installer/electron-builder-26.18.1/LICENSE`. A future installer must be unpacked to confirm WinShell.dll is absent, including its uninstaller; isolated macro diagnostics do not establish full installer acceptance. Old binaries are not fixed retrospectively.
 
 ## Additional notice material
+
+The fixed archive list for corresponding-source delivery is [source-archives.json](source-archives.json). It includes the preserved ELK Java baseline archive (SHA-256 `51212e3edb105296e2ec8e288e6097d3fc124d25af98a5a64f09655aa1fca842`), wrapper, patch, six Java/GWT source inputs, both MTX versions, StdUtils, nsis7z and LZMA SDK. The source-material preparer requires these hashes and makes no network request. The candidate recipe also includes the independently verified Git source archive, without Git history, in the corresponding-source ZIP. Exact source availability and notice delivery must be checked for that new artifact, not assumed from this document.
 
 - JSZip: selected MIT from its offered alternatives; the upstream dual-license text is preserved unchanged.
 - DOMPurify: selected Apache-2.0; supplied original license texts are preserved.
@@ -87,7 +96,7 @@ The npm package declares MIT but omits the license file. The matching source rev
 ## Still unresolved
 
 1. Native Claude Code use remains subject to its vendor's terms. The npm Agent SDK is removed from the current dependency and package roots; prior SDK candidate records remain historical. This change does not grant a new subscription OAuth permission or relicense Claude Code.
-2. The exact preferred-source correspondence for ELK's compiled Java/GWT algorithm code, beyond the verified npm wrapper source.
-3. WinShell's explicit redistribution/source terms, and the nsis7z plugin LGPL version/scope clarification. UAC's original license and matching binary have been identified; StdUtils's version, source and original clarification have been identified. Stock NSIS COPYING is not substituted for these separate terms.
+2. ELK source correspondence is documented from upstream's release, Java baseline and patch, with fixed Java/GWT sources and original headers. No exact binary rebuild or exhaustive per-class mapping is claimed.
+3. Verify WinShell removal in a new actual installer and its uninstaller; ship corresponding nsis7z/LZMA source materials and verify all expanded notices in that new package. Historical binaries remain unresolved and unchanged.
 4. Complete closure of code/data already embedded inside upstream bundles; this inventory is a conservative dependency closure, not proof of a complete binary SBOM.
-5. Final project/asset/brand policy choices and next-candidate verification that this collection is actually shipped. Existing candidates are not rewritten.
+5. Asterium-owned code is MPL-2.0; maintainer-approved documentation and ordinary artwork are CC BY 4.0, with separate branding scope. New-candidate verification of these files and the expanded collection remains required. Existing candidates are not rewritten.

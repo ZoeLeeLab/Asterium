@@ -5,10 +5,13 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { betaInstallerConfiguration } from './windows-installer-config.mjs';
+import { prepareWindowsInstallerTemplates } from './windows-installer-templates.mjs';
+import { prepareSourceMaterials } from './prepare-source-materials.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const option = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
 const output = option('--output'), phase = option('--phase'), commit = option('--commit');
+const sourceCache = option('--source-cache');
 if (process.platform !== 'win32' || process.arch !== 'x64' || !output || !path.isAbsolute(output) || !['application', 'installer'].includes(phase) || !/^[a-f0-9]{40}$/.test(commit ?? '')) throw new Error('Usage: npm run build:candidate -- --phase application|installer --commit <existing SHA> --output <absolute fresh candidate directory>');
 const destination = path.resolve(output);
 if (destination === path.parse(destination).root || destination.startsWith(root + path.sep)) throw new Error('Candidate directory must be outside the source repository and not a drive root');
@@ -104,9 +107,33 @@ if (phase === 'application') {
   const requireSource = createRequire(path.join(source, 'package.json'));
   const packageInfo = json(path.join(source, 'package.json'));
   const builder = requireSource('electron-builder');
+  const sourceArchive = path.join(destination, `source-${commit}.tar`);
+  if (digest(fs.readFileSync(sourceArchive)) !== receipt.archiveSha256) throw new Error('Frozen project source archive changed');
+  const correspondingSources = path.join(destination, 'corresponding-sources');
+  const sourceMaterials = prepareSourceMaterials({ projectRoot: source, cacheDirectory: sourceCache, destination: correspondingSources });
+  fs.copyFileSync(sourceArchive, path.join(correspondingSources, `Asterium-${packageInfo.version}-source-${commit.slice(0, 12)}.tar`), fs.constants.COPYFILE_EXCL);
+  for (const name of ['LICENSE', 'COPYRIGHT.md', 'ASSET_LICENSE.md', 'BRANDING.md', 'CREDITS.md']) fs.copyFileSync(path.join(source, name), path.join(correspondingSources, name), fs.constants.COPYFILE_EXCL);
+  fs.cpSync(path.join(source, 'LICENSES'), path.join(correspondingSources, 'LICENSES'), { recursive: true, force: false, errorOnExist: true });
+  save('corresponding-sources.json', { commit, sourceArchiveSha256: receipt.archiveSha256, sourceMaterials });
   const config = betaInstallerConfiguration({ projectRoot: source, outputDirectory: path.join(destination, 'artifacts'), version: packageInfo.version, commit, electronVersion: packageInfo.devDependencies.electron });
   save('installer-config.json', config);
-  const outputs = await builder.build({ projectDir: source, prepackaged: receipt.application, targets: builder.Platform.WINDOWS.createTarget(['nsis'], builder.Arch.x64), config, publish: 'never' });
+  const templates = prepareWindowsInstallerTemplates({ projectRoot: source, destination: path.join(destination, 'nsis-templates') });
+  save('installer-templates.json', templates);
+  // Scoped, version/hash-guarded adapter: electron-builder uses this exported
+  // directory for both compiler passes. Installed dependencies stay untouched.
+  const nsisUtil = requireSource('app-builder-lib/out/targets/nsis/nsisUtil');
+  const originalTemplateDirectory = nsisUtil.nsisTemplatesDir;
+  let outputs;
+  try {
+    nsisUtil.nsisTemplatesDir = templates.directory;
+    outputs = await builder.build({ projectDir: source, prepackaged: receipt.application, targets: builder.Platform.WINDOWS.createTarget(['nsis'], builder.Arch.x64), config, publish: 'never' });
+  } finally {
+    nsisUtil.nsisTemplatesDir = originalTemplateDirectory;
+  }
   save('installer-build.json', { status: 'built', commit, outputs, signed: false, installerExecuted: false, ordinaryAccountAcceptance: 'pending' });
+  const sourceBundle = path.join(destination, 'artifacts', `Asterium-${packageInfo.version}-sources-${commit.slice(0, 12)}.zip`);
+  if (fs.existsSync(sourceBundle)) throw new Error('Source bundle already exists; preserve candidate evidence');
+  execFileSync('tar', ['-a', '-cf', sourceBundle, '-C', correspondingSources, '.'], { env: environment, windowsHide: true });
+  save('source-bundle.json', { commit, path: sourceBundle, bytes: fs.statSync(sourceBundle).size, sha256: digest(fs.readFileSync(sourceBundle)) });
   console.log(JSON.stringify({ status: 'built', commit, outputs }));
 }
