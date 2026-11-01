@@ -80,6 +80,8 @@ node tests/windows-installer-shell-smoke.mjs --nsis '<已核验的 makensis.exe>
 
 新构建应导出并核对已存在的源码提交，记录构建配方的产物处理、平台与架构，核对 x64 应用和 helper。解包安装器，将应用文件与已审计的应用目录比对，检查是否混入私人路径、账号、凭据、测试资料、日志、缓存、源码映射或开发产物。第三方代码扫描命中需逐项复核，保留原命中与结论，不能只删掉记录。
 
+自有素材许可全文以 `resources/CC-BY-4.0.txt` 随应用交付；源码中保留 `LICENSES/CC-BY-4.0.txt`。不要把源码 `LICENSES` 整目录直接作为 extraResource：Windows 上会与第三方 `resources/licenses` 发生大小写路径冲突。关于页仍从源码原文离线打包加载；源码配套 ZIP 保持原目录和链接。
+
 ## 新应用的四组隔离桌面检查
 
 在源码根目录将下列路径指向本次新应用；示例是 Forge 的默认输出。使用外部候选时填入其实际路径，不用旧包代替：
