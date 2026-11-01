@@ -1,6 +1,6 @@
 # 开发、检查与验收流程
 
-本说明区分开发机自动检查、候选构建与测试电脑人工验收。它是操作流程，不是已通过的验收结果；对应版本的实际结果见 [Release Notes](releases/0.1.0-candidate-20261031-r1.md)。
+本说明区分开发机自动检查、候选构建与测试电脑人工验收。它是操作流程，不是已通过的验收结果；当前候选见 [Beta Release Notes](releases/0.1.0-beta.1-r1.md)。
 
 ## 开发环境与首次运行
 
@@ -31,6 +31,7 @@ npm test -- --pool=threads --maxWorkers=1 --testTimeout=30000 --teardownTimeout=
 npm run test:empty-start
 npm run build:renderer
 npm run sandbox:build
+npm run build:claude-bridge
 npm run build:studio-wake
 npm run test:studio-wake-adapter
 npm run build:automation-adapter
@@ -51,7 +52,21 @@ npm run package
 
 Forge 会编译主进程、Preload、Renderer 和 Windows helper，输出到 `out/`。仓库默认没有设置安装器 maker 或签名，此命令只生成应用目录。
 
-既有候选安装器由单独冻结的构建配方生成。配方、工具版本及锁文件、来源提交、候选哈希和检查日志分别保存，目前配方未纳入本仓库。不能只凭 `npm run package` 声称可重建字节相同的既有安装器；工具版本和候选事实见 Release Notes。
+旧候选安装器的冻结配方和证据不作修改。Beta 新配方为 `scripts/build-windows-candidate.mjs`、`scripts/windows-installer-config.mjs` 和 `tools/installer/installer.nsh`，从项目自身位置和显式输出参数解析路径，不依赖搬迁前的绝对路径。`package` 只生成开发应用，正式候选使用下列两阶段流程。
+
+指定仓库外的独立交付目录，将临时目录和缓存设在该目录所在盘；冻结已存在提交并确认工作区干净。先在 `audit/source-checks.json` 记录该提交的全部检查，结构为 `{ "commit": "完整 SHA", "status": "passed", "checks": [{ "name": "检查名", "exitCode": 0 }] }`；任何失败不能改写为 0。然后执行（占位必须替换）：
+
+```powershell
+npm run build:candidate -- --phase application --commit '<冻结的完整 SHA>' --output '<本轮独立交付目录>'
+```
+
+脚本导出 Git 提交并逐文件对比，重新 `npm ci`，使用锁定 Forge 工具构建 Windows x64 应用，只清理导出应用中的 sourcemap。执行下述四项打包后检查，记录 `audit/packaged-checks.json` 中同一提交和四条真实退出码；完成内容扫描、声明交付核对后写入 `audit/application-audit.json` 的同一提交和 `status: passed`。这些收据是阻断条件，不能代替实际检查。最后执行：
+
+```powershell
+npm run build:candidate -- --phase installer --commit '<同一冻结的完整 SHA>' --output '<同一交付目录>'
+```
+
+安装标识固定为 `Asterium.Beta`，默认资料为 `%APPDATA%/Asterium-Beta`。安装器只面向当前用户、无提权；快捷方式首次默认勾选，完成页启动默认不勾选；卸载保留资料，快捷方式偏好保存在当前用户的 Beta 专用注册表项。未配置签名，未启用自动更新。候选名包含构建提交；构建脚本不创建远端、不上传、不执行安装器。拒绝覆盖已有构建收据，失败尝试需留档。
 
 新构建应导出并核对已存在的源码提交，记录构建配方的产物处理、平台与架构，核对 x64 应用和 helper。解包安装器，将应用文件与已审计的应用目录比对，检查是否混入私人路径、账号、凭据、测试资料、日志、缓存、源码映射或开发产物。第三方代码扫描命中需逐项复核，保留原命中与结论，不能只删掉记录。
 
@@ -60,7 +75,7 @@ Forge 会编译主进程、Preload、Renderer 和 Windows helper，输出到 `ou
 在源码根目录将下列路径指向本次新应用；示例是 Forge 的默认输出。使用外部候选时填入其实际路径，不用旧包代替：
 
 ```powershell
-$env:ASTERIUM_PACKAGED_EXE = (Resolve-Path -LiteralPath '.\out\Asterium-win32-x64\Asterium.exe').Path
+$env:ASTERIUM_PACKAGED_EXE = (Resolve-Path -LiteralPath '.\out\Asterium Beta-win32-x64\Asterium.exe').Path
 $env:ASTERIUM_API_LIVE_SMOKE = '0'
 $env:ASTERIUM_CLAUDE_LIVE_SMOKE = '0'
 $env:ASTERIUM_CODEX_LIVE_SMOKE = '0'

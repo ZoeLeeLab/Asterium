@@ -1,7 +1,7 @@
 {
   "name": "asterium-desktop",
-  "productName": "Asterium",
-  "version": "0.1.0",
+  "productName": "Asterium Beta",
+  "version": "0.1.0-beta.1",
   "description": "星丛 Asterium 多 AI 桌面工作台",
   "main": ".vite/build/main.js",
   "private": true,
@@ -32,7 +32,10 @@
     "sandbox:s1:identity-verify": "node tools/sandbox-s1/identity-acceptance.mjs --test-launcher",
     "sandbox:build": "node scripts/build-windows-sandbox.mjs",
     "test:api-providers": "node tests/api-providers-acceptance.mjs",
-    "test:empty-start": "node tests/empty-start-browser-smoke.mjs"
+    "test:empty-start": "node tests/empty-start-browser-smoke.mjs",
+    "build:claude-bridge": "node scripts/build-claude-bridge.mjs",
+    "test:claude-cli": "node tests/claude-cli-acceptance.mjs",
+    "build:candidate": "node scripts/build-windows-candidate.mjs"
   },
   "dependencies": {
     "@aiden0z/pptx-renderer": "1.3.0",
@@ -63,6 +66,7 @@
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "6.1.1",
     "electron": "44.2.0",
+    "electron-builder": "26.18.1",
     "eslint": "10.10.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "0.5.6",

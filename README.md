@@ -25,9 +25,9 @@
 
 [Releases：链接占位，仓库建立后替换，当前不可用](https://github.com/OWNER/REPO/releases)
 
-目前提供 Windows x64 开发预览候选，尚无公开下载；不声明支持 macOS 或 Linux。使用安装包不需要 Git、Node.js 或开发环境。获得候选后，先核对随包版本说明和文件哈希，再以普通账户安装到新目录。
+目前准备 Windows x64 的 **0.1.0-beta.1** 本地候选，尚无公开下载；不声明支持 macOS 或 Linux。使用安装包不需要 Git、Node.js 或开发环境。获得候选后，先核对随包版本说明和文件哈希，再以普通账户安装到新目录。
 
-当前安装器未做代码签名，Windows 可能显示未知发布者提示。现有候选不创建桌面快捷方式、安装后不自动启动；桌面快捷方式与完成安装时选择是否立即打开，已列入后续完善计划。
+Beta 安装器按当前用户安装，无需提权。安装选项“创建桌面快捷方式”首次默认勾选；完成页“立即打开星丛”默认不勾选。重装保留此前取消快捷方式的选择，卸载保留资料；这些行为还须由测试电脑完成普通账户验收。当前未做代码签名，Windows 可能显示未知发布者提示。
 
 ## 五步快速开始
 
@@ -43,7 +43,7 @@
 
 使用 API、MCP 或其他外部服务时，请求会发送到配置的服务。伙伴身份与记忆连续性不等于公开全部私聊；目录授权也不等于授予其他伙伴的记忆访问权限。请按需要配置连接、成员与工作区。
 
-直接双击会读取当前账户的默认资料，曾使用过星丛的账户可能显示原有内容。独立安装名不会自动隔离数据；隔离命令、重启方式和保留边界见[独立说明](docs/data-isolation.md)。
+Beta 固定使用当前账户的 `%APPDATA%/Asterium-Beta`，与旧星丛的默认资料分开，后续 Beta 沿用；不自动迁移旧资料。显式数据目录参数仍有效。项目目录及官方 CLI 自身的登录与历史不随应用资料隔离；说明和验收命令见[独立文档](docs/data-isolation.md)。
 
 ## 开发者快速启动
 
@@ -58,11 +58,13 @@ npm start
 
 开发实例也应隔离私人资料。完整环境要求、检查命令、应用打包和测试电脑流程见[开发与验收文档](docs/development-and-validation.md)；源码启动与安装器构建是不同流程。
 
+本地 Claude 直接调用另行安装的未修改官方 Claude Code CLI，使用者先在官方 CLI 自行登录；星丛不接管订阅凭据，不内置 CLI，也不自动升级或回退 SDK。Codex 保持官方 app-server 接入。CLI 已验证版本、权限边界及模拟与真实联调的区别见[兼容性说明](docs/claude-cli-compatibility.md)。
+
 ## 当前状态
 
 项目处于开发预览阶段，已进行自动检查和部分人工验收，完整功能、真实服务连接及卸载重装仍待继续。外部宿主集成、实验自动化和可选 Windows 沙箱有各自边界，不应从模拟测试推断全部可用。
 
-对应候选的来源、文件哈希、检查结果、人工反馈和待办，统一记录在[版本 Release Notes 草稿](docs/releases/0.1.0-candidate-20261031-r1.md)。后续文档更新不会改变已有安装包的构建归属。
+对应候选的来源、检查范围及待办，见 [Beta Release Notes](docs/releases/0.1.0-beta.1-r1.md)；最终文件哈希与检查证据随候选交付。旧候选记录独立保留，后续文档更新不会改变已有安装包的构建归属。
 
 ## 文档索引
 
@@ -70,8 +72,8 @@ npm start
 - [自动化](docs/automations-user-guide.md) · [外观设置](docs/appearance-customization.md)
 - [数据目录与隔离验收](docs/data-isolation.md) · [文件与命令审批](docs/native-command-approval.md)
 - [开发、检查与验收](docs/development-and-validation.md) · [能力范围索引](docs/capabilities/index.md)
-- [版本 Release Notes 草稿](docs/releases/0.1.0-candidate-20261031-r1.md)
+- [Beta Release Notes](docs/releases/0.1.0-beta.1-r1.md) · [旧候选记录](docs/releases/0.1.0-candidate-20261031-r1.md)
 
 ## 许可证
 
-项目自身的许可证尚待选定，目前未提供项目级 `LICENSE` 文件。第三方组件的许可证和版权声明已保留在 `third_party/`，详见[第三方声明](THIRD_PARTY_NOTICES.md)；它们不替代星丛自身的许可证选择。
+项目拟采用客户端全开源与 MPL-2.0，当前尚未正式落地项目级 `LICENSE`；公开发布前还需关闭剩余许可问题。第三方组件的许可证和版权声明已保留在 `third_party/`，详见[第三方声明](THIRD_PARTY_NOTICES.md)；它们不替代星丛自身的许可证。

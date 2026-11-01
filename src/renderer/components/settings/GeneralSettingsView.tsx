@@ -1,5 +1,6 @@
 import { Settings2 } from 'lucide-react';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
+import { APP_VERSION } from '../../../shared/appRelease';
 
 export function GeneralSettingsView() {
   const { settings, startupSupported, loading, saving, error, update, reload, available } = useGeneralSettings();
@@ -20,7 +21,7 @@ export function GeneralSettingsView() {
         <label className="general-settings-row"><span><strong>允许沙箱进程联网</strong><small>不影响网页工具、HTTP MCP、模型连接或 Native 进程。</small></span><input type="checkbox" checked={settings.sandboxAllowNetwork} disabled={disabled || !settings.sandboxEnabled} onChange={e => void update({ sandboxAllowNetwork: e.target.checked })} /></label>
       </section>
       <section className="general-settings-card"><h2>语言</h2><label className="general-settings-row"><span><strong>界面语言</strong><small>目前支持简体中文。</small></span><select aria-label="界面语言" value="zh-CN" disabled><option value="zh-CN">简体中文</option></select></label></section>
-      <section className="general-settings-card"><h2>更新</h2><label className="general-settings-row"><span><strong>启动时自动检查更新</strong><small>尚未配置更新源，暂不可用。</small></span><input type="checkbox" checked={false} disabled readOnly /></label></section>
+      <section className="general-settings-card"><h2>更新</h2><p>当前版本：{APP_VERSION} · Beta</p><label className="general-settings-row"><span><strong>启动时自动检查更新</strong><small>尚未配置更新源，暂不可用。</small></span><input type="checkbox" checked={false} disabled readOnly /></label></section>
     </div>
   </>;
 }

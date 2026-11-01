@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 
 const packagedRuntimeRoots = [
   '/.vite',
+  '/package.json',
 ];
 
 function keepPackagedRuntimePath(file: string) {
@@ -14,6 +15,8 @@ function keepPackagedRuntimePath(file: string) {
 
 const config: ForgeConfig = {
   packagerConfig: {
+    name: 'Asterium Beta',
+    executableName: 'Asterium',
     icon: 'assets/asterium.ico',
     asar: true,
     prune: false,

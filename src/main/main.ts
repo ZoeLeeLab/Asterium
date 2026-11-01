@@ -10,6 +10,15 @@ import { registerTitlebarThemeChannel, installAppearanceRecovery } from './title
 import { registerAgentIpc } from './agentIpc';
 import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
 import { normalizeExternalHttpUrl } from './security/externalUrl';
+import { mkdirSync } from 'node:fs';
+import { BETA_APP_ID, BETA_APP_NAME } from '../shared/appRelease';
+import { betaUserDataDirectory } from './settings/betaIdentity';
+
+app.setName(BETA_APP_NAME);
+const explicitUserData = app.commandLine.getSwitchValue('user-data-dir');
+const betaUserData = betaUserDataDirectory(app.getPath('appData'), explicitUserData);
+mkdirSync(betaUserData, { recursive: true });
+app.setPath('userData', betaUserData);
 
 let mainWindow: BrowserWindow | null = null;
 const generalSettings = new GeneralSettingsStore(() => path.join(app.getPath('userData'), 'general-settings.v1.json'),
@@ -109,7 +118,7 @@ app.on('second-instance', () => { void app.whenReady().then(() => { if (!mainWin
 app.on('before-quit', event => { if (!lifecycle.canExit) { event.preventDefault(); void lifecycle.quit(); } });
 
 app.whenReady().then(async () => {
-  if (process.platform === 'win32') app.setAppUserModelId('Asterium');
+  if (process.platform === 'win32') app.setAppUserModelId(BETA_APP_ID);
   try { await generalSettings.get(); } catch { console.error('GENERAL_SETTINGS_LOAD_FAILED'); }
   if (process.env.ASTERIUM_STARTUP_SMOKE === '1') {
     const runtime = await loadClaudeCliRuntime();
