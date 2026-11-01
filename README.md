@@ -1,74 +1,77 @@
 # 星丛 Asterium
 
-面向个人与小团队的多 AI 桌面工作台，支持本地 CLI、API 伙伴、单聊、工作室、项目协作、伙伴资料、记忆及自动化。
+让熟悉的 AI 伙伴，在同一个工作台里一起做事。
 
-当前版本为开发版本，源码已经过发布隐私整理。代码核验来源以能力条目和实际 Git 历史为准；安装器及验收状态以绑定具体提交的独立构建报告为准。旧开发仓库的验收结果不代表本仓库的新候选已验收。见 [发布状态](docs/release-status.md) 和 [能力索引](docs/capabilities/index.md)。
+星丛面向与 AI 有长期联系、习惯长线程交流，也想和伙伴完成实际作品的人。即使没有编程基础，你也可以提出想法、参与讨论、确认结果，让多位各有所长的伙伴协作。
 
-## 环境
+它希望减少来回复制需求、搬运代码和复述修改意见的负担，同时照顾长期使用者对伙伴身份、性格设定与记忆连续性的需要。你可以和一位伙伴单独交流，也可以邀请多位伙伴进入工作室，围绕同一件事讨论、分工和复核。
 
-- Windows x64。当前启动和打包流程会编译 Windows helper，暂不提供 macOS/Linux 支持声明。
-- Node.js 24.x；本次使用 Node 24.18.0、npm 11.16.0。Node 与 Electron 内嵌的 Node 是两个不同运行环境。
-- 系统需提供 Windows PowerShell，以及 Microsoft.NET/Framework64/v4.0.30319/csc.exe。helper 编译脚本使用 SystemRoot 定位它；缺失时应先解决环境，不绕过编译检查。
-- 安装依赖时需要访问 npm、Electron 下载源及锁文件中 SheetJS 的官方下载地址。不要关闭 TLS 校验。
-- 本地 Codex/Claude 伙伴需要另行安装相应 CLI、完成用户自己的登录并在界面选择运行环境。API 伙伴需配置自己的服务、模型与 Key；并非启动应用的必需条件。
+## 产品截图
 
-## 安装和开发
+![产品截图占位：单聊、工作室及伙伴记忆管理；尚未添加实际截图](docs/images/product-preview-placeholder.svg)
 
-在项目根目录的 PowerShell 中运行：
+此处是明确标识的占位图，不代表实际界面。后续补充使用通用测试内容的截图，展示单聊、工作室和伙伴记忆管理；发布前移除真实姓名、账号、私人聊天、Key、项目内容和个人路径。
+
+## 核心功能
+
+- **熟悉的伙伴，单独交流或共同工作。** 单聊用于持续交流和独立任务；工作室让伙伴围绕项目讨论、分工与相互检查。可以让一位提出方案、一位实现，再请另一位核对是否符合需求，减少用户承担的消息搬运。
+- **伙伴身份与场景连续性。** 身份资料、人设配置和星丛内的记忆按伙伴管理。启用相应功能后，单聊和工作室可沿用同一位伙伴的配置；各会话仍有独立上下文与权限，模型表现也可能随上下文变化。
+- **明确范围的记忆管理。** 当前可对星丛内按伙伴保存的记忆进行查看、检索、新增、编辑、评论、回收站恢复与永久删除；授权场景下的伙伴读写取决于记忆模式和权限。本地 CLI 的原生记忆由宿主管理。**已有记忆导入能力仍在确认，当前尚未提供通用导入功能。** 接入伙伴不表示自动继承外部聊天历史或已有记忆。
+- **接入与工具。** 可连接本地 Codex CLI、Claude Code，或配置 API 服务与模型。API 伙伴可按授权使用文件、命令、MCP 和 Skills；本地 CLI 需另行安装登录，具体服务兼容性以实际测试为准。
+- **项目与交付。** 将相关群聊、成员、任务、流程和文件组织在一起，成果保存到实际项目文件夹，便于查看进展与复核结果。授权工作目录后，伙伴才能在相应边界内开展工作。
+- **自动化与桌面设置。** 提供会话任务计划、运行记录、外观与托盘等设置。自动化仍为实验功能，需要星丛运行；外部宿主的定时执行与原线程自动唤醒尚未接通。
+
+## 下载与安装
+
+[Releases：链接占位，仓库建立后替换，当前不可用](https://github.com/OWNER/REPO/releases)
+
+目前提供 Windows x64 开发预览候选，尚无公开下载；不声明支持 macOS 或 Linux。使用安装包不需要 Git、Node.js 或开发环境。获得候选后，先核对随包版本说明和文件哈希，再以普通账户安装到新目录。
+
+当前安装器未做代码签名，Windows 可能显示未知发布者提示。现有候选不创建桌面快捷方式、安装后不自动启动；桌面快捷方式与完成安装时选择是否立即打开，已列入后续完善计划。
+
+## 五步快速开始
+
+1. **安装并打开。** 在专用普通账户或新数据目录中启动，首次应为空白工作台。与旧版并行使用时，先阅读[数据隔离说明](docs/data-isolation.md)，保留已有资料。
+2. **添加自己的连接。** 进入“设置 → 伙伴管理”，选择 API 或本地 CLI。API 在专用输入区填写自己的服务、模型与 Key；本地 CLI 使用已安装并登录的运行环境。
+3. **建立伙伴资料。** 设置名字、介绍等内容，并选择适合的资料与记忆管理方式。可以从星丛内的新记录逐步积累背景，当前不要按“自动导入外部记忆”来使用。
+4. **先单独交流。** 与一位伙伴说明需求、确认连接与回复。需要处理文件时，只选择为这次任务准备的目录，并检查审批和授权范围。
+5. **组织共同工作。** 新建项目与工作室群聊，邀请需要的伙伴，说明分工和验收要求。用一个小工具、简单网页或文件整理任务开始，由你确认成果，再逐步扩大协作范围。
+
+## 数据与隐私
+
+应用设置、聊天状态、连接配置与受管伙伴资料保存在当前 Windows 用户的应用数据目录。API Key 由主进程通过系统加密机制保存，不写入源码或要求你发到聊天里。项目文件另存于你选择的目录，默认项目根在当前用户的“文档 / Asterium Projects”。
+
+使用 API、MCP 或其他外部服务时，请求会发送到配置的服务。伙伴身份与记忆连续性不等于公开全部私聊；目录授权也不等于授予其他伙伴的记忆访问权限。请按需要配置连接、成员与工作区。
+
+直接双击会读取当前账户的默认资料，曾使用过星丛的账户可能显示原有内容。独立安装名不会自动隔离数据；隔离命令、重启方式和保留边界见[独立说明](docs/data-isolation.md)。
+
+## 开发者快速启动
+
+需要 Windows x64、Node.js 24.x、Windows PowerShell，以及系统自带路径下的 .NET Framework C# 编译器。启动时会编译 Windows helper；安装依赖需访问 npm、Electron 等下载源。
+
+在源码根目录执行：
 
 ```powershell
 npm ci
 npm start
 ```
 
-start 会先编译沙箱 helper，再启动 Electron Forge/Vite。首次打开是空白工作台，没有预置伙伴、聊天、项目、角色或示例凭据。请在伙伴管理页添加自己的连接；不导入旧开发机个人目录。
+开发实例也应隔离私人资料。完整环境要求、检查命令、应用打包和测试电脑流程见[开发与验收文档](docs/development-and-validation.md)；源码启动与安装器构建是不同流程。
 
-API Key 通过正式设置界面保存到系统加密存储，不写入源码或 .env。本项目没有必须复制的 .env.example。不要把自己的认证配置、运行资料、日志或验收包加入 Git。
+## 当前状态
 
-## 检查
+项目处于开发预览阶段，已进行自动检查和部分人工验收，完整功能、真实服务连接及卸载重装仍待继续。外部宿主集成、实验自动化和可选 Windows 沙箱有各自边界，不应从模拟测试推断全部可用。
 
-```powershell
-npm run typecheck
-npm run lint
-npm test -- --pool=threads --maxWorkers=2
-# Renderer 空白启动浏览器检查（需 Edge，或指定 ASTERIUM_BROWSER_EXE）
-npm run test:empty-start
-npm run build:renderer
-npm run sandbox:build
-npm run build:studio-wake
-npm run test:studio-wake-adapter
-npm run build:automation-adapter
-npm run test:automation-adapter
-```
+对应候选的来源、文件哈希、检查结果、人工反馈和待办，统一记录在[版本 Release Notes 草稿](docs/releases/0.1.0-candidate-20261031-r1.md)。后续文档更新不会改变已有安装包的构建归属。
 
-单元及 Renderer 测试使用 tests/fixtures 内的合成数据，不调用真实模型。两个 Adapter 测试脚本默认使用 --mock。构建 Renderer、SDK 或 helper 是源码编译检查，不生成桌面应用发行包。
+## 文档索引
 
-首次代码基线建立前，能力条目为未绑定状态。基线存在并完成核验后，以纯文档提交写入已存在的代码 SHA，再执行 npm run check:capabilities。不得把未绑定状态记为通过，也不得用旧开发历史冒充本仓库的新基线。
+- [API 连接与模型](docs/api-connections-guide.md) · [MCP 与 Skills](docs/api-extensions-guide.md)
+- [自动化](docs/automations-user-guide.md) · [外观设置](docs/appearance-customization.md)
+- [数据目录与隔离验收](docs/data-isolation.md) · [文件与命令审批](docs/native-command-approval.md)
+- [开发、检查与验收](docs/development-and-validation.md) · [能力范围索引](docs/capabilities/index.md)
+- [版本 Release Notes 草稿](docs/releases/0.1.0-candidate-20261031-r1.md)
 
-## 后续打包流程
+## 许可证
 
-仅在确认准备生成新候选后运行：
-
-```powershell
-npm run package
-```
-
-Forge 会重新编译主进程、Preload、Renderer 及 Windows helper，输出到 out/。仓库默认配置未设置安装器 maker 或代码签名；package 仅生成应用目录。Windows 安装器可由单独冻结的构建配方生成，工具版本、配方哈希、最终源码提交和产物哈希必须随候选保存。构建安装器不等于普通账户安装验收通过。
-
-打包后应使用新候选执行 test:startup、test:memory-sqlite、test:extensions 和 test:api-providers 等隔离桌面验收，可用 ASTERIUM_PACKAGED_EXE 显式选择新候选。不能用旧包替代新源码验收。真实 API、CLI 登录或外部宿主测试须单独明确授权并使用指定测试连接，不能直接遍历运行所有 smoke 脚本。
-
-## 数据与权限
-
-主进程资料和加密凭据位于 Electron userData，受管资料位于其 AsteriumData 子目录；项目工作目录由用户选择，默认项目根位于系统 Documents 下的 Asterium Projects。开发与打包实例的数据目录可能不同。隔离测试应为新进程显式指定 --user-data-dir，不复用个人资料。
-
-Windows AppContainer/Job 沙箱属于实验能力，默认关闭；Full 使用 Native，普通审批与持续信任不等于无沙箱许可。HTTP MCP、网页和远程服务不由本地进程沙箱隔离。参见 [命令审批](docs/native-command-approval.md)。
-
-## 文档与第三方代码
-
-- [API 连接](docs/api-connections-guide.md)
-- [MCP 与 Skills](docs/api-extensions-guide.md)
-- [自动化](docs/automations-user-guide.md)
-- [外观](docs/appearance-customization.md)
-- [第三方声明](THIRD_PARTY_NOTICES.md)
-
-上游代码的许可证保留在 third_party/。项目自身的分发许可尚待维护者明确；此说明不替代授权选择。
+项目自身的许可证尚待选定，目前未提供项目级 `LICENSE` 文件。第三方组件的许可证和版权声明已保留在 `third_party/`，详见[第三方声明](THIRD_PARTY_NOTICES.md)；它们不替代星丛自身的许可证选择。

@@ -1,1 +1,6 @@
 * text=auto
+
+# Preserve upstream license bytes and their recorded hashes, including whitespace.
+third_party/installer/** -text -whitespace
+third_party/licenses/THIRD_PARTY_LICENSES.txt -text -whitespace
+third_party/licenses/supplemental/** -text -whitespace
