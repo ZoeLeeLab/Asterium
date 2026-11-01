@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "Fixed corresponding-source materials for identified copyleft/embedded dependencies; original archives, not a complete binary SBOM or byte-identical rebuild proof",
+  "scope": "Fixed corresponding-source materials for identified copyleft/embedded dependencies; upstream archives except explicitly reviewed StdUtils material, not a complete binary SBOM or byte-identical rebuild proof",
   "archives": [
     {
       "id": "elkjs 0.9.3 wrapper",
@@ -81,10 +81,13 @@
     },
     {
       "id": "StdUtils 1.14",
-      "file": "stdutils-4e111732.tar.gz",
+      "file": "stdutils-1.14-reviewed.tar.gz",
       "url": "https://codeload.github.com/lordmulder/stdutils/tar.gz/4e1117321001e54dcd2c52f72d3c359d5215e426",
-      "bytes": 222751,
-      "sha256": "3687ab4e09005a8a0b93c1a07a36285d93466070e94b8bf6f12781fb53c419e1"
+      "bytes": 161892,
+      "sha256": "cd8c50b8e7e0ff8ca4b22ce6e0fdf9b38789334e5f5a3d44eabb953676d9f535",
+      "upstreamArchiveSha256": "3687ab4e09005a8a0b93c1a07a36285d93466070e94b8bf6f12781fb53c419e1",
+      "derivation": "scripts/prepare-stdutils-source.mjs; unchanged retained file bytes with deterministic archive metadata; excludes Date.exe, Zip.exe, StdUtils.aps and StdUtils.vcxproj.user; required upstream .lib build inputs retained",
+      "review": "third_party/installer/stdutils-1.14/stdutils-source-review.json"
     },
     {
       "id": "nsis7z 19.00 source and binary",

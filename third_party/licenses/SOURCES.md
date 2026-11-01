@@ -54,6 +54,8 @@ The npm package declares MIT but omits the license file. The matching source rev
 - Download: <https://codeload.github.com/lordmulder/stdutils/tar.gz/4e1117321001e54dcd2c52f72d3c359d5215e426>
 - Archive SHA-256: `3687ab4e09005a8a0b93c1a07a36285d93466070e94b8bf6f12781fb53c419e1`.
 - Source version definitions match the candidate's PE version 1.1.4.0. The original LGPL-2.1-or-later text, NSIS interface clarification and README are retained in the aggregate. The clarification describes unmodified-library use through the NSIS interface; it is not permission to relicense the library. No reproducible-build equivalence is asserted.
+- The source companion uses an explicitly derived archive, `stdutils-1.14-reviewed.tar.gz`, not an upstream download with a substituted hash. `scripts/prepare-stdutils-source.mjs` validates the original archive, preserves all 90 retained files byte for byte, and omits only `utils/Date.exe`, `utils/Zip.exe`, `StdUtils.aps` and `StdUtils.vcxproj.user`. The original archive remains audit evidence; its hash is recorded separately. Fixed archive metadata makes the reviewed output reproducible. The DLL project does not reference the excluded packaging utilities; upstream `make_pack.bat` cannot be run unchanged without them. Three upstream `.lib` build inputs referenced by the project are retained, not represented as source-rebuilt libraries. See `third_party/installer/stdutils-1.14/stdutils-source-review.json` for every file and hash.
+- Original embedded RHash permissive grant, BLAKE2 CC0 dedication and leading source notices (including NSIS interfaces) are preserved at `third_party/installer/stdutils-1.14/`. These do not replace StdUtils's own LGPL terms.
 
 ### UAC 0.2.4c
 

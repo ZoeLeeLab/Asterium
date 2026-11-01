@@ -1,0 +1,221 @@
+===== Contrib/StdUtils/include/ansi/nsis/api.h (source SHA-256 60d394d869118558efc6d9e1de65f9cdcdeb669c6509a6c8c26a256d34f6d643) =====
+/*
+ * apih
+ * 
+ * This file is a part of NSIS.
+ * 
+ * Copyright (C) 1999-2009 Nullsoft and Contributors
+ * 
+ * Licensed under the zlib/libpng license (the "License");
+ * you may not use this file except in compliance with the License.
+ * 
+ * Licence details can be found in the file COPYING.
+ * 
+ * This software is provided 'as-is', without any express or implied
+ * warranty.
+ */
+
+===== Contrib/StdUtils/include/common/nsis_tchar.h (source SHA-256 378563248ddd77f4a33691527c43b1e4acb3925e1ddd2394fc6ec96d307a173b) =====
+/*
+ * nsis_tchar.h
+ * 
+ * This file is a part of NSIS.
+ * 
+ * Copyright (C) 1999-2007 Nullsoft and Contributors
+ * 
+ * This software is provided 'as-is', without any express or implied
+ * warranty.
+ *
+ * For Unicode support by Jim Park -- 08/30/2007
+ */
+
+===== Contrib/StdUtils/include/unicode/nsis/api.h (source SHA-256 da0b2aa6ad8a9c6570ba63605746c3d832c468972a24417d75c322abe788086c) =====
+/*
+ * apih
+ * 
+ * This file is a part of NSIS.
+ * 
+ * Copyright (C) 1999-2009 Nullsoft and Contributors
+ * 
+ * Licensed under the zlib/libpng license (the "License");
+ * you may not use this file except in compliance with the License.
+ * 
+ * Licence details can be found in the file COPYING.
+ * 
+ * This software is provided 'as-is', without any express or implied
+ * warranty.
+ */
+
+===== Contrib/StdUtils/src/blake2/blake2.cpp (source SHA-256 6944df25988c7d215f4e778f5980eee6e641d8d9cc61323f41e1ebfcdd77c5b3) =====
+/*
+   BLAKE2 reference source code package - reference C implementations
+
+   Written in 2012 by Samuel Neves <sneves@dei.uc.pt>
+
+   To the extent possible under law, the author(s) have dedicated all copyright
+   and related and neighboring rights to this software to the public domain
+   worldwide. This software is distributed without any warranty.
+
+   You should have received a copy of the CC0 Public Domain Dedication along with
+   this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
+*/
+
+===== Contrib/StdUtils/src/blake2/blake2.h (source SHA-256 d1e8a0b550c8e59a17006e3d2ee5e7acbf279fa18473e20e66c557883dc3df3e) =====
+/*
+   BLAKE2 reference source code package - reference C implementations
+
+   Written in 2012 by Samuel Neves <sneves@dei.uc.pt>
+
+   To the extent possible under law, the author(s) have dedicated all copyright
+   and related and neighboring rights to this software to the public domain
+   worldwide. This software is distributed without any warranty.
+
+   You should have received a copy of the CC0 Public Domain Dedication along with
+   this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
+*/
+
+===== Contrib/StdUtils/src/rhash/byte_order.c (source SHA-256 fa8bd02b32e50e7408db0fdc023bbc0fc8c8eafe91e2c42d4e09f854e7d5b05b) =====
+/* byte_order.c - byte order related platform dependent routines,
+ *
+ * Copyright: 2008-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/byte_order.h (source SHA-256 9344d065ddf18c4e3afc69e8d9ec74b6cb43d5e5189ae393a7489968cb3b5d84) =====
+/* byte_order.h */
+
+===== Contrib/StdUtils/src/rhash/crc32.c (source SHA-256 101f9b08f26f13cfc5f6666b7c67a815b848fb9d7c864dfd66b615d6d5e16ac4) =====
+/* crc32.c - an implementation of CRC32 hash function
+ *
+ * Copyright: 2006-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/crc32.h (source SHA-256 1a54a70be03944a2bfc237ee16604babf9b1ae115c41163cc0563cedf818ec4d) =====
+/* crc32.h */
+
+===== Contrib/StdUtils/src/rhash/md5.c (source SHA-256 4d1eb55e5e7dc46c05f02ef1c11a822a939b8d7cea6d13de865dad4ca350c9ea) =====
+/* md5.c - an implementation of the MD5 algorithm, based on RFC 1321.
+ *
+ * Copyright: 2007-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/md5.h (source SHA-256 ca7af3cb1009353d74f06a3bbf39bb1866895a2599b20be093901e016018e21c) =====
+/* md5.h */
+
+===== Contrib/StdUtils/src/rhash/sha1.c (source SHA-256 229067223cebafe90d44765f6454168fef30e8179c215fc32312961b073d8b67) =====
+/* sha1.c - an implementation of Secure Hash Algorithm 1 (SHA1)
+ * based on RFC 3174.
+ *
+ * Copyright: 2008-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha1.h (source SHA-256 0103266f27f19f2d014d80ec01d3d3ad68f67c11d6d0791e0cd527f2ae2e7667) =====
+/* sha1.h */
+
+===== Contrib/StdUtils/src/rhash/sha256.c (source SHA-256 c64bbbc86b4847b47248b84022da8c9ed636c756efb3f639ba589c1e20e0274c) =====
+/* sha256.c - an implementation of SHA-256/224 hash functions
+ * based on FIPS 180-3 (Federal Information Processing Standart).
+ *
+ * Copyright: 2010-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha256.h (source SHA-256 9e054eca10e6afad9f57c6830b30a7670e622d9717aae3fcdd117f8abad21d27) =====
+/* sha.h sha256 and sha224 hash functions */
+
+===== Contrib/StdUtils/src/rhash/sha3.c (source SHA-256 4193073e3813bdb228bca5eb507257b7ddc9cc2e8b05f02b85a08d7cee782474) =====
+/* sha3.c - an implementation of Secure Hash Algorithm 3 (Keccak).
+ * based on the
+ * The Keccak SHA-3 submission. Submission to NIST (Round 3), 2011
+ * by Guido Bertoni, Joan Daemen, Michaël Peeters and Gilles Van Assche
+ *
+ * Copyright: 2013 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha3.h (source SHA-256 c3a8557d847ff8996bb6bcc357debe4a646d0699a531770e39c90f76198217e6) =====
+/* sha3.h */
+
+===== Contrib/StdUtils/src/rhash/sha512.c (source SHA-256 da21d4b8f7a4a1c910222cf366318288a3adaf6558eb38d4d8d8c115ce59e806) =====
+/* sha512.c - an implementation of SHA-384/512 hash functions
+ * based on FIPS 180-3 (Federal Information Processing Standart).
+ *
+ * Copyright: 2010-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha512.h (source SHA-256 049fabc3e58fd340436e435e535160be76aeeaf48019af4a95161bfd4d7b74e8) =====
+/* sha.h sha512 and sha384 hash functions */

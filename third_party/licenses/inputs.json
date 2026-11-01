@@ -3412,12 +3412,15 @@
     },
     {
       "id": "StdUtils 1.14 (PE 1.1.4.0)",
-      "declaredLicense": "LGPL-2.1-or-later with upstream NSIS interface clarification",
+      "declaredLicense": "LGPL-2.1-or-later with upstream NSIS interface clarification; embedded RHash permissive grant, BLAKE2 CC0 and NSIS interface notices retained",
       "inclusionReason": "installer DLL version matched upstream source version; source archive preserved; no reproducible binary claim",
       "noticeFiles": [
         "third_party/installer/stdutils-1.14/LGPL.txt",
         "third_party/installer/stdutils-1.14/LGPL_CLARIFICATION.txt",
-        "third_party/installer/stdutils-1.14/ReadMe.txt"
+        "third_party/installer/stdutils-1.14/ReadMe.txt",
+        "third_party/installer/stdutils-1.14/RHash-COPYING.txt",
+        "third_party/installer/stdutils-1.14/BLAKE2-CC0.txt",
+        "third_party/installer/stdutils-1.14/NESTED-NOTICES.txt"
       ]
     },
     {

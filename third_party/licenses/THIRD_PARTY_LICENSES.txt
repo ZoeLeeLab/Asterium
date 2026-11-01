@@ -4658,6 +4658,233 @@ http://creativecommons.org/publicdomain/zero/1.0/
 
 
 ==============================================================================
+SHA-256: 28c6a09db47ade5e9442376608a61b899a3f13ef728fe46d592dc62409c0c917
+StdUtils 1.14 (PE 1.1.4.0) — third_party/installer/stdutils-1.14/NESTED-NOTICES.txt
+------------------------------------------------------------------------------
+===== Contrib/StdUtils/include/ansi/nsis/api.h (source SHA-256 60d394d869118558efc6d9e1de65f9cdcdeb669c6509a6c8c26a256d34f6d643) =====
+/*
+ * apih
+ * 
+ * This file is a part of NSIS.
+ * 
+ * Copyright (C) 1999-2009 Nullsoft and Contributors
+ * 
+ * Licensed under the zlib/libpng license (the "License");
+ * you may not use this file except in compliance with the License.
+ * 
+ * Licence details can be found in the file COPYING.
+ * 
+ * This software is provided 'as-is', without any express or implied
+ * warranty.
+ */
+
+===== Contrib/StdUtils/include/common/nsis_tchar.h (source SHA-256 378563248ddd77f4a33691527c43b1e4acb3925e1ddd2394fc6ec96d307a173b) =====
+/*
+ * nsis_tchar.h
+ * 
+ * This file is a part of NSIS.
+ * 
+ * Copyright (C) 1999-2007 Nullsoft and Contributors
+ * 
+ * This software is provided 'as-is', without any express or implied
+ * warranty.
+ *
+ * For Unicode support by Jim Park -- 08/30/2007
+ */
+
+===== Contrib/StdUtils/include/unicode/nsis/api.h (source SHA-256 da0b2aa6ad8a9c6570ba63605746c3d832c468972a24417d75c322abe788086c) =====
+/*
+ * apih
+ * 
+ * This file is a part of NSIS.
+ * 
+ * Copyright (C) 1999-2009 Nullsoft and Contributors
+ * 
+ * Licensed under the zlib/libpng license (the "License");
+ * you may not use this file except in compliance with the License.
+ * 
+ * Licence details can be found in the file COPYING.
+ * 
+ * This software is provided 'as-is', without any express or implied
+ * warranty.
+ */
+
+===== Contrib/StdUtils/src/blake2/blake2.cpp (source SHA-256 6944df25988c7d215f4e778f5980eee6e641d8d9cc61323f41e1ebfcdd77c5b3) =====
+/*
+   BLAKE2 reference source code package - reference C implementations
+
+   Written in 2012 by Samuel Neves <sneves@dei.uc.pt>
+
+   To the extent possible under law, the author(s) have dedicated all copyright
+   and related and neighboring rights to this software to the public domain
+   worldwide. This software is distributed without any warranty.
+
+   You should have received a copy of the CC0 Public Domain Dedication along with
+   this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
+*/
+
+===== Contrib/StdUtils/src/blake2/blake2.h (source SHA-256 d1e8a0b550c8e59a17006e3d2ee5e7acbf279fa18473e20e66c557883dc3df3e) =====
+/*
+   BLAKE2 reference source code package - reference C implementations
+
+   Written in 2012 by Samuel Neves <sneves@dei.uc.pt>
+
+   To the extent possible under law, the author(s) have dedicated all copyright
+   and related and neighboring rights to this software to the public domain
+   worldwide. This software is distributed without any warranty.
+
+   You should have received a copy of the CC0 Public Domain Dedication along with
+   this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
+*/
+
+===== Contrib/StdUtils/src/rhash/byte_order.c (source SHA-256 fa8bd02b32e50e7408db0fdc023bbc0fc8c8eafe91e2c42d4e09f854e7d5b05b) =====
+/* byte_order.c - byte order related platform dependent routines,
+ *
+ * Copyright: 2008-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/byte_order.h (source SHA-256 9344d065ddf18c4e3afc69e8d9ec74b6cb43d5e5189ae393a7489968cb3b5d84) =====
+/* byte_order.h */
+
+===== Contrib/StdUtils/src/rhash/crc32.c (source SHA-256 101f9b08f26f13cfc5f6666b7c67a815b848fb9d7c864dfd66b615d6d5e16ac4) =====
+/* crc32.c - an implementation of CRC32 hash function
+ *
+ * Copyright: 2006-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/crc32.h (source SHA-256 1a54a70be03944a2bfc237ee16604babf9b1ae115c41163cc0563cedf818ec4d) =====
+/* crc32.h */
+
+===== Contrib/StdUtils/src/rhash/md5.c (source SHA-256 4d1eb55e5e7dc46c05f02ef1c11a822a939b8d7cea6d13de865dad4ca350c9ea) =====
+/* md5.c - an implementation of the MD5 algorithm, based on RFC 1321.
+ *
+ * Copyright: 2007-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/md5.h (source SHA-256 ca7af3cb1009353d74f06a3bbf39bb1866895a2599b20be093901e016018e21c) =====
+/* md5.h */
+
+===== Contrib/StdUtils/src/rhash/sha1.c (source SHA-256 229067223cebafe90d44765f6454168fef30e8179c215fc32312961b073d8b67) =====
+/* sha1.c - an implementation of Secure Hash Algorithm 1 (SHA1)
+ * based on RFC 3174.
+ *
+ * Copyright: 2008-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha1.h (source SHA-256 0103266f27f19f2d014d80ec01d3d3ad68f67c11d6d0791e0cd527f2ae2e7667) =====
+/* sha1.h */
+
+===== Contrib/StdUtils/src/rhash/sha256.c (source SHA-256 c64bbbc86b4847b47248b84022da8c9ed636c756efb3f639ba589c1e20e0274c) =====
+/* sha256.c - an implementation of SHA-256/224 hash functions
+ * based on FIPS 180-3 (Federal Information Processing Standart).
+ *
+ * Copyright: 2010-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha256.h (source SHA-256 9e054eca10e6afad9f57c6830b30a7670e622d9717aae3fcdd117f8abad21d27) =====
+/* sha.h sha256 and sha224 hash functions */
+
+===== Contrib/StdUtils/src/rhash/sha3.c (source SHA-256 4193073e3813bdb228bca5eb507257b7ddc9cc2e8b05f02b85a08d7cee782474) =====
+/* sha3.c - an implementation of Secure Hash Algorithm 3 (Keccak).
+ * based on the
+ * The Keccak SHA-3 submission. Submission to NIST (Round 3), 2011
+ * by Guido Bertoni, Joan Daemen, Michaël Peeters and Gilles Van Assche
+ *
+ * Copyright: 2013 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha3.h (source SHA-256 c3a8557d847ff8996bb6bcc357debe4a646d0699a531770e39c90f76198217e6) =====
+/* sha3.h */
+
+===== Contrib/StdUtils/src/rhash/sha512.c (source SHA-256 da21d4b8f7a4a1c910222cf366318288a3adaf6558eb38d4d8d8c115ce59e806) =====
+/* sha512.c - an implementation of SHA-384/512 hash functions
+ * based on FIPS 180-3 (Federal Information Processing Standart).
+ *
+ * Copyright: 2010-2012 Aleksey Kravchenko <rhash.admin@gmail.com>
+ *
+ * Permission is hereby granted,  free of charge,  to any person  obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction,  including without limitation
+ * the rights to  use, copy, modify,  merge, publish, distribute, sublicense,
+ * and/or sell copies  of  the Software,  and to permit  persons  to whom the
+ * Software is furnished to do so.
+ *
+ * This program  is  distributed  in  the  hope  that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  Use this program  at  your own risk!
+ */
+
+===== Contrib/StdUtils/src/rhash/sha512.h (source SHA-256 049fabc3e58fd340436e435e535160be76aeeaf48019af4a95161bfd4d7b74e8) =====
+/* sha.h sha512 and sha384 hash functions */
+
+
+==============================================================================
 SHA-256: 2a6d2d5f32ba0b755ddbc1c833f766e30cdbe6ebe9a6d4e3e24427721f0b63d3
 d3-format@3.1.2 — node_modules/d3-format/LICENSE
 ------------------------------------------------------------------------------
@@ -15998,6 +16225,27 @@ THE SOFTWARE.
 
 
 ==============================================================================
+SHA-256: 8cf876d3406a2eed6c17ae804c8958bd78d3a0f63c30d6e2e789ab575e9fde40
+StdUtils 1.14 (PE 1.1.4.0) — third_party/installer/stdutils-1.14/RHash-COPYING.txt
+------------------------------------------------------------------------------
+
+                                RHash License
+
+Copyright (c) 2005-2014 Aleksey Kravchenko <rhash.admin@gmail.com>
+
+Permission is hereby granted, free of charge,  to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction,  including without limitation the rights
+to  use,  copy,  modify,  merge, publish, distribute, sublicense, and/or sell
+copies  of  the Software,  and  to permit  persons  to whom  the Software  is
+furnished to do so.
+
+The Software  is distributed in the hope that it will be useful,  but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  Use  this  program  at  your  own  risk!
+
+
+==============================================================================
 SHA-256: 8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c
 marked@16.4.2 — node_modules/marked/LICENSE.md
 ------------------------------------------------------------------------------
@@ -16743,6 +16991,133 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
 OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
+
+
+==============================================================================
+SHA-256: a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499
+StdUtils 1.14 (PE 1.1.4.0) — third_party/installer/stdutils-1.14/BLAKE2-CC0.txt
+------------------------------------------------------------------------------
+Creative Commons Legal Code
+
+CC0 1.0 Universal
+
+    CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE
+    LEGAL SERVICES. DISTRIBUTION OF THIS DOCUMENT DOES NOT CREATE AN
+    ATTORNEY-CLIENT RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS
+    INFORMATION ON AN "AS-IS" BASIS. CREATIVE COMMONS MAKES NO WARRANTIES
+    REGARDING THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS
+    PROVIDED HEREUNDER, AND DISCLAIMS LIABILITY FOR DAMAGES RESULTING FROM
+    THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED
+    HEREUNDER.
+
+Statement of Purpose
+
+The laws of most jurisdictions throughout the world automatically confer
+exclusive Copyright and Related Rights (defined below) upon the creator
+and subsequent owner(s) (each and all, an "owner") of an original work of
+authorship and/or a database (each, a "Work").
+
+Certain owners wish to permanently relinquish those rights to a Work for
+the purpose of contributing to a commons of creative, cultural and
+scientific works ("Commons") that the public can reliably and without fear
+of later claims of infringement build upon, modify, incorporate in other
+works, reuse and redistribute as freely as possible in any form whatsoever
+and for any purposes, including without limitation commercial purposes.
+These owners may contribute to the Commons to promote the ideal of a free
+culture and the further production of creative, cultural and scientific
+works, or to gain reputation or greater distribution for their Work in
+part through the use and efforts of others.
+
+For these and/or other purposes and motivations, and without any
+expectation of additional consideration or compensation, the person
+associating CC0 with a Work (the "Affirmer"), to the extent that he or she
+is an owner of Copyright and Related Rights in the Work, voluntarily
+elects to apply CC0 to the Work and publicly distribute the Work under its
+terms, with knowledge of his or her Copyright and Related Rights in the
+Work and the meaning and intended legal effect of CC0 on those rights.
+
+1. Copyright and Related Rights. A Work made available under CC0 may be
+protected by copyright and related or neighboring rights ("Copyright and
+Related Rights"). Copyright and Related Rights include, but are not
+limited to, the following:
+
+  i. the right to reproduce, adapt, distribute, perform, display,
+     communicate, and translate a Work;
+ ii. moral rights retained by the original author(s) and/or performer(s);
+iii. publicity and privacy rights pertaining to a person's image or
+     likeness depicted in a Work;
+ iv. rights protecting against unfair competition in regards to a Work,
+     subject to the limitations in paragraph 4(a), below;
+  v. rights protecting the extraction, dissemination, use and reuse of data
+     in a Work;
+ vi. database rights (such as those arising under Directive 96/9/EC of the
+     European Parliament and of the Council of 11 March 1996 on the legal
+     protection of databases, and under any national implementation
+     thereof, including any amended or successor version of such
+     directive); and
+vii. other similar, equivalent or corresponding rights throughout the
+     world based on applicable law or treaty, and any national
+     implementations thereof.
+
+2. Waiver. To the greatest extent permitted by, but not in contravention
+of, applicable law, Affirmer hereby overtly, fully, permanently,
+irrevocably and unconditionally waives, abandons, and surrenders all of
+Affirmer's Copyright and Related Rights and associated claims and causes
+of action, whether now known or unknown (including existing as well as
+future claims and causes of action), in the Work (i) in all territories
+worldwide, (ii) for the maximum duration provided by applicable law or
+treaty (including future time extensions), (iii) in any current or future
+medium and for any number of copies, and (iv) for any purpose whatsoever,
+including without limitation commercial, advertising or promotional
+purposes (the "Waiver"). Affirmer makes the Waiver for the benefit of each
+member of the public at large and to the detriment of Affirmer's heirs and
+successors, fully intending that such Waiver shall not be subject to
+revocation, rescission, cancellation, termination, or any other legal or
+equitable action to disrupt the quiet enjoyment of the Work by the public
+as contemplated by Affirmer's express Statement of Purpose.
+
+3. Public License Fallback. Should any part of the Waiver for any reason
+be judged legally invalid or ineffective under applicable law, then the
+Waiver shall be preserved to the maximum extent permitted taking into
+account Affirmer's express Statement of Purpose. In addition, to the
+extent the Waiver is so judged Affirmer hereby grants to each affected
+person a royalty-free, non transferable, non sublicensable, non exclusive,
+irrevocable and unconditional license to exercise Affirmer's Copyright and
+Related Rights in the Work (i) in all territories worldwide, (ii) for the
+maximum duration provided by applicable law or treaty (including future
+time extensions), (iii) in any current or future medium and for any number
+of copies, and (iv) for any purpose whatsoever, including without
+limitation commercial, advertising or promotional purposes (the
+"License"). The License shall be deemed effective as of the date CC0 was
+applied by Affirmer to the Work. Should any part of the License for any
+reason be judged legally invalid or ineffective under applicable law, such
+partial invalidity or ineffectiveness shall not invalidate the remainder
+of the License, and in such case Affirmer hereby affirms that he or she
+will not (i) exercise any of his or her remaining Copyright and Related
+Rights in the Work or (ii) assert any associated claims and causes of
+action with respect to the Work, in either case contrary to Affirmer's
+express Statement of Purpose.
+
+4. Limitations and Disclaimers.
+
+ a. No trademark or patent rights held by Affirmer are waived, abandoned,
+    surrendered, licensed or otherwise affected by this document.
+ b. Affirmer offers the Work as-is and makes no representations or
+    warranties of any kind concerning the Work, express, implied,
+    statutory or otherwise, including without limitation warranties of
+    title, merchantability, fitness for a particular purpose, non
+    infringement, or the absence of latent or other defects, accuracy, or
+    the present or absence of errors, whether or not discoverable, all to
+    the greatest extent permissible under applicable law.
+ c. Affirmer disclaims responsibility for clearing rights of other persons
+    that may apply to the Work or any use thereof, including without
+    limitation any person's Copyright and Related Rights in the Work.
+    Further, Affirmer disclaims responsibility for obtaining any necessary
+    consents, permissions or other rights required for any use of the
+    Work.
+ d. Affirmer understands and acknowledges that Creative Commons is not a
+    party to this document and has no duty or obligation with respect to
+    this CC0 or use of the Work.
 
 
 ==============================================================================
