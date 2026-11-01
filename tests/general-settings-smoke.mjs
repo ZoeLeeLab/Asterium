@@ -41,8 +41,13 @@ try {
   await page.getByRole('navigation', { name: '设置菜单' }).getByRole('button', { name: '关于', exact: true }).click();
   await page.getByRole('heading', { name: '星丛 Asterium', exact: true }).waitFor();
   assert.equal(await page.getByRole('status').textContent(), '更新源待配置');
-  assert.equal(await page.getByRole('checkbox', { name: /启动时自动检查更新/ }).isDisabled(), true);
-  assert.equal(await page.evaluate(async () => (await globalThis.asteriumUpdates.get()).configured), false);
+  await page.waitForFunction(async () => (await globalThis.asteriumUpdates.get()).configured === true);
+  assert.equal(await page.getByRole('checkbox', { name: /启动时自动检查更新/ }).isDisabled(), false);
+  assert.equal(await page.evaluate(async () => (await globalThis.asteriumUpdates.get()).repository), 'ZoeLeeLab/Asterium');
+  assert.equal(await page.getByRole('button', { name: 'ZoeLeeLab/Asterium', exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: '更新历史', exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole('button', { name: '下载新版本', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: '退出并安装', exact: true }).count(), 0);
   await page.screenshot({ path: path.join(evidence, 'about.png') });
   await page.getByRole('navigation', { name: '设置菜单' }).getByRole('button', { name: '通用', exact: true }).click();
   await shortcut.selectOption('ctrl_enter');
@@ -87,7 +92,7 @@ try {
   const closed = app.waitForEvent('close');
   await app.evaluate(({ BrowserWindow }) => { setTimeout(() => BrowserWindow.getAllWindows()[0].close(), 50); });
   await closed; app = undefined;
-  const result = { status: 'passed', syntheticFixtureSha256: createHash('sha256').update(code).digest('hex'), realModelCalled: false, realAccountUsed: false, cases: ['general-menu', 'save-reload', 'about-and-unconfigured-updates', 'single-chat-keyboard', 'studio-keyboard', 'tray-retains-window', 'second-instance-restores', 'explicit-close-exits'], manual: ['Windows login autostart', 'OS notification policies'] };
+  const result = { status: 'passed', syntheticFixtureSha256: createHash('sha256').update(code).digest('hex'), realModelCalled: false, realAccountUsed: false, cases: ['general-menu', 'save-reload', 'about-and-configured-public-updates', 'single-chat-keyboard', 'studio-keyboard', 'tray-retains-window', 'second-instance-restores', 'explicit-close-exits'], manual: ['Windows login autostart', 'OS notification policies', 'real update download and upgrade after a published release exists'] };
   await writeFile(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 } finally {
