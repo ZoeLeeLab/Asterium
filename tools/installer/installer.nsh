@@ -1,5 +1,8 @@
-!include "nsDialogs.nsh"
+﻿!include "nsDialogs.nsh"
 !include "LogicLib.nsh"
+
+; Keep the executable named Asterium.exe, but isolate the Beta install folder.
+!define /redef APP_FILENAME "Asterium Beta"
 
 !define ASTERIUM_BETA_SETTINGS_KEY "Software\Asterium\Beta"
 !define ASTERIUM_BETA_LINK "Asterium Beta.lnk"
