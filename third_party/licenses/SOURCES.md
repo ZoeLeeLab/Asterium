@@ -86,7 +86,7 @@ The npm package declares MIT but omits the license file. The matching source rev
 
 ## Still unresolved
 
-1. Claude Agent SDK redistribution terms and this product's exact native CLI / SDK authentication use case. Its vendor terms are retained; no MPL relicensing or third-party subscription OAuth permission is asserted.
+1. Native Claude Code use remains subject to its vendor's terms. The npm Agent SDK is removed from the current dependency and package roots; prior SDK candidate records remain historical. This change does not grant a new subscription OAuth permission or relicense Claude Code.
 2. The exact preferred-source correspondence for ELK's compiled Java/GWT algorithm code, beyond the verified npm wrapper source.
 3. WinShell's explicit redistribution/source terms, and the nsis7z plugin LGPL version/scope clarification. UAC's original license and matching binary have been identified; StdUtils's version, source and original clarification have been identified. Stock NSIS COPYING is not substituted for these separate terms.
 4. Complete closure of code/data already embedded inside upstream bundles; this inventory is a conservative dependency closure, not proof of a complete binary SBOM.

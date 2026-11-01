@@ -381,7 +381,7 @@ try {
       windowVisible,
       title,
       url,
-      claudeSdkLoaded: true,
+      claudeCliRuntimeLoaded: true,
       memoryFallbackBridgeVerified: true,
       diaryBridgeVerified: true,
       claudeConversationEntered: true,

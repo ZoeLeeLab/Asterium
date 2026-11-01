@@ -8,7 +8,7 @@ import appIcon from '../../assets/asterium-icon.png?inline';
 import path from 'node:path';
 import { registerTitlebarThemeChannel, installAppearanceRecovery } from './titlebar';
 import { registerAgentIpc } from './agentIpc';
-import { loadClaudeAgentSdk } from './adapters/ClaudeCodeAdapter';
+import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
 import { normalizeExternalHttpUrl } from './security/externalUrl';
 
 let mainWindow: BrowserWindow | null = null;
@@ -112,10 +112,11 @@ app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId('Asterium');
   try { await generalSettings.get(); } catch { console.error('GENERAL_SETTINGS_LOAD_FAILED'); }
   if (process.env.ASTERIUM_STARTUP_SMOKE === '1') {
-    const sdk = await loadClaudeAgentSdk();
-    if (typeof sdk.query !== 'function' || typeof sdk.createSdkMcpServer !== 'function' || typeof sdk.tool !== 'function') {
-      throw new Error('CLAUDE_AGENT_SDK_RUNTIME_INCOMPLETE');
+    const runtime = await loadClaudeCliRuntime();
+    if (typeof runtime.query !== 'function' || typeof runtime.createClaudeToolSet !== 'function' || typeof runtime.tool !== 'function') {
+      throw new Error('CLAUDE_CLI_RUNTIME_INCOMPLETE');
     }
+    await runtime.verifyClaudeBridgeResources();
   }
   createWindow();
 

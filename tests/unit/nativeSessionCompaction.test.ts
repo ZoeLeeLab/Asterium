@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from '../../src/main/adapters/ClaudeCliTransport';
 import { CodexCliAdapter } from '../../src/main/adapters/CodexCliAdapter';
 import { ClaudeCodeAdapter } from '../../src/main/adapters/ClaudeCodeAdapter';
 import type { CodexAppServerTransport, CodexRpcMessage } from '../../src/main/adapters/codexAppServerProtocol';
 
 const sdk = vi.hoisted(() => ({ query: vi.fn() }));
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: sdk.query }));
+vi.mock('../../src/main/adapters/ClaudeCliTransport', () => ({ query: sdk.query }));
 class Transport implements CodexAppServerTransport {
   connected = true;
   listeners = new Set<(event: CodexRpcMessage) => void>();

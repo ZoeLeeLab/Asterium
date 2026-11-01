@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { expect, it, vi } from 'vitest';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from '../../src/main/adapters/ClaudeCliTransport';
 import { CodexCliAdapter } from '../../src/main/adapters/CodexCliAdapter';
 import { ClaudeCodeAdapter } from '../../src/main/adapters/ClaudeCodeAdapter';
 import type { CodexAppServerTransport, CodexRpcMessage } from '../../src/main/adapters/codexAppServerProtocol';
 const sdk = vi.hoisted(() => ({ query: vi.fn() }));
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: sdk.query }));
+vi.mock('../../src/main/adapters/ClaudeCliTransport', () => ({ query: sdk.query }));
 const bootstrap = { version: 1 as const, content: '新版本完整资料', developerContent: '带资料边界的新版本', createdAt: '', timeZone: '' };
 
 it('bounds Codex compensation even when starting the transport hangs', async () => {

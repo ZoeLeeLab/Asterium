@@ -16,7 +16,7 @@ import type { SendMessageCommand } from '../../src/shared/agentProtocol';
 import type { SessionCommandRequest } from '../../src/shared/sessionCommands';
 
 const sdk = vi.hoisted(() => ({ query: vi.fn() }));
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: sdk.query }));
+vi.mock('../../src/main/adapters/ClaudeCliTransport', () => ({ query: sdk.query }));
 const roots: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 const request: SessionCommandRequest = { commandId: 'reload', command: 'reload-user', partnerId: 'p', conversationId: 'c', sessionId: 's', source: 'local_cli' };

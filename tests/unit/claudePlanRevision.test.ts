@@ -3,13 +3,13 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, PermissionResult } from '../../src/main/adapters/ClaudeCliTransport';
 import { ClaudeCodeAdapter } from '../../src/main/adapters/ClaudeCodeAdapter';
 import { PLAN_EXECUTION_START, PLAN_EXECUTION_STOP } from '../../src/main/adapters/planExecutionDecision';
 import { AGENT_PROTOCOL_VERSION, type PartnerEvent, type ResolveUserInputCommand } from '../../src/shared/agentProtocol';
 
 const sdk = vi.hoisted(() => ({ query: vi.fn() }));
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: sdk.query, tool: vi.fn(), createSdkMcpServer: vi.fn() }));
+vi.mock('../../src/main/adapters/ClaudeCliTransport', () => ({ query: sdk.query, tool: vi.fn(), createClaudeToolSet: vi.fn() }));
 const roots: string[] = [], adapters: ClaudeCodeAdapter[] = [];
 afterEach(async () => {
   await Promise.all(adapters.splice(0).map((adapter) => adapter.dispose()));
@@ -22,7 +22,7 @@ afterEach(async () => {
   sdk.query.mockReset();
 });
 
-describe('Claude SDK question and Plan feedback bridge', () => {
+describe('Claude CLI question and Plan feedback bridge', () => {
   it.each(['stop', 'execute'] as const)('returns custom answers to native questions, revises without interrupting, then handles explicit %s', async (ending) => {
     const results: PermissionResult[] = []; let options!: Options;
     sdk.query.mockImplementation((params: { options: Options }) => {

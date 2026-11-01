@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process';
 
 const packagedRuntimeRoots = [
   '/.vite',
-  '/node_modules/@anthropic-ai/claude-agent-sdk',
 ];
 
 function keepPackagedRuntimePath(file: string) {
@@ -18,14 +17,14 @@ const config: ForgeConfig = {
     icon: 'assets/asterium.ico',
     asar: true,
     prune: false,
-    extraResource: ['src/main/adapters/deliverFileMcp.cjs', 'third_party/mousecrew', 'third_party/mcp-client', 'third_party/yaml', 'third_party/licenses', 'THIRD_PARTY_NOTICES.md', '.sandbox-build/sandbox'],
+    extraResource: ['src/main/adapters/deliverFileMcp.cjs', 'third_party/mousecrew', 'third_party/mcp-client', 'third_party/yaml', 'third_party/licenses', '.sandbox-build/claude-bridge', 'THIRD_PARTY_NOTICES.md', '.sandbox-build/sandbox'],
     ignore: (file) => !keepPackagedRuntimePath(file),
   },
   rebuildConfig: {},
   makers: [],
   hooks: {
-    preStart: async () => { execFileSync(process.execPath, ['scripts/build-windows-sandbox.mjs'], { stdio: 'inherit', windowsHide: true }); },
-    prePackage: async () => { execFileSync(process.execPath, ['scripts/build-windows-sandbox.mjs'], { stdio: 'inherit', windowsHide: true }); },
+    preStart: async () => { execFileSync(process.execPath, ['scripts/build-windows-sandbox.mjs'], { stdio: 'inherit', windowsHide: true }); execFileSync(process.execPath, ['scripts/build-claude-bridge.mjs'], { stdio: 'inherit', windowsHide: true }); },
+    prePackage: async () => { execFileSync(process.execPath, ['scripts/build-windows-sandbox.mjs'], { stdio: 'inherit', windowsHide: true }); execFileSync(process.execPath, ['scripts/build-claude-bridge.mjs'], { stdio: 'inherit', windowsHide: true }); },
   },
   plugins: [
     new VitePlugin({

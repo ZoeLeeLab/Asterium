@@ -18,7 +18,7 @@ export async function generateApiDiary(adapter: ApiProviderAdapter, source: stri
   return content;
 }
 export interface NativeDiaryInput { executablePath: string; cwd: string; source: string; bootstrap: string; signal: AbortSignal; model?: string; }
-export async function generateClaudeDiary(input: NativeDiaryInput, query: typeof import('@anthropic-ai/claude-agent-sdk').query) {
+export async function generateClaudeDiary(input: NativeDiaryInput, query: typeof import('../adapters/ClaudeCliTransport').query) {
   const controller = new AbortController(); const abort = () => controller.abort(); input.signal.addEventListener('abort', abort, { once: true });
   if (input.signal.aborted) controller.abort();
   const stream = query({ prompt: input.source, options: {

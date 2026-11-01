@@ -6,7 +6,7 @@ import os from 'node:os';
 import readline from 'node:readline';
 import { promisify } from 'node:util';
 import { app } from 'electron';
-import type { PermissionResult, Query } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionResult, Query } from './ClaudeCliTransport';
 import { z } from 'zod';
 import { AUTOMATION_TOOL_DESCRIPTION, automationToolSchema } from '../../shared/automationTool';
 import type { AsteriumRuntimeToolController, AttachmentPathResolver, PartnerAdapter } from './PartnerAdapter';
@@ -32,7 +32,7 @@ import { abortable } from '../api/abortable';
 import { assertUserInputResolution, userInputOwner, type UserInputOwner } from '../runtime/UserInputResolution';
 import type { UserInputQuestion, UserInputResponse } from '../../shared/agentProtocol';
 import { DELIVERY_INSTRUCTION, DELIVERY_TOOL_DESCRIPTION } from './deliveryInstructions';
-import { pathsOverlap, textReferencesProtectedRoot } from '../security/ProtectedPathPolicy';
+import { assertCanonicalPathOutsideProtectedRoots, pathsOverlap, textReferencesProtectedRoot } from '../security/ProtectedPathPolicy';
 import {
   AGENT_PROTOCOL_VERSION,
   type CancelRunCommand,
@@ -47,11 +47,11 @@ import {
 } from '../../shared/agentProtocol';
 
 const execFileAsync = promisify(execFile);
-let claudeSdkPromise: Promise<typeof import('@anthropic-ai/claude-agent-sdk')> | undefined;
+let claudeCliPromise: Promise<typeof import('./ClaudeCliTransport')> | undefined;
 
-export function loadClaudeAgentSdk() {
-  claudeSdkPromise ??= import('@anthropic-ai/claude-agent-sdk');
-  return claudeSdkPromise;
+export function loadClaudeCliRuntime() {
+  claudeCliPromise ??= import('./ClaudeCliTransport');
+  return claudeCliPromise;
 }
 
 export interface ClaudeInstallation extends ClaudeDetectionResult {
@@ -162,8 +162,8 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
     compaction: true,
     extensions: [] as const,
   };
-  private readonly active = new Map<string, { kind: 'legacy'; child: ChildProcessWithoutNullStreams; cancelled: boolean } | { kind: 'sdk'; query: Query; abortController: AbortController; cancelled: boolean }>();
-  private readonly pendingApprovals = new Map<string, { runId: string; input: Record<string, unknown>; resolve: (result: PermissionResult) => void; emit: (event: ClaudeMappedEvent) => void }>();
+  private readonly active = new Map<string, { kind: 'legacy'; child: ChildProcessWithoutNullStreams; cancelled: boolean } | { kind: 'cli'; query: Query; abortController: AbortController; cancelled: boolean }>();
+  private readonly pendingApprovals = new Map<string, { runId: string; owner: UserInputOwner; input: Record<string, unknown>; resolve: (result: PermissionResult) => void; emit: (event: ClaudeMappedEvent) => void }>();
   private readonly pendingUserInputs = new Map<string, { runId: string; owner: UserInputOwner; questions: UserInputQuestion[]; kind: 'question' | 'plan_execution'; resolve: (response: UserInputResponse) => void; emit: (event: ClaudeMappedEvent) => void }>();
   private readonly journal = new Map<string, PartnerEvent[]>();
   private eventCounter = 0;
@@ -195,7 +195,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
   async *sendMessage(command: SendMessageCommand): AsyncIterable<PartnerEvent> {
     this.updateRuntimeContext(command);
     if (this.spawnClaude === defaultSpawnClaude) {
-      yield* this.sendMessageSdk(command);
+      yield* this.sendMessageCli(command);
       return;
     }
     yield* this.sendMessageLegacy(command);
@@ -305,8 +305,8 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
     }
   }
 
-  private async *sendMessageSdk(command: SendMessageCommand): AsyncIterable<PartnerEvent> {
-    const { createSdkMcpServer, query, tool } = await loadClaudeAgentSdk();
+  private async *sendMessageCli(command: SendMessageCommand): AsyncIterable<PartnerEvent> {
+    const { createClaudeToolSet, query, tool } = await loadClaudeCliRuntime();
     const sessionId = command.sessionId ?? randomUUID();
     const routeKey = journalKey(command.partnerId, command.conversationId, sessionId);
     const runId = randomUUID();
@@ -372,7 +372,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
         memory_id: z.string(), type: z.enum(['self_summary', 'relationship_with_user', 'stable_fact', 'long_term_project', 'recurring_behavior_pattern', 'preference_and_collaboration', 'open_question_and_follow_up']).optional(), status: z.enum(['active', 'completed', 'obsolete', 'superseded']).optional(), body: z.string().optional(), tags: z.array(z.string()).optional(), weight: z.number().int().min(1).max(5).optional(), occurred_at: z.string().nullable().optional(), superseded_by_memory_id: z.string().nullable().optional(),
       }, async (input) => runtimeMemoryResult(() => runtimeTools.memory!.update!(parseUpdateMemoryInput(input as Record<string, unknown>)))),
     ] : [];
-    const asteriumServer = runtimeTools ? createSdkMcpServer({
+    const asteriumServer = runtimeTools ? createClaudeToolSet({
       name: 'asterium',
       version: '1.0.0',
       instructions: command.sessionBootstrapVersion ? undefined : runtimeToolInstructions(Boolean(runtimeTools.mentionPartner), Boolean(runtimeTools.task), Boolean(runtimeTools.workflowDraft), runtimeTools.memory?.access ?? 'none', Boolean(runtimeTools.projectNotebook)),
@@ -478,7 +478,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
       ],
       alwaysLoad: true,
     }) : undefined;
-    const sdkQuery = query({
+    const cliQuery = query({
       prompt: `${command.content.text}${attachmentPrompt(resolvedAttachments)}`,
       options: {
         abortController,
@@ -495,8 +495,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
           snapshot: true,
         },
         includePartialMessages: true,
-        // `canUseTool` already selects the SDK's host approval bridge. Do not
-        // emit the newer --permission-prompts flag against an older local CLI.
+        // The stdio permission host applies Asterium's policy to explicit asks.
         allowedTools: asteriumServer
           ? claudeAsteriumAllowedTools(runtimeTools!)
           : ['mcp__asterium_delivery__deliver_file'],
@@ -537,6 +536,12 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
             || (options.blockedPath && claudeInputReferencesProtected(options.blockedPath, this.workingDirectory, this.protectedRoots))) {
             return { behavior: 'deny', message: '这是星丛受保护的资料目录，只能通过星丛的受限资料服务访问。' };
           }
+          for (const key of ['file_path', 'path', 'notebook_path']) {
+            const value = input[key];
+            if (typeof value !== 'string' || !value.trim()) continue;
+            try { await assertCanonicalPathOutsideProtectedRoots(path.resolve(this.workingDirectory, value), this.protectedRoots); }
+            catch { return { behavior: 'deny', message: '这是星丛受保护的资料目录，只能通过星丛的受限资料服务访问。' }; }
+          }
           if (toolName === 'mcp__asterium__asterium_status') return claudeApprovalAllow(input);
           if (toolName === 'mcp__asterium__asterium_automation') return claudeApprovalAllow(input); // Main separately confirms every mutation.
           if (toolName === 'mcp__asterium__mention_partner') return claudeApprovalAllow(input);
@@ -547,7 +552,11 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
           if (permissionMode === 'read_only' && isReadOnlyMutation(toolName, input)) return { behavior: 'deny', message: '当前会话处于只读模式，本次操作未执行，没有产生任何修改。' };
           if (/^Read$/i.test(toolName)) {
             const target = await claudeCanonicalFileTarget(toolName, input, this.workingDirectory);
-            if (target && externalReadableFiles.has(pathKey(target))) return claudeApprovalAllow(input);
+            if (target && (externalReadableFiles.has(pathKey(target)) || runtimeRoots.some(root => containsLocalPath(root, target)))) return claudeApprovalAllow(input);
+          }
+          if (/^(Glob|Grep)$/i.test(toolName)) {
+            const target = await canonicalPath(path.resolve(this.workingDirectory, typeof input.path === 'string' ? input.path : '.'));
+            if (runtimeRoots.some(root => containsLocalPath(root, target))) return claudeApprovalAllow(input);
           }
           if (toolName === 'AskUserQuestion') {
             const questions = claudeQuestions(input);
@@ -585,7 +594,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
             queueMicrotask(() => abortController.abort());
             return { behavior: 'deny', message: '用户选择暂不执行计划。', interrupt: true };
           }
-          // Keep the SDK callback active in full mode so Asterium's question
+          // Keep the host callback active in full mode so Asterium's question
           // bridge and protected-root checks still run. Ordinary tools are
           // approved here without showing an authorization card.
           if (permissionMode === 'full') return claudeApprovalAllow(input);
@@ -600,17 +609,17 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
               ? { purpose: input.action === 'add' ? 'workspace_add' as const : 'workspace_remove' as const }
               : {}),
           });
-          return new Promise<PermissionResult>((resolve) => this.pendingApprovals.set(authorizationId, { runId, input, resolve, emit: (event) => queue.push(event) }));
+          return new Promise<PermissionResult>((resolve) => this.pendingApprovals.set(authorizationId, { runId, owner: userInputOwner(command, runId, sessionId), input, resolve, emit: (event) => queue.push(event) }));
         },
       },
     });
-    this.active.set(runId, { kind: 'sdk', query: sdkQuery, abortController, cancelled: false });
+    this.active.set(runId, { kind: 'cli', query: cliQuery, abortController, cancelled: false });
     yield remember(wrap({ type: 'session.bound', isNew: !command.sessionId }));
     if (command.execution?.planMode === 'plan') yield remember(wrap({ type: 'plan.updated', status: 'planning', explanation: 'Claude Code 原生 Plan 模式已开启；规划期间不会修改文件。' }));
 
     void (async () => {
       try {
-        for await (const message of sdkQuery) {
+        for await (const message of cliQuery) {
           if (planDeclined) continue;
           for (const event of parser.parseLine(JSON.stringify(message))) queue.push(event);
         }
@@ -629,12 +638,12 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
       if (!terminal && active?.cancelled) yield remember(wrap({ type: 'run.cancelled', reason: '已由用户停止' }));
       else if (!terminal) yield remember(wrap({ type: 'run.failed', error: { code: 'CLAUDE_RESULT_MISSING', message: 'Claude Code 已结束，但没有返回完成结果。', stage: 'adapter', retryable: true } }));
     } catch (error) {
-      if (!terminal) yield remember(wrap({ type: 'run.failed', error: { code: 'CLAUDE_SDK_FAILED', message: 'Claude Code 连接中断。', stage: 'transport', retryable: true, technicalDetail: error instanceof Error ? error.message.slice(0, 500) : undefined } }));
+      if (!terminal) yield remember(wrap({ type: 'run.failed', error: { code: 'CLAUDE_CLI_FAILED', message: 'Claude Code 连接中断。', stage: 'transport', retryable: true, technicalDetail: error instanceof Error ? error.message.slice(0, 500) : undefined } }));
     } finally {
       this.active.delete(runId);
       for (const [id, pending] of this.pendingApprovals) if (pending.runId === runId) this.pendingApprovals.delete(id);
       for (const [id, pending] of this.pendingUserInputs) if (pending.runId === runId) this.pendingUserInputs.delete(id);
-      sdkQuery.close();
+      cliQuery.close();
     }
   }
 
@@ -648,7 +657,9 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
 
   async resolveAuthorization(command: ResolveAuthorizationCommand) {
     const pending = this.pendingApprovals.get(command.authorizationId);
-    if (!pending) throw new Error('CLAUDE_AUTHORIZATION_NOT_FOUND');
+    if (!pending || this.active.get(pending.runId)?.cancelled) throw new Error('CLAUDE_AUTHORIZATION_NOT_FOUND');
+    try { assertUserInputResolution({ ...command, type: 'user_input.resolve', requestId: command.authorizationId, answers: {} }, pending.owner, []); }
+    catch { throw new Error('CLAUDE_AUTHORIZATION_ROUTE_MISMATCH'); }
     this.pendingApprovals.delete(command.authorizationId);
     pending.emit({ type: 'authorization.resolved', authorizationId: command.authorizationId, decision: command.decision });
     pending.emit({ type: 'work.status', state: 'working', summary: command.decision === 'allow_once' ? '授权已确认，Claude Code 继续工作…' : '已拒绝授权，Claude Code 正在调整…' });
@@ -677,7 +688,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
     const active = this.active.get(command.runId);
     if (!active || active.cancelled) return;
     active.cancelled = true;
-    if (active.kind === 'sdk') active.abortController.abort();
+    if (active.kind === 'cli') active.abortController.abort();
     else await this.stopClaude(active.child);
     for (const [id, pending] of this.pendingApprovals) if (pending.runId === command.runId) {
       this.pendingApprovals.delete(id);
@@ -692,7 +703,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
   async reloadProfiles(sessionId: string, prompt: string, bootstrap: SessionBootstrapDocument, signal: AbortSignal): Promise<string> {
     signal.throwIfAborted();
     if (this.active.size) throw new Error('SESSION_COMMAND_BUSY');
-    const { query } = await loadClaudeAgentSdk();
+    const { query } = await loadClaudeCliRuntime();
     const controller = new AbortController();
     const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) controller.abort();
@@ -730,7 +741,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
   async compactSession(sessionId: string, signal: AbortSignal, bootstrap?: SessionBootstrapDocument): Promise<SessionCompactResult> {
     signal.throwIfAborted();
     if (this.active.size) throw new Error('COMPACT_CONVERSATION_BUSY');
-    const { query } = await loadClaudeAgentSdk();
+    const { query } = await loadClaudeCliRuntime();
     const controller = new AbortController();
     const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) controller.abort();
@@ -778,8 +789,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
 }
 
 export function claudeBootstrapContext(command: SendMessageCommand) {
-  // Reuse the exact accepted system snapshot, including on installations where
-  // the SDK's native system-prompt recording has not rolled out yet.
+  // Asterium owns and reuses the exact accepted system snapshot.
   if (command.sessionBootstrap) return command.sessionBootstrap.content;
   return command.sessionId ? '' : formatAsteriumBootstrapContext(command.runtimeContext);
 }
@@ -802,9 +812,8 @@ export function claudePermissionMode(mode: 'read_only' | 'manual' | 'automatic' 
   if (mode === 'plan') return 'plan' as const;
   if (mode === 'read_only') return 'dontAsk' as const;
   if (mode === 'automatic') return 'auto' as const;
-  // `bypassPermissions` shadows canUseTool in the Claude SDK. Full access is
-  // instead auto-approved by our callback, preserving questions and hard
-  // protected-root denies without prompting the user.
+  // Full access is approved by the host callback, preserving questions and
+  // protected-root denies without enabling native permission bypass.
   if (mode === 'full') return 'default' as const;
   return 'default' as const;
 }
@@ -902,7 +911,7 @@ export function claudeInputReferencesProtected(input: unknown, cwd: string, prot
 }
 
 function isReadOnlyMutation(toolName: string, input: unknown) {
-  if (/^(Write|Edit|MultiEdit|NotebookEdit|Bash|Shell|Terminal|Computer)$/i.test(toolName)) return true;
+  if (/^(Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Shell|Terminal|Computer)$/i.test(toolName)) return true;
   if (/(?:^|__)deliver_file$/i.test(toolName)) return true;
   if (/(?:^|__)asterium_workspace$/i.test(toolName) && isRecord(input)) return input.action === 'add' || input.action === 'remove';
   return false;

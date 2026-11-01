@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "sourceReviewDate": "2026-11-01",
-  "scope": "Production bundle replay plus conservative resolved runtime/peer closure, explicit upstream prebundled notices and vendored/installer license texts. Superset, not an exact old binary SBOM. No project license granted.",
+  "scope": "Production bundle tracing preparation baseline plus retained conservative runtime/peer closure, upstream prebundled notices and vendored/installer texts. Claude Agent SDK dependency removed; not an exact binary SBOM. No project license granted.",
   "components": [
     {
       "id": "@aiden0z/pptx-renderer@1.3.0",
@@ -31,33 +31,6 @@
         "node_modules/@antfu/install-pkg/LICENSE"
       ],
       "upstreamRepository": "git+https://github.com/antfu-collective/install-pkg.git"
-    },
-    {
-      "id": "@anthropic-ai/claude-agent-sdk@0.3.281",
-      "packagePath": "node_modules/@anthropic-ai/claude-agent-sdk",
-      "metadataPath": "node_modules/@anthropic-ai/claude-agent-sdk/package.json",
-      "expectedHostVersion": "0.3.281",
-      "declaredLicense": "SEE LICENSE IN README.md",
-      "selectedLicense": null,
-      "inclusionReason": "external runtime SDK copied into application",
-      "noticeFiles": [
-        "node_modules/@anthropic-ai/claude-agent-sdk/LICENSE.md"
-      ],
-      "upstreamRepository": "https://github.com/anthropics/claude-agent-sdk-typescript.git"
-    },
-    {
-      "id": "@anthropic-ai/sdk@0.128.0",
-      "packagePath": "node_modules/@anthropic-ai/sdk",
-      "metadataPath": "node_modules/@anthropic-ai/sdk/package.json",
-      "expectedHostVersion": "0.128.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/@anthropic-ai/sdk/LICENSE",
-        "node_modules/@anthropic-ai/sdk/src/internal/qs/LICENSE.md"
-      ],
-      "upstreamRepository": "github:anthropics/anthropic-sdk-typescript"
     },
     {
       "id": "@babel/runtime@7.29.7",
@@ -151,19 +124,6 @@
       "upstreamRepository": "git://github.com/Chevrotain/chevrotain.git"
     },
     {
-      "id": "@hono/node-server@2.1.1",
-      "packagePath": "node_modules/@hono/node-server",
-      "metadataPath": "node_modules/@hono/node-server/package.json",
-      "expectedHostVersion": "2.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/@hono/node-server/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/honojs/node-server.git"
-    },
-    {
       "id": "@iconify/types@2.0.0",
       "packagePath": "node_modules/@iconify/types",
       "metadataPath": "node_modules/@iconify/types/package.json",
@@ -229,19 +189,6 @@
       "upstreamRepository": "git+https://github.com/modelcontextprotocol/typescript-sdk.git"
     },
     {
-      "id": "@modelcontextprotocol/sdk@1.30.1",
-      "packagePath": "node_modules/@modelcontextprotocol/sdk",
-      "metadataPath": "node_modules/@modelcontextprotocol/sdk/package.json",
-      "expectedHostVersion": "1.30.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/@modelcontextprotocol/sdk/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/modelcontextprotocol/typescript-sdk.git"
-    },
-    {
       "id": "@modelcontextprotocol/server@2.3.1",
       "packagePath": "node_modules/@modelcontextprotocol/server",
       "metadataPath": "node_modules/@modelcontextprotocol/server/package.json",
@@ -253,19 +200,6 @@
         "node_modules/@modelcontextprotocol/server/LICENSE"
       ],
       "upstreamRepository": "git+https://github.com/modelcontextprotocol/typescript-sdk.git"
-    },
-    {
-      "id": "@stablelib/base64@1.0.1",
-      "packagePath": "node_modules/@stablelib/base64",
-      "metadataPath": "node_modules/@stablelib/base64/package.json",
-      "expectedHostVersion": "1.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/@stablelib/base64/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/StableLib/stablelib"
     },
     {
       "id": "@types/d3-array@3.2.2",
@@ -840,45 +774,6 @@
       "upstreamRepository": "git://github.com/xmldom/xmldom.git"
     },
     {
-      "id": "accepts@2.0.0",
-      "packagePath": "node_modules/accepts",
-      "metadataPath": "node_modules/accepts/package.json",
-      "expectedHostVersion": "2.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/accepts/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/accepts"
-    },
-    {
-      "id": "ajv-formats@3.0.1",
-      "packagePath": "node_modules/@modelcontextprotocol/sdk/node_modules/ajv-formats",
-      "metadataPath": "node_modules/@modelcontextprotocol/sdk/node_modules/ajv-formats/package.json",
-      "expectedHostVersion": "3.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/@modelcontextprotocol/sdk/node_modules/ajv-formats/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ajv-validator/ajv-formats.git"
-    },
-    {
-      "id": "ajv@8.20.0",
-      "packagePath": "node_modules/@modelcontextprotocol/sdk/node_modules/ajv",
-      "metadataPath": "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/package.json",
-      "expectedHostVersion": "8.20.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/LICENSE"
-      ],
-      "upstreamRepository": "ajv-validator/ajv"
-    },
-    {
       "id": "argparse@1.0.10",
       "packagePath": "node_modules/argparse",
       "metadataPath": "node_modules/argparse/package.json",
@@ -929,58 +824,6 @@
         "node_modules/mammoth/node_modules/bluebird/LICENSE"
       ],
       "upstreamRepository": "git://github.com/petkaantonov/bluebird.git"
-    },
-    {
-      "id": "body-parser@2.3.0",
-      "packagePath": "node_modules/body-parser",
-      "metadataPath": "node_modules/body-parser/package.json",
-      "expectedHostVersion": "2.3.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/body-parser/LICENSE"
-      ],
-      "upstreamRepository": "expressjs/body-parser"
-    },
-    {
-      "id": "bytes@3.1.2",
-      "packagePath": "node_modules/bytes",
-      "metadataPath": "node_modules/bytes/package.json",
-      "expectedHostVersion": "3.1.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/bytes/LICENSE"
-      ],
-      "upstreamRepository": "visionmedia/bytes.js"
-    },
-    {
-      "id": "call-bind-apply-helpers@1.0.2",
-      "packagePath": "node_modules/call-bind-apply-helpers",
-      "metadataPath": "node_modules/call-bind-apply-helpers/package.json",
-      "expectedHostVersion": "1.0.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/call-bind-apply-helpers/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/call-bind-apply-helpers.git"
-    },
-    {
-      "id": "call-bound@1.0.4",
-      "packagePath": "node_modules/call-bound",
-      "metadataPath": "node_modules/call-bound/package.json",
-      "expectedHostVersion": "1.0.4",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/call-bound/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/call-bound.git"
     },
     {
       "id": "ccount@2.0.1",
@@ -1100,97 +943,6 @@
       "upstreamRepository": "https://github.com/tj/commander.js.git"
     },
     {
-      "id": "content-disposition@1.1.0",
-      "packagePath": "node_modules/content-disposition",
-      "metadataPath": "node_modules/content-disposition/package.json",
-      "expectedHostVersion": "1.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/content-disposition/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/content-disposition"
-    },
-    {
-      "id": "content-type@1.0.5",
-      "packagePath": "node_modules/content-type",
-      "metadataPath": "node_modules/content-type/package.json",
-      "expectedHostVersion": "1.0.5",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/content-type/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/content-type"
-    },
-    {
-      "id": "content-type@2.1.0",
-      "packagePath": "node_modules/accepts/node_modules/content-type",
-      "metadataPath": "node_modules/accepts/node_modules/content-type/package.json",
-      "expectedHostVersion": "2.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/accepts/node_modules/content-type/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/content-type"
-    },
-    {
-      "id": "content-type@2.1.0",
-      "packagePath": "node_modules/body-parser/node_modules/content-type",
-      "metadataPath": "node_modules/body-parser/node_modules/content-type/package.json",
-      "expectedHostVersion": "2.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/body-parser/node_modules/content-type/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/content-type"
-    },
-    {
-      "id": "content-type@2.1.0",
-      "packagePath": "node_modules/type-is/node_modules/content-type",
-      "metadataPath": "node_modules/type-is/node_modules/content-type/package.json",
-      "expectedHostVersion": "2.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/type-is/node_modules/content-type/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/content-type"
-    },
-    {
-      "id": "cookie-signature@1.2.2",
-      "packagePath": "node_modules/cookie-signature",
-      "metadataPath": "node_modules/cookie-signature/package.json",
-      "expectedHostVersion": "1.2.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/cookie-signature/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/visionmedia/node-cookie-signature.git"
-    },
-    {
-      "id": "cookie@0.7.2",
-      "packagePath": "node_modules/express/node_modules/cookie",
-      "metadataPath": "node_modules/express/node_modules/cookie/package.json",
-      "expectedHostVersion": "0.7.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/express/node_modules/cookie/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/cookie"
-    },
-    {
       "id": "cookie@1.1.1",
       "packagePath": "node_modules/cookie",
       "metadataPath": "node_modules/cookie/package.json",
@@ -1215,19 +967,6 @@
         "node_modules/core-util-is/LICENSE"
       ],
       "upstreamRepository": "git://github.com/isaacs/core-util-is"
-    },
-    {
-      "id": "cors@2.8.6",
-      "packagePath": "node_modules/cors",
-      "metadataPath": "node_modules/cors/package.json",
-      "expectedHostVersion": "2.8.6",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/cors/LICENSE"
-      ],
-      "upstreamRepository": "expressjs/cors"
     },
     {
       "id": "cose-base@1.0.3",
@@ -1841,19 +1580,6 @@
       "upstreamRepository": "https://github.com/mapbox/delaunator.git"
     },
     {
-      "id": "depd@2.0.0",
-      "packagePath": "node_modules/depd",
-      "metadataPath": "node_modules/depd/package.json",
-      "expectedHostVersion": "2.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/depd/LICENSE"
-      ],
-      "upstreamRepository": "dougwilson/nodejs-depd"
-    },
-    {
       "id": "dequal@2.0.3",
       "packagePath": "node_modules/dequal",
       "metadataPath": "node_modules/dequal/package.json",
@@ -1921,19 +1647,6 @@
       "upstreamRepository": "https://github.com/mwilliamson/duck.js.git"
     },
     {
-      "id": "dunder-proto@1.0.1",
-      "packagePath": "node_modules/dunder-proto",
-      "metadataPath": "node_modules/dunder-proto/package.json",
-      "expectedHostVersion": "1.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/dunder-proto/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/es-shims/dunder-proto.git"
-    },
-    {
       "id": "echarts@6.1.0",
       "packagePath": "node_modules/echarts",
       "metadataPath": "node_modules/echarts/package.json",
@@ -1957,19 +1670,6 @@
       ]
     },
     {
-      "id": "ee-first@1.1.1",
-      "packagePath": "node_modules/ee-first",
-      "metadataPath": "node_modules/ee-first/package.json",
-      "expectedHostVersion": "1.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/ee-first/LICENSE"
-      ],
-      "upstreamRepository": "jonathanong/ee-first"
-    },
-    {
       "id": "elkjs@0.9.3",
       "packagePath": "node_modules/elkjs",
       "metadataPath": "node_modules/elkjs/package.json",
@@ -1981,19 +1681,6 @@
         "node_modules/elkjs/LICENSE.md"
       ],
       "upstreamRepository": "https://github.com/kieler/elkjs.git"
-    },
-    {
-      "id": "encodeurl@2.0.0",
-      "packagePath": "node_modules/encodeurl",
-      "metadataPath": "node_modules/encodeurl/package.json",
-      "expectedHostVersion": "2.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/encodeurl/LICENSE"
-      ],
-      "upstreamRepository": "pillarjs/encodeurl"
     },
     {
       "id": "es-define-property@1.0.1",
@@ -2022,19 +1709,6 @@
       "upstreamRepository": "git+https://github.com/ljharb/es-errors.git"
     },
     {
-      "id": "es-object-atoms@1.1.2",
-      "packagePath": "node_modules/es-object-atoms",
-      "metadataPath": "node_modules/es-object-atoms/package.json",
-      "expectedHostVersion": "1.1.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/es-object-atoms/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/es-object-atoms.git"
-    },
-    {
       "id": "es-toolkit@1.52.0",
       "packagePath": "node_modules/es-toolkit",
       "metadataPath": "node_modules/es-toolkit/package.json",
@@ -2047,19 +1721,6 @@
         "node_modules/es-toolkit/NOTICE"
       ],
       "upstreamRepository": "https://github.com/toss/es-toolkit.git"
-    },
-    {
-      "id": "escape-html@1.0.3",
-      "packagePath": "node_modules/escape-html",
-      "metadataPath": "node_modules/escape-html/package.json",
-      "expectedHostVersion": "1.0.3",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/escape-html/LICENSE"
-      ],
-      "upstreamRepository": "component/escape-html"
     },
     {
       "id": "escape-string-regexp@5.0.0",
@@ -2088,19 +1749,6 @@
       "upstreamRepository": "syntax-tree/estree-util-is-identifier-name"
     },
     {
-      "id": "etag@1.8.1",
-      "packagePath": "node_modules/etag",
-      "metadataPath": "node_modules/etag/package.json",
-      "expectedHostVersion": "1.8.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/etag/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/etag"
-    },
-    {
       "id": "eventsource-parser@3.1.1",
       "packagePath": "node_modules/eventsource-parser",
       "metadataPath": "node_modules/eventsource-parser/package.json",
@@ -2125,32 +1773,6 @@
         "node_modules/eventsource/LICENSE"
       ],
       "upstreamRepository": "git://git@github.com/EventSource/eventsource.git"
-    },
-    {
-      "id": "express-rate-limit@8.7.0",
-      "packagePath": "node_modules/express-rate-limit",
-      "metadataPath": "node_modules/express-rate-limit/package.json",
-      "expectedHostVersion": "8.7.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/express-rate-limit/license"
-      ],
-      "upstreamRepository": "git+https://github.com/express-rate-limit/express-rate-limit.git"
-    },
-    {
-      "id": "express@5.2.1",
-      "packagePath": "node_modules/express",
-      "metadataPath": "node_modules/express/package.json",
-      "expectedHostVersion": "5.2.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/express/LICENSE"
-      ],
-      "upstreamRepository": "expressjs/express"
     },
     {
       "id": "extend@3.0.2",
@@ -2179,19 +1801,6 @@
       "upstreamRepository": "git+https://github.com/epoberezkin/fast-deep-equal.git"
     },
     {
-      "id": "fast-sha256@1.3.0",
-      "packagePath": "node_modules/fast-sha256",
-      "metadataPath": "node_modules/fast-sha256/package.json",
-      "expectedHostVersion": "1.3.0",
-      "declaredLicense": "Unlicense",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/fast-sha256/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/dchest/fast-sha256-js"
-    },
-    {
       "id": "fast-uri@3.1.7",
       "packagePath": "node_modules/fast-uri",
       "metadataPath": "node_modules/fast-uri/package.json",
@@ -2205,45 +1814,6 @@
       "upstreamRepository": "git+https://github.com/fastify/fast-uri.git"
     },
     {
-      "id": "finalhandler@2.1.1",
-      "packagePath": "node_modules/finalhandler",
-      "metadataPath": "node_modules/finalhandler/package.json",
-      "expectedHostVersion": "2.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/finalhandler/LICENSE"
-      ],
-      "upstreamRepository": "pillarjs/finalhandler"
-    },
-    {
-      "id": "forwarded@0.2.0",
-      "packagePath": "node_modules/forwarded",
-      "metadataPath": "node_modules/forwarded/package.json",
-      "expectedHostVersion": "0.2.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/forwarded/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/forwarded"
-    },
-    {
-      "id": "fresh@2.0.0",
-      "packagePath": "node_modules/fresh",
-      "metadataPath": "node_modules/fresh/package.json",
-      "expectedHostVersion": "2.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/fresh/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/fresh"
-    },
-    {
       "id": "function-bind@1.1.2",
       "packagePath": "node_modules/function-bind",
       "metadataPath": "node_modules/function-bind/package.json",
@@ -2255,32 +1825,6 @@
         "node_modules/function-bind/LICENSE"
       ],
       "upstreamRepository": "https://github.com/Raynos/function-bind.git"
-    },
-    {
-      "id": "get-intrinsic@1.3.0",
-      "packagePath": "node_modules/get-intrinsic",
-      "metadataPath": "node_modules/get-intrinsic/package.json",
-      "expectedHostVersion": "1.3.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/get-intrinsic/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/get-intrinsic.git"
-    },
-    {
-      "id": "get-proto@1.0.1",
-      "packagePath": "node_modules/get-proto",
-      "metadataPath": "node_modules/get-proto/package.json",
-      "expectedHostVersion": "1.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/get-proto/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/get-proto.git"
     },
     {
       "id": "gopd@1.2.0",
@@ -2307,19 +1851,6 @@
         "node_modules/hachure-fill/LICENSE"
       ],
       "upstreamRepository": "git+https://github.com/pshihn/hachure-fill.git"
-    },
-    {
-      "id": "has-symbols@1.1.0",
-      "packagePath": "node_modules/has-symbols",
-      "metadataPath": "node_modules/has-symbols/package.json",
-      "expectedHostVersion": "1.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/has-symbols/LICENSE"
-      ],
-      "upstreamRepository": "git://github.com/inspect-js/has-symbols.git"
     },
     {
       "id": "hasown@2.0.4",
@@ -2361,19 +1892,6 @@
       "upstreamRepository": "syntax-tree/hast-util-whitespace"
     },
     {
-      "id": "hono@4.13.9",
-      "packagePath": "node_modules/hono",
-      "metadataPath": "node_modules/hono/package.json",
-      "expectedHostVersion": "4.13.9",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/hono/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/honojs/hono.git"
-    },
-    {
       "id": "html-url-attributes@3.0.1",
       "packagePath": "node_modules/html-url-attributes",
       "metadataPath": "node_modules/html-url-attributes/package.json",
@@ -2387,19 +1905,6 @@
       "upstreamRepository": "https://github.com/rehypejs/rehype-minify/tree/main/packages/html-url-attributes"
     },
     {
-      "id": "http-errors@2.0.1",
-      "packagePath": "node_modules/http-errors",
-      "metadataPath": "node_modules/http-errors/package.json",
-      "expectedHostVersion": "2.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/http-errors/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/http-errors"
-    },
-    {
       "id": "iconv-lite@0.6.3",
       "packagePath": "node_modules/d3-dsv/node_modules/iconv-lite",
       "metadataPath": "node_modules/d3-dsv/node_modules/iconv-lite/package.json",
@@ -2411,32 +1916,6 @@
         "node_modules/d3-dsv/node_modules/iconv-lite/LICENSE"
       ],
       "upstreamRepository": "git://github.com/ashtuchkin/iconv-lite.git"
-    },
-    {
-      "id": "iconv-lite@0.7.3",
-      "packagePath": "node_modules/body-parser/node_modules/iconv-lite",
-      "metadataPath": "node_modules/body-parser/node_modules/iconv-lite/package.json",
-      "expectedHostVersion": "0.7.3",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/body-parser/node_modules/iconv-lite/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/pillarjs/iconv-lite.git"
-    },
-    {
-      "id": "iconv-lite@0.7.3",
-      "packagePath": "node_modules/raw-body/node_modules/iconv-lite",
-      "metadataPath": "node_modules/raw-body/node_modules/iconv-lite/package.json",
-      "expectedHostVersion": "0.7.3",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/raw-body/node_modules/iconv-lite/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/pillarjs/iconv-lite.git"
     },
     {
       "id": "immediate@3.0.6",
@@ -2530,19 +2009,6 @@
       "upstreamRepository": "https://github.com/beaugunderson/ip-address.git"
     },
     {
-      "id": "ipaddr.js@1.9.1",
-      "packagePath": "node_modules/ipaddr.js",
-      "metadataPath": "node_modules/ipaddr.js/package.json",
-      "expectedHostVersion": "1.9.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/ipaddr.js/LICENSE"
-      ],
-      "upstreamRepository": "git://github.com/whitequark/ipaddr.js"
-    },
-    {
       "id": "is-alphabetical@2.0.1",
       "packagePath": "node_modules/is-alphabetical",
       "metadataPath": "node_modules/is-alphabetical/package.json",
@@ -2608,19 +2074,6 @@
       "upstreamRepository": "sindresorhus/is-plain-obj"
     },
     {
-      "id": "is-promise@4.0.0",
-      "packagePath": "node_modules/is-promise",
-      "metadataPath": "node_modules/is-promise/package.json",
-      "expectedHostVersion": "4.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/is-promise/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/then/is-promise.git"
-    },
-    {
       "id": "isarray@1.0.0",
       "packagePath": "node_modules/isarray",
       "metadataPath": "node_modules/isarray/package.json",
@@ -2658,45 +2111,6 @@
         "node_modules/jose/LICENSE.md"
       ],
       "upstreamRepository": "panva/jose"
-    },
-    {
-      "id": "json-schema-to-ts@3.1.1",
-      "packagePath": "node_modules/json-schema-to-ts",
-      "metadataPath": "node_modules/json-schema-to-ts/package.json",
-      "expectedHostVersion": "3.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/json-schema-to-ts/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ThomasAribart/json-schema-to-ts.git"
-    },
-    {
-      "id": "json-schema-traverse@1.0.0",
-      "packagePath": "node_modules/@modelcontextprotocol/sdk/node_modules/json-schema-traverse",
-      "metadataPath": "node_modules/@modelcontextprotocol/sdk/node_modules/json-schema-traverse/package.json",
-      "expectedHostVersion": "1.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/@modelcontextprotocol/sdk/node_modules/json-schema-traverse/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/epoberezkin/json-schema-traverse.git"
-    },
-    {
-      "id": "json-schema-typed@8.0.2",
-      "packagePath": "node_modules/json-schema-typed",
-      "metadataPath": "node_modules/json-schema-typed/package.json",
-      "expectedHostVersion": "8.0.2",
-      "declaredLicense": "BSD-2-Clause",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/json-schema-typed/LICENSE.md"
-      ],
-      "upstreamRepository": "https://github.com/RemyRylan/json-schema-typed.git"
     },
     {
       "id": "jszip@3.10.2",
@@ -2866,19 +2280,6 @@
         "node_modules/marked/LICENSE.md"
       ],
       "upstreamRepository": "git://github.com/markedjs/marked.git"
-    },
-    {
-      "id": "math-intrinsics@1.1.0",
-      "packagePath": "node_modules/math-intrinsics",
-      "metadataPath": "node_modules/math-intrinsics/package.json",
-      "expectedHostVersion": "1.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/math-intrinsics/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/es-shims/math-intrinsics.git"
     },
     {
       "id": "mdast-util-find-and-replace@3.0.2",
@@ -3074,32 +2475,6 @@
         "node_modules/mdast-util-to-string/license"
       ],
       "upstreamRepository": "syntax-tree/mdast-util-to-string"
-    },
-    {
-      "id": "media-typer@1.1.1",
-      "packagePath": "node_modules/media-typer",
-      "metadataPath": "node_modules/media-typer/package.json",
-      "expectedHostVersion": "1.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/media-typer/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/media-typer"
-    },
-    {
-      "id": "merge-descriptors@2.0.0",
-      "packagePath": "node_modules/merge-descriptors",
-      "metadataPath": "node_modules/merge-descriptors/package.json",
-      "expectedHostVersion": "2.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/merge-descriptors/license"
-      ],
-      "upstreamRepository": "sindresorhus/merge-descriptors"
     },
     {
       "id": "mermaid@12.1.0",
@@ -3492,19 +2867,6 @@
       "upstreamRepository": "jshttp/mime-db"
     },
     {
-      "id": "mime-types@3.0.2",
-      "packagePath": "node_modules/mime-types",
-      "metadataPath": "node_modules/mime-types/package.json",
-      "expectedHostVersion": "3.0.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/mime-types/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/mime-types"
-    },
-    {
       "id": "MouseCrew frontend-builder a4058545",
       "declaredLicense": "MIT",
       "inclusionReason": "vendored skill copied as extraResource",
@@ -3551,19 +2913,6 @@
       "upstreamRepository": "https://github.com/ChristopherVR/mtx-decompressor.git"
     },
     {
-      "id": "negotiator@1.1.0",
-      "packagePath": "node_modules/accepts/node_modules/negotiator",
-      "metadataPath": "node_modules/accepts/node_modules/negotiator/package.json",
-      "expectedHostVersion": "1.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/accepts/node_modules/negotiator/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/negotiator"
-    },
-    {
       "id": "NSIS 3.0.4.1 stock notices",
       "declaredLicense": "zlib/libpng; bzip2; CPL-1.0 with NSIS LZMA linking exception",
       "inclusionReason": "stock installer components; does not cover independent resource plugins",
@@ -3580,45 +2929,6 @@
         "third_party/installer/nsis7z-19.00/nsis7z.txt",
         "third_party/installer/nsis7z-19.00/LZMA-SDK-19.00-License.txt"
       ]
-    },
-    {
-      "id": "object-assign@4.1.1",
-      "packagePath": "node_modules/object-assign",
-      "metadataPath": "node_modules/object-assign/package.json",
-      "expectedHostVersion": "4.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/object-assign/license"
-      ],
-      "upstreamRepository": "sindresorhus/object-assign"
-    },
-    {
-      "id": "object-inspect@1.13.4",
-      "packagePath": "node_modules/object-inspect",
-      "metadataPath": "node_modules/object-inspect/package.json",
-      "expectedHostVersion": "1.13.4",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/object-inspect/LICENSE"
-      ],
-      "upstreamRepository": "git://github.com/inspect-js/object-inspect.git"
-    },
-    {
-      "id": "on-finished@2.4.1",
-      "packagePath": "node_modules/on-finished",
-      "metadataPath": "node_modules/on-finished/package.json",
-      "expectedHostVersion": "2.4.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/on-finished/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/on-finished"
     },
     {
       "id": "once@1.4.0",
@@ -3686,19 +2996,6 @@
       "upstreamRepository": "wooorm/parse-entities"
     },
     {
-      "id": "parseurl@1.3.3",
-      "packagePath": "node_modules/parseurl",
-      "metadataPath": "node_modules/parseurl/package.json",
-      "expectedHostVersion": "1.3.3",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/parseurl/LICENSE"
-      ],
-      "upstreamRepository": "pillarjs/parseurl"
-    },
-    {
       "id": "path-data-parser@0.1.0",
       "packagePath": "node_modules/path-data-parser",
       "metadataPath": "node_modules/path-data-parser/package.json",
@@ -3736,19 +3033,6 @@
         "node_modules/path-key/license"
       ],
       "upstreamRepository": "sindresorhus/path-key"
-    },
-    {
-      "id": "path-to-regexp@8.4.2",
-      "packagePath": "node_modules/path-to-regexp",
-      "metadataPath": "node_modules/path-to-regexp/package.json",
-      "expectedHostVersion": "8.4.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/path-to-regexp/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/pillarjs/path-to-regexp.git"
     },
     {
       "id": "pdfjs-dist@5.4.149",
@@ -3835,58 +3119,6 @@
         "node_modules/property-information/license"
       ],
       "upstreamRepository": "wooorm/property-information"
-    },
-    {
-      "id": "proxy-addr@2.0.8",
-      "packagePath": "node_modules/proxy-addr",
-      "metadataPath": "node_modules/proxy-addr/package.json",
-      "expectedHostVersion": "2.0.8",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/proxy-addr/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/proxy-addr"
-    },
-    {
-      "id": "qs@6.16.0",
-      "packagePath": "node_modules/qs",
-      "metadataPath": "node_modules/qs/package.json",
-      "expectedHostVersion": "6.16.0",
-      "declaredLicense": "BSD-3-Clause",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/qs/LICENSE.md"
-      ],
-      "upstreamRepository": "https://github.com/ljharb/qs.git"
-    },
-    {
-      "id": "range-parser@1.3.0",
-      "packagePath": "node_modules/range-parser",
-      "metadataPath": "node_modules/range-parser/package.json",
-      "expectedHostVersion": "1.3.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/range-parser/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/range-parser"
-    },
-    {
-      "id": "raw-body@3.0.2",
-      "packagePath": "node_modules/raw-body",
-      "metadataPath": "node_modules/raw-body/package.json",
-      "expectedHostVersion": "3.0.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/raw-body/LICENSE"
-      ],
-      "upstreamRepository": "stream-utils/raw-body"
     },
     {
       "id": "react-dom@19.2.8",
@@ -4045,19 +3277,6 @@
       "upstreamRepository": "git+https://github.com/pshihn/rough.git"
     },
     {
-      "id": "router@2.2.0",
-      "packagePath": "node_modules/router",
-      "metadataPath": "node_modules/router/package.json",
-      "expectedHostVersion": "2.2.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/router/LICENSE"
-      ],
-      "upstreamRepository": "pillarjs/router"
-    },
-    {
       "id": "rw@1.3.3",
       "packagePath": "node_modules/rw",
       "metadataPath": "node_modules/rw/package.json",
@@ -4110,32 +3329,6 @@
       "upstreamRepository": "https://github.com/facebook/react.git"
     },
     {
-      "id": "send@1.2.1",
-      "packagePath": "node_modules/send",
-      "metadataPath": "node_modules/send/package.json",
-      "expectedHostVersion": "1.2.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/send/LICENSE"
-      ],
-      "upstreamRepository": "pillarjs/send"
-    },
-    {
-      "id": "serve-static@2.2.1",
-      "packagePath": "node_modules/serve-static",
-      "metadataPath": "node_modules/serve-static/package.json",
-      "expectedHostVersion": "2.2.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/serve-static/LICENSE"
-      ],
-      "upstreamRepository": "expressjs/serve-static"
-    },
-    {
       "id": "set-cookie-parser@2.7.2",
       "packagePath": "node_modules/set-cookie-parser",
       "metadataPath": "node_modules/set-cookie-parser/package.json",
@@ -4160,19 +3353,6 @@
         "node_modules/setimmediate/LICENSE.txt"
       ],
       "upstreamRepository": "YuzuJS/setImmediate"
-    },
-    {
-      "id": "setprototypeof@1.2.0",
-      "packagePath": "node_modules/setprototypeof",
-      "metadataPath": "node_modules/setprototypeof/package.json",
-      "expectedHostVersion": "1.2.0",
-      "declaredLicense": "ISC",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/setprototypeof/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/wesleytodd/setprototypeof.git"
     },
     {
       "id": "shebang-command@2.0.0",
@@ -4201,58 +3381,6 @@
       "upstreamRepository": "sindresorhus/shebang-regex"
     },
     {
-      "id": "side-channel-list@1.0.1",
-      "packagePath": "node_modules/side-channel-list",
-      "metadataPath": "node_modules/side-channel-list/package.json",
-      "expectedHostVersion": "1.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/side-channel-list/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/side-channel-list.git"
-    },
-    {
-      "id": "side-channel-map@1.0.1",
-      "packagePath": "node_modules/side-channel-map",
-      "metadataPath": "node_modules/side-channel-map/package.json",
-      "expectedHostVersion": "1.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/side-channel-map/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/side-channel-map.git"
-    },
-    {
-      "id": "side-channel-weakmap@1.0.2",
-      "packagePath": "node_modules/side-channel-weakmap",
-      "metadataPath": "node_modules/side-channel-weakmap/package.json",
-      "expectedHostVersion": "1.0.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/side-channel-weakmap/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/side-channel-weakmap.git"
-    },
-    {
-      "id": "side-channel@1.1.1",
-      "packagePath": "node_modules/side-channel",
-      "metadataPath": "node_modules/side-channel/package.json",
-      "expectedHostVersion": "1.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/side-channel/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ljharb/side-channel.git"
-    },
-    {
       "id": "space-separated-tokens@2.0.2",
       "packagePath": "node_modules/space-separated-tokens",
       "metadataPath": "node_modules/space-separated-tokens/package.json",
@@ -4277,33 +3405,6 @@
         "node_modules/argparse/node_modules/sprintf-js/LICENSE"
       ],
       "upstreamRepository": "https://github.com/alexei/sprintf.js.git"
-    },
-    {
-      "id": "standardwebhooks@1.1.1",
-      "packagePath": "node_modules/standardwebhooks",
-      "metadataPath": "node_modules/standardwebhooks/package.json",
-      "expectedHostVersion": "1.1.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "third_party/licenses/supplemental/standardwebhooks-1.1.1-LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/standard-webhooks/standard-webhooks",
-      "upstreamLicenseUrl": "https://github.com/standard-webhooks/standard-webhooks/blob/b4d2c14fc5b4ccff3ff271e3b087dff812254c59/libraries/LICENSE"
-    },
-    {
-      "id": "statuses@2.0.2",
-      "packagePath": "node_modules/statuses",
-      "metadataPath": "node_modules/statuses/package.json",
-      "expectedHostVersion": "2.0.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/statuses/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/statuses"
     },
     {
       "id": "StdUtils 1.14 (PE 1.1.4.0)",
@@ -4394,19 +3495,6 @@
       "upstreamRepository": "git+https://github.com/tinylibs/tinyexec.git"
     },
     {
-      "id": "toidentifier@1.0.1",
-      "packagePath": "node_modules/toidentifier",
-      "metadataPath": "node_modules/toidentifier/package.json",
-      "expectedHostVersion": "1.0.1",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/toidentifier/LICENSE"
-      ],
-      "upstreamRepository": "component/toidentifier"
-    },
-    {
       "id": "trim-lines@3.0.1",
       "packagePath": "node_modules/trim-lines",
       "metadataPath": "node_modules/trim-lines/package.json",
@@ -4433,19 +3521,6 @@
       "upstreamRepository": "wooorm/trough"
     },
     {
-      "id": "ts-algebra@2.0.0",
-      "packagePath": "node_modules/ts-algebra",
-      "metadataPath": "node_modules/ts-algebra/package.json",
-      "expectedHostVersion": "2.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/ts-algebra/LICENSE"
-      ],
-      "upstreamRepository": "git+https://github.com/ThomasAribart/ts-algebra.git"
-    },
-    {
       "id": "ts-dedent@2.3.0",
       "packagePath": "node_modules/ts-dedent",
       "metadataPath": "node_modules/ts-dedent/package.json",
@@ -4470,19 +3545,6 @@
         "node_modules/tslib/LICENSE.txt"
       ],
       "upstreamRepository": "https://github.com/Microsoft/tslib.git"
-    },
-    {
-      "id": "type-is@2.1.0",
-      "packagePath": "node_modules/type-is",
-      "metadataPath": "node_modules/type-is/package.json",
-      "expectedHostVersion": "2.1.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/type-is/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/type-is"
     },
     {
       "id": "UAC plugin 0.2.4c",
@@ -4584,19 +3646,6 @@
       "upstreamRepository": "syntax-tree/unist-util-visit"
     },
     {
-      "id": "unpipe@1.0.0",
-      "packagePath": "node_modules/unpipe",
-      "metadataPath": "node_modules/unpipe/package.json",
-      "expectedHostVersion": "1.0.0",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/unpipe/LICENSE"
-      ],
-      "upstreamRepository": "stream-utils/unpipe"
-    },
-    {
       "id": "util-deprecate@1.0.2",
       "packagePath": "node_modules/util-deprecate",
       "metadataPath": "node_modules/util-deprecate/package.json",
@@ -4621,19 +3670,6 @@
         "node_modules/uuid/LICENSE.md"
       ],
       "upstreamRepository": "https://github.com/uuidjs/uuid.git"
-    },
-    {
-      "id": "vary@1.1.2",
-      "packagePath": "node_modules/vary",
-      "metadataPath": "node_modules/vary/package.json",
-      "expectedHostVersion": "1.1.2",
-      "declaredLicense": "MIT",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/vary/LICENSE"
-      ],
-      "upstreamRepository": "jshttp/vary"
     },
     {
       "id": "vfile-message@4.0.3",
@@ -4728,19 +3764,6 @@
       "upstreamRepository": "github:eemeli/yaml"
     },
     {
-      "id": "zod-to-json-schema@3.25.2",
-      "packagePath": "node_modules/zod-to-json-schema",
-      "metadataPath": "node_modules/zod-to-json-schema/package.json",
-      "expectedHostVersion": "3.25.2",
-      "declaredLicense": "ISC",
-      "selectedLicense": null,
-      "inclusionReason": "conservative transitive/peer closure; not exact binary inclusion",
-      "noticeFiles": [
-        "node_modules/zod-to-json-schema/LICENSE"
-      ],
-      "upstreamRepository": "https://github.com/StefanTerdell/zod-to-json-schema"
-    },
-    {
       "id": "zod@4.5.4",
       "packagePath": "node_modules/zod",
       "metadataPath": "node_modules/zod/package.json",
@@ -4782,7 +3805,7 @@
   ],
   "excludedOptionalPlatforms": [],
   "unresolvedItems": [
-    "Anthropic SDK redistribution and exact current SDK/native-CLI authentication use case; future preference is Codex if Claude unsupported, not implemented",
+    "Official native Claude CLI integration authentication/use-case terms remain separate; npm Agent SDK removed from current dependencies and package roots",
     "ELK Java/GWT preferred-source correspondence beyond verified npm wrapper gitHead",
     "WinShell freeware label without explicit redistribution/source terms; nsis7z plugin LGPL version and relation to LZMA public-domain base",
     "Complete provenance of nested/prebundled code beyond declared upstream notices; inventory is a conservative superset",

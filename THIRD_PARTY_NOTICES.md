@@ -41,11 +41,11 @@ The renderer also describes mechanically derived ECMA-376 DrawingML shape defini
 
 The PDF.js distribution contains separate notices for CMaps, Foxit/Liberation fonts, ICC data, OpenJPEG and QCMS code. Those supplied notices are collected conservatively. Their presence in the collection does not mean that every font or WASM asset is shipped. Any added asset must be traced and checked against its actual terms; font reserved names and attribution conditions remain applicable.
 
-## Claude Agent SDK: separate vendor terms
+## Native Claude Code, installed separately
 
-`@anthropic-ai/claude-agent-sdk` 0.3.281 is not represented as MPL-licensed or as an open-source dependency. Its original `LICENSE.md` reserves rights and refers to [Anthropic's legal agreements](https://code.claude.com/docs/en/legal-and-compliance). The local notice is retained in the collection and remains in the SDK package.
+The current source no longer depends on or packages `@anthropic-ai/claude-agent-sdk`. Asterium invokes the user's separately installed, unmodified official Claude Code executable. The executable and its authentication remain governed by [Anthropic's legal agreements](https://code.claude.com/docs/en/legal-and-compliance); they are not relicensed by Asterium.
 
-SDK redistribution and the concrete product authentication use case still require confirmation. A user signing in through their unmodified native CLI is not the same as Asterium offering its own third-party subscription OAuth login. No right to collect, intermediate or resell a user's subscription credentials or usage is asserted here. API/cloud-provider credentials and any future hosted service must follow the vendor's applicable terms.
+Users complete the official CLI's own authentication flow. Asterium does not implement a Claude subscription OAuth service or collect its login credentials. Historical candidates containing the SDK retain their original notices and evidence; removing it from current source does not alter those candidates. CLI verification copies and synthetic model fixtures are development evidence and must not be included in application packages.
 
 ## Electron and Windows installer
 

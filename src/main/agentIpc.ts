@@ -90,7 +90,7 @@ import { PartnerDiaryScheduler } from './diary/PartnerDiaryScheduler';
 import { generateApiDiary, generateClaudeDiary, generateCodexDiary, generateExistingDiary } from './diary/DiaryGenerators';
 import { assembleSessionBootstrap } from './runtime/SessionBootstrapAssembler';
 import { diaryTarget } from '../shared/partnerDiary';
-import { loadClaudeAgentSdk } from './adapters/ClaudeCodeAdapter';
+import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
 import { PartnerMemoryBriefingService } from './memory/PartnerMemoryBriefingService';
 import { SessionBootstrapService } from './runtime/SessionBootstrapService';
 import { MemorySourceService } from './memory/MemorySourceService';
@@ -556,7 +556,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       }
       const installation = await ensureClaudeInstallation();
       if (!installation.executablePath || !installation.loggedIn) throw new Error('DIARY_RUNTIME_UNAVAILABLE');
-      return generateClaudeDiary({ ...input, executablePath: installation.executablePath, ...(partner.recentModel?.model ? { model: partner.recentModel.model } : {}) }, (await loadClaudeAgentSdk()).query);
+      return generateClaudeDiary({ ...input, executablePath: installation.executablePath, ...(partner.recentModel?.model ? { model: partner.recentModel.model } : {}) }, (await loadClaudeCliRuntime()).query);
     },
   });
 

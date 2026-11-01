@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClaudeCodeAdapter } from '../../src/main/adapters/ClaudeCodeAdapter';
-import { AGENT_PROTOCOL_VERSION, type SendMessageCommand } from '../../src/shared/agentProtocol';
+import { AGENT_PROTOCOL_VERSION, type SendMessageCommand, type ResolveAuthorizationCommand } from '../../src/shared/agentProtocol';
+import type { Options, PermissionResult } from '../../src/main/adapters/ClaudeCliTransport';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type { AsteriumRuntimeToolController } from '../../src/main/runtime/AsteriumRuntimeTools';
 import { ApiAgentTools } from '../../src/main/api/ApiAgentTools';
 import { asteriumDynamicTools } from '../../src/main/adapters/CodexCliAdapter';
 import { memoryToolDescription, type MemoryToolName } from '../../src/main/runtime/MemoryToolGuidance';
 
 const sdk = vi.hoisted(() => ({ query: vi.fn(), server: vi.fn((input: unknown) => input), tool: vi.fn((name: string, description: string, schema: unknown, callback: unknown) => ({ name, description, schema, callback })) }));
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: sdk.query, createSdkMcpServer: sdk.server, tool: sdk.tool }));
+vi.mock('../../src/main/adapters/ClaudeCliTransport', () => ({ query: sdk.query, createClaudeToolSet: sdk.server, tool: sdk.tool }));
 
 function command(): SendMessageCommand {
   return {
@@ -25,13 +29,47 @@ function memoryController(access: 'read' | 'write' = 'write'): AsteriumRuntimeTo
   };
 }
 
-describe('Claude SDK bootstrap transport', () => {
+describe('Claude CLI bootstrap transport', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sdk.query.mockImplementation(() => Object.assign((async function* () {
       yield { type: 'system', subtype: 'init', model: 'test-model' };
       yield { type: 'result', subtype: 'success', result: '完成', is_error: false };
     })(), { close: vi.fn() }));
+  });
+
+  it('rejects cross-conversation approval without consuming the card, then consumes one valid answer only', async () => {
+    let decision: PermissionResult | undefined;
+    sdk.query.mockImplementation(({ options }: { options: Options }) => Object.assign((async function* () {
+      yield { type: 'system', subtype: 'init' };
+      decision = await options.canUseTool!('Write', { file_path: 'fixture-output.txt', content: 'synthetic' }, { signal: options.abortController!.signal, toolUseID: 'write', requestId: 'write' });
+      yield { type: 'result', subtype: 'success', result: 'done' };
+    })(), { close: vi.fn() }));
+    const adapter = new ClaudeCodeAdapter('claude.exe', process.cwd());
+    try {
+      for await (const event of adapter.sendMessage(command())) if (event.type === 'authorization.requested') {
+        const answer: ResolveAuthorizationCommand = { protocolVersion: AGENT_PROTOCOL_VERSION, type: 'authorization.resolve', commandId: 'answer', partnerId: event.partnerId, conversationId: event.conversationId, connectionSource: event.connectionSource, clientMessageId: event.clientMessageId, sessionId: event.sessionId, runId: event.runId, authorizationId: event.authorizationId, decision: 'deny' };
+        await expect(adapter.resolveAuthorization({ ...answer, conversationId: 'other' })).rejects.toThrow('CLAUDE_AUTHORIZATION_ROUTE_MISMATCH');
+        await adapter.resolveAuthorization(answer);
+        await expect(adapter.resolveAuthorization(answer)).rejects.toThrow('CLAUDE_AUTHORIZATION_NOT_FOUND');
+      }
+      expect(decision).toMatchObject({ behavior: 'deny' });
+    } finally { await adapter.dispose(); }
+  });
+
+  it.each(['manual', 'full', 'read_only'] as const)('keeps protected relative paths blocked in %s without relying on hooks', async mode => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), 'asterium-cli-policy-'));
+    const protectedRoot = path.join(workspace, 'protected');
+    await mkdir(protectedRoot); await writeFile(path.join(protectedRoot, 'fixture.txt'), 'synthetic'); await writeFile(path.join(workspace, 'public.txt'), 'synthetic');
+    const adapter = new ClaudeCodeAdapter('claude.exe', workspace, undefined, undefined, [], undefined, undefined, [protectedRoot]);
+    try {
+      for await (const event of adapter.sendMessage({ ...command(), execution: { permissionMode: mode, planMode: 'default' } })) expect(event.type).toBeTruthy();
+      const options = sdk.query.mock.calls.at(-1)![0].options as Options;
+      const context = { signal: new AbortController().signal, toolUseID: 'read', requestId: 'read' };
+      expect(await options.canUseTool!('Read', { file_path: 'protected/fixture.txt' }, context)).toMatchObject({ behavior: 'deny' });
+      expect(await options.canUseTool!('Read', { file_path: 'public.txt' }, context)).toMatchObject({ behavior: 'allow' });
+      if (mode === 'read_only') expect(await options.canUseTool!('PowerShell', { command: 'Write-Output synthetic' }, context)).toMatchObject({ behavior: 'deny' });
+    } finally { await adapter.dispose(); await rm(workspace, { recursive: true, force: true }); }
   });
 
   it('puts the exact snapshot in system append, preserving user input and reusing it on resume', async () => {
