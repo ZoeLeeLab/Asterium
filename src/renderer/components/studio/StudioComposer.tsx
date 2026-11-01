@@ -1,9 +1,11 @@
 import { AtSign, Paperclip, Send, Square } from 'lucide-react';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
 import { isMessageSendKey } from '../../app/sendShortcut';
-import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
 import type { StudioMention } from '../../../shared/studioRuntime';
 import { Avatar } from '../ui/Avatar';
+import { PendingAttachmentCard } from '../ui/Composer';
+import type { PendingMessageAttachment } from '../../../shared/agentProtocol';
 
 export interface StudioMentionOption {
   partnerId: string;
@@ -23,7 +25,7 @@ interface StudioComposerProps {
   busy?: boolean;
   mentionsEnabled?: boolean;
   members: StudioMentionOption[];
-  onSend: (value: string, mentions: StudioMention[]) => void | boolean | Promise<void | boolean>;
+  onSend: (value: string, mentions: StudioMention[], attachments?: PendingMessageAttachment[]) => void | boolean | Promise<void | boolean>;
   onCancel?: () => void;
 }
 
@@ -43,6 +45,30 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   const [query, setQuery] = useState<MentionQuery>();
   const [activeOption, setActiveOption] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [attachments, setAttachments] = useState<PendingMessageAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const attachmentsRef = useRef(attachments);
+  const mounted = useRef(false);
+  const sendingRef = useRef(false);
+  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; const ids = attachmentsRef.current.map(item => item.selectionId); if (ids.length) void window.asteriumAttachments?.discard(ids).catch(() => undefined); };
+  }, []);
+  const chooseAttachments = async () => {
+    if (!window.asteriumAttachments || choosing || disabled || busy || sendingRef.current) return;
+    setChoosing(true); setAttachmentError('');
+    try {
+      const selected = await window.asteriumAttachments.choose(10 - attachments.length);
+      if (!mounted.current) { await window.asteriumAttachments.discard(selected.map(item => item.selectionId)); return; }
+      setAttachments(current => [...current, ...selected]);
+    } catch (error) {
+      const detail = String(error);
+      if (mounted.current) setAttachmentError(detail.includes('ATTACHMENT_TOO_LARGE') ? '单个附件不能超过 20MB。' : detail.includes('ATTACHMENT_COUNT_LIMIT') ? '一次最多发送 10 个附件。' : '未能添加附件，请重试。');
+    } finally { if (mounted.current) setChoosing(false); }
+  };
   const highlightsRef = useRef<HTMLDivElement>(null);
 
   const syncHighlights = () => {
@@ -115,17 +141,22 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = value.trim();
-    if (!text || disabled || busy) return;
+    if ((!text && !attachments.length) || disabled || busy || choosing || sendingRef.current) return;
     const leading = value.indexOf(text);
     const selected = (mentionsEnabled ? mentions : [])
       .filter((mention) => mention.start !== undefined && mention.end !== undefined && mention.start >= leading && mention.end <= leading + text.length)
       .map((mention) => ({ ...mention, start: mention.start! - leading, end: mention.end! - leading }));
-    const sent = await onSend(text, selected);
-    if (sent === false) return;
+    sendingRef.current = true; setSending(true); setAttachmentError('');
+    let sent;
+    try { sent = attachments.length ? await onSend(text, selected, attachments) : await onSend(text, selected); }
+    catch { setAttachmentError('消息未发送，附件已保留，请重试。'); return; }
+    finally { sendingRef.current = false; if (mounted.current) setSending(false); }
+    if (sent === false || !mounted.current) return;
     setValue('');
     if (draftKey) studioDrafts.delete(draftKey);
     setMentions([]);
     setQuery(undefined);
+    setAttachments([]); attachmentsRef.current = [];
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -153,13 +184,20 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   };
 
   return <form className="studio-composer" onSubmit={submit}>
+    {attachments.length > 0 && <div className="composer-attachments">{attachments.map(attachment => <PendingAttachmentCard key={attachment.selectionId} attachment={attachment} disabled={sending || choosing} onRemove={() => {
+      if (sending || choosing) return;
+      setAttachments(current => current.filter(item => item.selectionId !== attachment.selectionId));
+      void window.asteriumAttachments?.discard([attachment.selectionId]).catch(() => undefined);
+    }} />)}</div>}
+    {attachments.length > 0 && <small className="composer-attachment-error">附件将共享给本群伙伴；图片理解取决于伙伴能力，外部线程伙伴仅收到附件信息，文件需另行共享。</small>}
+    {attachmentError && <small role="alert" className="composer-attachment-error">{attachmentError}</small>}
     <div className="studio-composer__editor">
       <div className="studio-composer__highlights" ref={highlightsRef} aria-hidden="true">{highlightedText(value, mentionsEnabled ? mentions : [])}{value.endsWith('\n') ? '\u200b' : null}</div>
       <textarea
         ref={inputRef}
         rows={2}
         value={value}
-        disabled={disabled}
+        disabled={disabled || sending}
         placeholder={placeholder}
         aria-label={placeholder}
         onChange={(event) => handleChange(event.target.value, event.target.selectionStart)}
@@ -191,9 +229,9 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
       </div>}
     </div>
     <div className="studio-composer__toolbar">
-      <button className="composer-tool-button studio-attachment-placeholder" type="button" disabled aria-label="添加图片或文件（后续开放）" title="群聊附件将在后续接入"><Paperclip size={18} /><span>附件</span></button>
+      <button className="composer-tool-button" type="button" disabled={disabled || busy || sending || choosing || !window.asteriumAttachments || attachments.length >= 10} aria-label="添加图片或文件" title="添加图片或文件（每次最多 10 个，单个 20MB）" onClick={() => void chooseAttachments()}><Paperclip size={18} /><span>{choosing ? '正在添加…' : '附件'}</span></button>
       {busy ? <button className="round-button round-button--primary" type="button" disabled={!onCancel} onClick={onCancel} aria-label="停止本轮" title="停止当前伙伴并取消本轮剩余发言"><Square size={17} fill="currentColor" /></button>
-        : <button className="round-button round-button--primary" type="submit" disabled={disabled || !value.trim()} aria-label="发送"><Send size={20} /></button>}
+        : <button className="round-button round-button--primary" type="submit" disabled={disabled || sending || choosing || (!value.trim() && !attachments.length)} aria-label="发送"><Send size={20} /></button>}
     </div>
   </form>;
 }

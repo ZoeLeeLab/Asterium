@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DesktopNotificationNavigation } from './DesktopNotificationNavigation';
+import { UpdateNotice } from './UpdateNotice';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ChatPage } from '../pages/ChatPage';
 import { ProfilePage } from '../pages/ProfilePage';
@@ -16,6 +17,7 @@ export function App() {
       <div className="window-drag-strip" aria-hidden="true" />
       <LastVisitedRoute />
       <DesktopNotificationNavigation />
+      <UpdateNotice />
       <PartnerAvatarMenu />
       <Routes>
         <Route path="/chat" element={<ChatPage />} />

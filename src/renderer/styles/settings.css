@@ -86,10 +86,25 @@
 .general-settings-card { padding: 18px 22px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
 .general-settings-card h2 { margin: 0 0 10px; font-size: 15px; }
 .general-settings-card p, .general-settings-row small { color: var(--muted); font-size: 12px; }
-.about-settings p { line-height: 1.85; }
-.about-release { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 20px; font-size: var(--form-label-size); }
-.about-release dt { color: var(--muted); }
-.about-release dd { margin: 0; overflow-wrap: anywhere; }
+.about-settings { flex: 1; min-height: 0; overflow-y: auto; padding: 28px clamp(16px, 7vw, 100px); }
+.about-brand { text-align: center; padding: 8px 0 30px; }
+.about-brand .asterium-logo { display: inline-block; width: 64px; height: 64px; }
+.about-brand h1 { font-size: 24px; margin: 12px 0 10px; }
+.about-brand p, .about-brand small { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.about-brand small { display: block; margin: 10px 0; }
+.about-update-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.about-info { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.about-info > div, .about-info > label { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 46px; padding: 10px 18px; font-size: var(--form-label-size); }
+.about-info > :not(:last-child) { border-bottom: 1px solid var(--border); }
+.about-info > div > :last-child { color: var(--muted); overflow-wrap: anywhere; text-align: right; }
+.about-info input { appearance: none; width: 36px; height: 20px; margin: 0; border: 1px solid var(--border); border-radius: 20px; background: var(--border); position: relative; cursor: pointer; flex-shrink: 0; }
+.about-info input::before { content: ''; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; border-radius: 4px; background: var(--surface); }
+.about-info input:checked { background: var(--accent); }
+.about-info input:checked::before { transform: translateX(16px); }
+.about-info input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.about-info input:disabled { opacity: .5; }
+.about-details { margin-top: 24px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.about-details summary { cursor: pointer; }
 .about-notice { margin-top: 12px; }
 .about-notice-text { max-height: 420px; overflow: auto; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .general-settings-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; min-height: 52px; padding: 8px 0; }

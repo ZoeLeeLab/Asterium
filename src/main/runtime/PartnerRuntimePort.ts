@@ -121,6 +121,7 @@ export class PartnerRuntimePort implements StudioRuntimeLifecyclePort, ProjectTa
       sessionId: prepared.nativeThreadId,
       route,
       content: { type: 'text', text: content },
+      ...(prepared.attachments?.length ? { attachments: prepared.attachments } : {}),
       execution: { permissionMode: prepared.round.permissionMode, planMode: 'default' },
       runtimeContext: context,
     };

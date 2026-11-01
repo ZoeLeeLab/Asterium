@@ -2,6 +2,7 @@ import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { studioAttachmentConversationId } from '../../shared/studioRuntime';
 import type { AttachmentSendRecord, ConversationAttachmentInfo, MessageAttachment, PendingMessageAttachment } from '../../shared/agentProtocol';
 
 export const MAX_MESSAGE_ATTACHMENTS = 10;
@@ -48,6 +49,21 @@ interface StoreOptions {
 }
 
 export class ConversationAttachmentStore {
+  private readonly groupScopes = new Map<string, { source: string; ids: Set<string> }>();
+
+  /** Called only after Main prepares a current group binding and freezes its ledger boundary. */
+  authorizeGroup(conversationId: string, roomId: string, attachments: MessageAttachment[]) {
+    const prefix = `group:v3:${roomId}:`;
+    if (!conversationId.startsWith(prefix) || !/^[A-Za-z0-9_-]+(?::generation:[1-9][0-9]*)?$/.test(conversationId.slice(prefix.length))) throw new Error('ATTACHMENT_GROUP_BINDING_INVALID');
+    this.groupScopes.set(conversationId, { source: studioAttachmentConversationId(roomId), ids: new Set(attachments.map(item => item.id)) });
+  }
+
+  private readScope(conversationId: string, id?: string) {
+    if (!conversationId.startsWith('group:')) return conversationId;
+    const scope = this.groupScopes.get(conversationId);
+    if (!scope || (id !== undefined && !scope.ids.has(id))) throw new Error('ATTACHMENT_SCOPE_NOT_REGISTERED');
+    return scope.source;
+  }
   private readonly pending = new Map<string, PendingRecord>();
   private mutation = Promise.resolve();
   private initialized?: Promise<void>;
@@ -108,7 +124,7 @@ export class ConversationAttachmentStore {
     await Promise.all(selectionIds.map((selectionId) => this.removePending(selectionId)));
   }
 
-  async commit(conversationId: string, selectionIds: string[], messageId: string): Promise<MessageAttachment[]> {
+  async commit(conversationId: string, selectionIds: string[], messageId: string, retainPending = false): Promise<MessageAttachment[]> {
     await this.initialize();
     assertSafeId(conversationId, 'ATTACHMENT_CONVERSATION_REQUIRED');
     assertSafeId(messageId, 'ATTACHMENT_MESSAGE_REQUIRED');
@@ -136,7 +152,7 @@ export class ConversationAttachmentStore {
           const sha256 = await hashFile(temporary);
           const existing = await this.findReusable(index, conversationId, record.sourcePath, sha256, copied.size);
           if (existing) {
-            existing.sends.push({ messageId, sentAt });
+            if (!existing.sends.some(send => send.messageId === messageId)) existing.sends.push({ messageId, sentAt });
             committed.push(existing);
             await rm(temporary, { force: true });
             continue;
@@ -164,7 +180,7 @@ export class ConversationAttachmentStore {
           committed.push(stored);
         }
         await this.writeIndex(index);
-        await Promise.all(selectionIds.map((selectionId) => this.removePending(selectionId).catch(() => undefined)));
+        if (!retainPending) await Promise.all(selectionIds.map((selectionId) => this.removePending(selectionId).catch(() => undefined)));
         return committed.map(publicAttachment);
       } catch (error) {
         await Promise.all(temporaryFiles.map((file) => rm(file, { force: true }).catch(() => undefined)));
@@ -184,6 +200,11 @@ export class ConversationAttachmentStore {
   }
 
   async list(conversationId: string): Promise<ConversationAttachmentInfo[]> {
+    if (conversationId.startsWith('group:')) {
+      const scope = this.groupScopes.get(conversationId);
+      const source = this.readScope(conversationId);
+      return (await this.list(source)).filter(item => scope!.ids.has(item.id));
+    }
     await this.initialize();
     assertSafeId(conversationId, 'ATTACHMENT_CONVERSATION_REQUIRED');
     await this.mutation;
@@ -193,6 +214,7 @@ export class ConversationAttachmentStore {
   }
 
   async inspect(id: string, conversationId: string): Promise<ConversationAttachmentInfo> {
+    conversationId = this.readScope(conversationId, id);
     await this.initialize();
     assertSafeId(conversationId, 'ATTACHMENT_CONVERSATION_REQUIRED');
     assertSafeId(id, 'ATTACHMENT_REFERENCE_INVALID');
@@ -205,12 +227,14 @@ export class ConversationAttachmentStore {
   async read(id: string, conversationId: string) { return readFile(await this.pathFor(id, conversationId)); }
 
   async pathFor(id: string, conversationId: string) {
+    conversationId = this.readScope(conversationId, id);
     const info = await this.inspect(id, conversationId);
     if (info.availability !== 'available') throw new Error('ATTACHMENT_MISSING');
     return this.contentPath(conversationId, id);
   }
 
   async sourcePathFor(id: string, conversationId: string) {
+    conversationId = this.readScope(conversationId, id);
     await this.initialize();
     assertSafeId(conversationId, 'ATTACHMENT_CONVERSATION_REQUIRED');
     assertSafeId(id, 'ATTACHMENT_REFERENCE_INVALID');
@@ -229,6 +253,7 @@ export class ConversationAttachmentStore {
   }
 
   async deleteConversation(conversationId: string) {
+    if (conversationId.startsWith('group:')) { this.groupScopes.delete(conversationId); return; }
     await this.initialize();
     assertSafeId(conversationId, 'ATTACHMENT_CONVERSATION_REQUIRED');
     const target = this.conversationDirectory(conversationId);
@@ -237,6 +262,7 @@ export class ConversationAttachmentStore {
   }
 
   async dispose() {
+    this.groupScopes.clear();
     this.pending.clear();
     await this.mutate(() => rm(this.pendingDirectory(), { recursive: true, force: true }));
   }

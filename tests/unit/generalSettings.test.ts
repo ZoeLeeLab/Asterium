@@ -23,6 +23,16 @@ it('rejects unknown settings and unavailable startup without changing stored sta
   await expect(store.update({ launchAtLogin: true })).rejects.toThrow('STARTUP_UNAVAILABLE');
   expect((await store.get()).revision).toBe(0);
 });
+
+it('adds update preferences to old settings and persists explicit opt-out', async () => {
+  const { store, file } = await setup();
+  const { checkUpdatesAtStartup, includePrereleaseUpdates, ...old } = (await store.get()).settings;
+  expect(checkUpdatesAtStartup).toBe(true); expect(includePrereleaseUpdates).toBe(true);
+  await writeFile(file, JSON.stringify({ version: 1, revision: 0, settings: old }));
+  expect((await store.get()).settings.checkUpdatesAtStartup).toBe(true);
+  await store.update({ checkUpdatesAtStartup: false, includePrereleaseUpdates: false });
+  expect((await new GeneralSettingsStore(file).get()).settings).toMatchObject({ checkUpdatesAtStartup: false, includePrereleaseUpdates: false });
+});
 it('does not silently replace damaged storage with defaults', async () => {
   const { store, file } = await setup(); await writeFile(file, '{bad');
   await expect(store.get()).rejects.toThrow(); await expect(store.update({ closeAction: 'quit' })).rejects.toThrow();

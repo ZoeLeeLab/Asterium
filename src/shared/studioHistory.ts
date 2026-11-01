@@ -3,9 +3,10 @@ import { STUDIO_PUBLIC_HISTORY_BUDGET, type StudioRoomMessage } from './studioRu
 /** Preserve Studio's existing tail selection, including one oversized final message. */
 export function selectStudioPublicContext(messages: StudioRoomMessage[]) {
   const selected = messages.slice(-STUDIO_PUBLIC_HISTORY_BUDGET.maxMessages);
-  let characters = selected.reduce((sum, message) => sum + message.content.length, 0);
+  const size = (message: StudioRoomMessage) => message.content.length + (message.attachments?.length ? JSON.stringify(message.attachments).length : 0);
+  let characters = selected.reduce((sum, message) => sum + size(message), 0);
   while (selected.length > 1 && characters > STUDIO_PUBLIC_HISTORY_BUDGET.maxCharacters) {
-    characters -= selected.shift()!.content.length;
+    characters -= size(selected.shift()!);
   }
   const first = selected[0];
   const originalFirst = messages[0];

@@ -2,6 +2,7 @@ import type { DesktopBridge } from '../shared/desktopBridge';
 
 declare global {
   interface Window {
+    asteriumUpdates?: DesktopBridge['asteriumUpdates'];
     asteriumDesktopNavigation?: DesktopBridge['asteriumDesktopNavigation'];
     asteriumGeneralSettings?: DesktopBridge['asteriumGeneralSettings'];
     asteriumAutomations?: DesktopBridge['asteriumAutomations'];

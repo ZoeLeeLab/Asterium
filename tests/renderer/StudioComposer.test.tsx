@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StudioComposer, type StudioMentionOption } from '../../src/renderer/components/studio/StudioComposer';
 
 const members: StudioMentionOption[] = [
@@ -7,10 +7,46 @@ const members: StudioMentionOption[] = [
   { partnerId: 'partner-2', displayName: '外部伙伴', mentionName: '外部伙伴', expertise: '架构' },
 ];
 
+afterEach(() => { window.asteriumAttachments = undefined; });
+
+it('uploads attachment-only messages, preserves selections on failure and releases them on removal', async () => {
+  const attachment = { selectionId: 'pending-attachment-one', name: 'requirements.txt', sizeBytes: 40, mediaType: 'text/plain' };
+  const choose = vi.fn(async () => [attachment]), discard = vi.fn(async () => undefined);
+  window.asteriumAttachments = { choose, discard } as never;
+  const onSend = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  render(<StudioComposer placeholder="附件测试" members={members} onSend={onSend} />);
+  fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
+  await screen.findByText('requirements.txt');
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await waitFor(() => expect(onSend).toHaveBeenCalledWith('', [], [attachment]));
+  expect(screen.getByText('requirements.txt')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await waitFor(() => expect(screen.queryByText('requirements.txt')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
+  await screen.findByText('requirements.txt');
+  fireEvent.click(screen.getByRole('button', { name: '移除 requirements.txt' }));
+  expect(discard).toHaveBeenCalledWith([attachment.selectionId]);
+});
+
+it('retains a failed attachment draft, reports limits and discards pending files when switching rooms', async () => {
+  const attachment = { selectionId: 'pending-attachment-two', name: 'test.txt', sizeBytes: 40, mediaType: 'text/plain' };
+  const choose = vi.fn().mockRejectedValueOnce(new Error('ATTACHMENT_TOO_LARGE')).mockResolvedValue([attachment]);
+  const discard = vi.fn(async () => undefined);
+  window.asteriumAttachments = { choose, discard } as never;
+  const view = render(<StudioComposer placeholder="附件测试" members={members} onSend={async () => { throw new Error('offline'); }} />);
+  fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('20MB');
+  fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' })); await screen.findByText('test.txt');
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('附件已保留');
+  expect(screen.getByText('test.txt')).toBeInTheDocument();
+  view.unmount(); expect(discard).toHaveBeenCalledWith([attachment.selectionId]);
+});
+
 describe('StudioComposer mentions', () => {
   it('keeps two lines initially and grows with multiline input up to the cap', () => {
     render(<StudioComposer placeholder="群聊消息" members={members} onSend={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '添加图片或文件（后续开放）' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '添加图片或文件' })).toBeDisabled();
     const input = screen.getByRole('textbox', { name: '群聊消息' });
 
     Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 96 });

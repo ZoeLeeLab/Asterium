@@ -9,6 +9,10 @@ import path from 'node:path';
 import { registerTitlebarThemeChannel, installAppearanceRecovery } from './titlebar';
 import { registerAgentIpc } from './agentIpc';
 import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
+import { spawn } from 'node:child_process';
+import { AppUpdateService } from './settings/AppUpdateService';
+import { PUBLIC_UPDATE_REPOSITORY } from '../shared/appUpdates';
+import { APP_VERSION } from '../shared/appRelease';
 import { normalizeExternalHttpUrl } from './security/externalUrl';
 import { mkdirSync } from 'node:fs';
 import { BETA_APP_ID, BETA_APP_NAME } from '../shared/appRelease';
@@ -44,6 +48,20 @@ const lifecycle = new DesktopLifecycle({
 });
 
 const activeNotifications = new Set<Notification>();
+const updates = new AppUpdateService({
+  repository: PUBLIC_UPDATE_REPOSITORY, version: APP_VERSION,
+  directory: path.join(app.getPath('userData'), 'updates'),
+  includePrerelease: () => generalSettings.current().includePrereleaseUpdates,
+  openExternal: url => shell.openExternal(url),
+  install: async file => {
+    if (!app.isPackaged || process.platform !== 'win32') throw new Error('UPDATE_INSTALL_UNAVAILABLE');
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(file, [], { detached: true, stdio: 'ignore', windowsHide: true, shell: false });
+      child.once('error', reject); child.once('spawn', () => { child.unref(); resolve(); });
+    });
+    await lifecycle.quit();
+  },
+});
 const notifications = new DesktopNotifications({
   settings: () => generalSettings.current(),
   background: () => !mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized() || !mainWindow.isFocused(),
@@ -112,7 +130,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
 registerTitlebarThemeChannel(ipcMain, () => mainWindow);
-disposeAgentIpc = registerAgentIpc(ipcMain, () => mainWindow, { generalSettings, notifications });
+disposeAgentIpc = registerAgentIpc(ipcMain, () => mainWindow, { generalSettings, notifications, updates });
 
 app.on('second-instance', () => { void app.whenReady().then(() => { if (!mainWindow) createWindow(); else lifecycle.restore(); }); });
 app.on('before-quit', event => { if (!lifecycle.canExit) { event.preventDefault(); void lifecycle.quit(); } });
@@ -128,6 +146,8 @@ app.whenReady().then(async () => {
     await runtime.verifyClaudeBridgeResources();
   }
   createWindow();
+
+  if (generalSettings.current().checkUpdatesAtStartup) void updates.check();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

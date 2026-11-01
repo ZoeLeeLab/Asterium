@@ -224,7 +224,7 @@ export class StudioRoomStore {
 
   /** Publishing is independent of managed runtime scheduling. External participants never enter its queue. */
   async publishUserMessage(request: StudioStartRoundRequest, permissionMode: ProjectPermissionMode = 'manual', externalParticipantIds: string[] = [], automation?: { automationId: string; runId: string; name: string }) {
-    if (!request.messageId.trim() || !request.content.trim()) throw new Error('STUDIO_MESSAGE_CONTENT_INVALID');
+    if (!request.messageId.trim() || (!request.content.trim() && !request.attachments?.length)) throw new Error('STUDIO_MESSAGE_CONTENT_INVALID');
     const snapshot = await this.mutate(async () => {
       const data = await this.readUnlocked();
       const room = data.rooms[request.room.roomId] ?? emptyRoom(request.room);
@@ -235,6 +235,7 @@ export class StudioRoomStore {
       const duplicate = room.messages.find((message) => message.messageId === request.messageId);
       if (duplicate) {
         if (duplicate.authorType !== (automation ? 'system' : 'user') || duplicate.content !== request.content.trim()
+          || JSON.stringify(duplicate.attachments ?? []) !== JSON.stringify(request.attachments ?? [])
           || JSON.stringify(duplicate.mentions ?? []) !== JSON.stringify(request.mentions ?? [])) throw new Error('STUDIO_MESSAGE_ID_CONFLICT');
         return publicSnapshot(room);
       }
@@ -258,6 +259,7 @@ export class StudioRoomStore {
         authorId: automation ? 'system' : ASTERIUM_USER_ID,
         ...(automation ? { automation } : {}),
         content: request.content.trim(),
+        ...(request.attachments?.length ? { attachments: request.attachments.map(item => ({ ...item })) } : {}),
         createdAt: now,
         status: 'completed',
         externalParticipantIds: external,

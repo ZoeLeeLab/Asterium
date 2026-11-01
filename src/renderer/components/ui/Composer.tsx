@@ -205,7 +205,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
   );
 }
 
-function PendingAttachmentCard({ attachment, onRemove }: { attachment: PendingMessageAttachment; onRemove: () => void }) {
+export function PendingAttachmentCard({ attachment, onRemove, disabled = false }: { attachment: PendingMessageAttachment; onRemove: () => void; disabled?: boolean }) {
   const [thumbnail, setThumbnail] = useState('');
   const image = attachment.mediaType.startsWith('image/');
   useEffect(() => {
@@ -216,7 +216,7 @@ function PendingAttachmentCard({ attachment, onRemove }: { attachment: PendingMe
   return <div className={`pending-attachment ${image ? 'pending-attachment--image' : ''}`}>
     {thumbnail ? <img src={thumbnail} alt={attachment.name} /> : image ? <ImageIcon size={18} /> : <File size={18} />}
     <span><strong>{attachment.name}</strong><small>{formatBytes(attachment.sizeBytes)}</small></span>
-    <button type="button" onClick={onRemove} aria-label={`移除 ${attachment.name}`} title="移除附件"><X size={14} /></button>
+    <button type="button" disabled={disabled} onClick={onRemove} aria-label={`移除 ${attachment.name}`} title="移除附件"><X size={14} /></button>
   </div>;
 }
 

@@ -19,6 +19,7 @@
 - **明确范围的记忆管理。** 当前可对星丛内按伙伴保存的记忆进行查看、检索、新增、编辑、评论、回收站恢复与永久删除；授权场景下的伙伴读写取决于记忆模式和权限。本地 CLI 的原生记忆由宿主管理。**已有记忆导入能力仍在确认，当前尚未提供通用导入功能。** 接入伙伴不表示自动继承外部聊天历史或已有记忆。
 - **接入与工具。** 可连接本地 Codex CLI、Claude Code，或配置 API 服务与模型。API 伙伴可按授权使用文件、命令、MCP 和 Skills；本地 CLI 需另行安装登录，具体服务兼容性以实际测试为准。
 - **项目与交付。** 将相关群聊、成员、任务、流程和文件组织在一起，成果保存到实际项目文件夹，便于查看进展与复核结果。授权工作目录后，伙伴才能在相应边界内开展工作。
+- **群聊附件。** 选择图片或文件与本群伙伴共享，保留历史快照并支持预览；读取与图片理解受伙伴能力限制，外部线程目前仅接收附件信息，详见[使用说明](docs/studio-attachments.md)。
 - **自动化与桌面设置。** 提供会话任务计划、运行记录、外观与托盘等设置。自动化仍为实验功能，需要星丛运行；外部宿主的定时执行与原线程自动唤醒尚未接通。
 
 ## 下载与安装
@@ -30,6 +31,8 @@
 Claude 本地原生命令沿用星丛审批：手动模式等待允许，Full 模式授权使用当前 Windows 账户的原生权限，不提供操作系统级文件隔离；只读模式继续拒绝命令操作。选择权限前请确认工作目录和任务范围，详见[权限说明](docs/claude-cli-compatibility.md)。
 
 Beta 安装器按当前用户安装，无需提权，默认使用独立的 `Asterium Beta` 程序文件夹。安装选项“创建桌面快捷方式”首次默认勾选；完成页“立即打开星丛”默认不勾选。重装保留此前取消快捷方式的选择，卸载保留资料；这些行为还须由测试电脑完成普通账户验收。当前未做代码签名，Windows 可能显示未知发布者提示。
+
+“关于”页提供版本和更新入口：由你选择下载、再确认退出安装。当前公开 GitHub 更新源待绑定，本地候选显示“更新源待配置”；绑定及真实升级仍待验收，见[客户端更新](docs/client-updates.md)。
 
 ## 五步快速开始
 
@@ -66,12 +69,13 @@ npm start
 
 项目处于开发预览阶段，已进行自动检查和部分人工验收，完整功能、真实服务连接及卸载重装仍待继续。外部宿主集成、实验自动化和可选 Windows 沙箱有各自边界，不应从模拟测试推断全部可用。
 
-对应候选的来源、检查范围及待办，见 [Beta Release Notes](docs/releases/0.1.0-beta.1-r1.md)；最终文件哈希与检查证据随候选交付。旧候选记录独立保留，后续文档更新不会改变已有安装包的构建归属。
+对应候选的来源、检查范围及待办，见 [首版补齐 Release Notes](docs/releases/0.1.0-beta.1-r2.md)；最终文件哈希与检查证据随候选交付。旧候选记录独立保留，后续文档更新不会改变已有安装包的构建归属。
 
 ## 文档索引
 
 - [API 连接与模型](docs/api-connections-guide.md) · [MCP 与 Skills](docs/api-extensions-guide.md)
 - [自动化](docs/automations-user-guide.md) · [外观设置](docs/appearance-customization.md)
+- [群聊附件](docs/studio-attachments.md) · [客户端更新](docs/client-updates.md)
 - [数据目录与隔离验收](docs/data-isolation.md) · [文件与命令审批](docs/native-command-approval.md)
 - [开发、检查与验收](docs/development-and-validation.md) · [能力范围索引](docs/capabilities/index.md)
 - [Beta Release Notes](docs/releases/0.1.0-beta.1-r1.md) · [旧候选记录](docs/releases/0.1.0-candidate-20261031-r1.md)

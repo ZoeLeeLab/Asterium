@@ -58,6 +58,15 @@ async function freePort() {
 }
 
 describe('Studio MCP HTTP and authority', () => {
+  it('publishes attachment metadata without exposing local paths or binary content', async () => {
+    const s = await setup();
+    const attachment = { id: 'attachment-generic', name: 'requirements.txt', mediaType: 'text/plain', sizeBytes: 40, sourcePath: 'X:/synthetic-private/input.txt' };
+    await s.rooms.publishUserMessage({ room, messageId: 'attached-message', content: '', authorId: 'user', speakerQueue: [], attachments: [attachment] }, 'manual', ['chuan']);
+    const page = await s.service.history(s.issued.token, room.roomId, 1, {});
+    expect(page.messages[0].attachments).toEqual([{ id: attachment.id, name: attachment.name, mediaType: attachment.mediaType, sizeBytes: attachment.sizeBytes }]);
+    expect(JSON.stringify(page)).not.toContain('sourcePath');
+    expect(JSON.stringify(page)).not.toContain('synthetic-private');
+  });
   it.each(['legacy', 'auto'] as const)('serves real %s MCP clients with scoped read/write and frozen acknowledgement', async (mode) => {
     const s = await setup();
     const client = await connect(s.endpoint, s.issued.token, mode);

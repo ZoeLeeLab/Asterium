@@ -5,6 +5,7 @@ import { PartnerRuntimePort, type PartnerRuntimePortDependencies } from '../../s
 import { StudioRuntimeCatalog } from '../../src/main/studio/StudioRuntimeCatalog';
 
 const prepared: StudioPreparedTurn = {
+  attachments: [{ id: 'attachment-one', name: 'requirements.txt', mediaType: 'text/plain', sizeBytes: 12 }],
   room: { roomId: 'room-one', projectId: 'project-one', name: '讨论组', memberIds: ['partner-one'] },
   round: {
     roundId: 'round-one', roomId: 'room-one', triggerMessageId: 'message-one', speakerQueue: ['partner-one'],
@@ -96,6 +97,7 @@ describe('PartnerRuntimePort', () => {
     expect(call.command).toMatchObject({
       partnerId: 'partner-one',
       conversationId: prepared.conversationId,
+      attachments: prepared.attachments,
       route: { scope: 'group', roomId: 'room-one', roundId: 'round-one', bindingGeneration: 1, inputThroughSeq: 1 },
       content: { type: 'text', text: '公开群聊内容' },
       execution: { permissionMode: 'full', planMode: 'default' },

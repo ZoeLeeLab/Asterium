@@ -1,5 +1,12 @@
 import type { CodexRuntimeInfo, ConnectionSource, NativeThreadScope, RuntimeModelObservation } from './agentProtocol';
 import type { ProjectPermissionMode } from './projectExecutionPolicy';
+import type { MessageAttachment } from './contracts/attachments';
+
+/** Separate from single-chat attachment storage; no user-supplied filesystem paths. */
+export function studioAttachmentConversationId(roomId: string) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,139}$/.test(roomId)) throw new Error('INVALID_STUDIO_ATTACHMENT_ROOM');
+  return `studio-attachments-${roomId}`;
+}
 
 /** Exact internal response used when a queued partner deliberately has nothing to add. */
 export const STUDIO_PASS_MARKER = '<asterium_group_pass />';
@@ -45,6 +52,7 @@ export interface StudioRoomMetadata {
 }
 
 export interface StudioRoomMessage {
+  attachments?: MessageAttachment[];
   automation?: { automationId: string; runId: string; name: string };
   roomId: string;
   messageId: string;
@@ -180,6 +188,9 @@ export interface NativeThreadBinding {
 }
 
 export interface StudioStartRoundRequest {
+  /** Renderer supplies staged selections; Main supplies canonical attachments. */
+  attachmentSelectionIds?: string[];
+  attachments?: MessageAttachment[];
   room: StudioRoomMetadata;
   messageId: string;
   content: string;
@@ -201,6 +212,7 @@ export interface StudioPrepareTurnRequest {
 }
 
 export interface StudioPreparedTurn {
+  attachments?: MessageAttachment[];
   room: StudioRoomMetadata;
   round: StudioRound;
   settings: StudioRoomSettings;

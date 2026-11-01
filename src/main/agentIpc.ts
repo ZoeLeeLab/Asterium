@@ -37,6 +37,8 @@ import { BridgeCursorStore } from './security/BridgeCursorStore';
 import { WorkspaceGrantStore } from './security/WorkspaceGrantStore';
 import { ArtifactRegistry } from './security/ArtifactRegistry';
 import { ConversationAttachmentStore, MAX_MESSAGE_ATTACHMENTS } from './security/ConversationAttachmentStore';
+import { StudioAttachments } from './studio/StudioAttachments';
+import type { AppUpdateService } from './settings/AppUpdateService';
 import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
 import { ApiConnectionStore } from './api/ApiConnectionStore';
 import { apiConfigurationMutationSchema, apiRequestSettingsSchema, apiModelSettingsSchema } from '../shared/apiConnections';
@@ -228,7 +230,7 @@ function assertTaskGateResolutionRequest(value: unknown): TaskGateResolutionRequ
   return value as unknown as TaskGateResolutionRequest;
 }
 
-export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindow | null, options: { generalSettings?: GeneralSettingsStore; notifications?: DesktopNotifications } = {}) {
+export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindow | null, options: { generalSettings?: GeneralSettingsStore; notifications?: DesktopNotifications; updates?: AppUpdateService } = {}) {
   const notifications = options.notifications;
   const generalSettings = options.generalSettings ?? new GeneralSettingsStore(() => path.join(app.getPath('userData'), 'general-settings.v1.json'));
   const grants = new Map<string, string>();
@@ -349,6 +351,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     legacyIndexPath: () => path.join(app.getPath('userData'), 'message-attachments.v1.json'),
   });
   const singleChatMessages = new SingleChatMessageStore(() => path.join(app.getPath('userData'), 'single-chat-messages.v1.json'));
+  const studioAttachments = new StudioAttachments(messageAttachments);
   const partnerMemories = new PartnerMemoryService(partnerProfiles, { ready: prepareMemoryStorage });
   const partnerMemoryBriefings = new PartnerMemoryBriefingService(partnerMemories);
   const sessionBootstraps = new SessionBootstrapService(partnerProfiles, partnerMemoryBriefings, nativeBindings, studioRooms, apiSessions);
@@ -596,6 +599,14 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   };
   ipcMain.handle(AGENT_IPC.desktopNavigationTake, event => { requireSender(event); return notifications?.takeNavigation(); });
   ipcMain.handle(AGENT_IPC.generalSettingsGet, async event => { requireSender(event); return generalSettings.get(); });
+  const requireUpdates = () => { if (!options.updates) throw new Error('UPDATES_UNAVAILABLE'); return options.updates; };
+  ipcMain.handle(AGENT_IPC.updatesGet, event => { requireSender(event); return requireUpdates().get(); });
+  ipcMain.handle(AGENT_IPC.updatesCheck, event => { requireSender(event); return requireUpdates().check(); });
+  ipcMain.handle(AGENT_IPC.updatesDownload, event => { requireSender(event); return requireUpdates().download(); });
+  ipcMain.handle(AGENT_IPC.updatesCancel, event => { requireSender(event); requireUpdates().cancel(); });
+  ipcMain.handle(AGENT_IPC.updatesInstall, event => { requireSender(event); return requireUpdates().install(); });
+  ipcMain.handle(AGENT_IPC.updatesOpenReleases, event => { requireSender(event); return requireUpdates().openReleases(); });
+  const unsubscribeUpdates = options.updates?.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.updatesChanged, snapshot); });
   ipcMain.handle(AGENT_IPC.generalSettingsUpdate, async (event, value: unknown) => { requireSender(event); return generalSettings.update(value); });
   const unsubscribeGeneralSettings = generalSettings.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.generalSettingsChanged, snapshot); });
   const sendEvent = (event: PartnerEvent | MessageDeliveryEvent | ExistingThreadChangedEvent) => {
@@ -1667,7 +1678,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     startProjectTask: (command) => projectTaskRuntime.startProjectTask(command),
     projectTaskWriterScope: projectTaskRuntime.workspaceWriterScope,
   });
-  const studioOrchestrator = new StudioOrchestrator(studioRooms, studioRuntimeCatalog, partnerRuntimePort, projectCoordinator, projectExecutionPolicies);
+  const studioOrchestrator = new StudioOrchestrator(studioRooms, studioRuntimeCatalog, partnerRuntimePort, projectCoordinator, projectExecutionPolicies, studioAttachments);
   studioOrchestration.orchestrator = studioOrchestrator;
   const sendExistingThreadChanged = (partnerId: string, change: { threadId: string; previousThreadId?: string; workspaceRoot: string; reason: string }) => {
     diaryCatalog.observeThread(partnerId, change.threadId, change.workspaceRoot);
@@ -2437,7 +2448,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         });
       }
     }
-    return studioRooms.prepareTurn(value.roomId, value.roundId, value.partnerId, binding.generation, binding.conversationId, binding.nativeThreadId, binding.studioSpeakingMode);
+    const prepared = await studioRooms.prepareTurn(value.roomId, value.roundId, value.partnerId, binding.generation, binding.conversationId, binding.nativeThreadId, binding.studioSpeakingMode);
+    const snapshot = await studioRooms.getRoom(value.roomId);
+    return studioAttachments.prepareTurn(prepared, snapshot?.messages ?? []);
   }
 
   async function markAcceptedStudioSpeakingMode(event: PartnerEvent, command: SendMessageCommand) {
@@ -2707,6 +2720,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   ipcMain.handle(AGENT_IPC.automationsMutate, async (event, request: unknown) => { requireSender(event); return automationService.mutate(request); });
 
   return async () => {
+    unsubscribeUpdates?.(); options.updates?.dispose();
     notifications?.dispose();
     unsubscribeGeneralSettings();
     automationConfirmations.dispose();
@@ -2869,7 +2883,11 @@ function isStudioRoomMetadata(value: unknown): value is StudioRoomMetadata {
 function isStudioStartRoundRequest(value: unknown): value is StudioStartRoundRequest {
   return isRecord(value) && isStudioRoomMetadata(value.room)
     && typeof value.messageId === 'string' && Boolean(value.messageId)
-    && typeof value.content === 'string' && Boolean(value.content.trim())
+    && typeof value.content === 'string' && (Boolean(value.content.trim()) || (Array.isArray(value.attachmentSelectionIds) && value.attachmentSelectionIds.length > 0))
+    && value.attachments === undefined
+    && (value.attachmentSelectionIds === undefined || (Array.isArray(value.attachmentSelectionIds) && value.attachmentSelectionIds.length <= 10
+      && new Set(value.attachmentSelectionIds).size === value.attachmentSelectionIds.length
+      && value.attachmentSelectionIds.every(id => typeof id === 'string' && /^pending-attachment-[A-Za-z0-9-]+$/.test(id))))
     && typeof value.authorId === 'string' && Boolean(value.authorId)
     && Array.isArray(value.speakerQueue) && value.speakerQueue.length > 0
     && value.speakerQueue.every((id) => typeof id === 'string' && Boolean(id))

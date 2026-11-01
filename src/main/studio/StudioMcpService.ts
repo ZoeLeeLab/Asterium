@@ -44,6 +44,7 @@ export class StudioMcpService {
         messages: page.messages.map((message) => ({
           messageId: message.messageId, seq: message.seq, authorType: message.authorType, authorId: message.authorId,
           createdAt: message.createdAt, status: message.status,
+          ...(message.attachments?.length ? { attachments: message.attachments.map(({ id, name, mediaType, sizeBytes }) => ({ id, name, mediaType, sizeBytes })) } : {}),
           ...(message.mentions ? { mentions: message.mentions } : {}),
           ...(message.content.length > STUDIO_PUBLIC_HISTORY_BUDGET.maxCharacters
             ? { contentRequiresChunks: true, totalCharacters: message.content.length }

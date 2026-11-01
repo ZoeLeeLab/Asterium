@@ -36,10 +36,11 @@ try {
   assert.equal(await page.getByRole('button', { name: '重置演示数据' }).count(), 0);
   await page.screenshot({ path: path.join(evidence, 'empty-partners.png'), fullPage: true });
   await page.getByRole('navigation', { name: '设置菜单' }).getByRole('button', { name: '关于', exact: true }).click();
-  await page.getByRole('heading', { name: '关于星丛', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '星丛 Asterium', exact: true }).waitFor();
   const packageInfo = JSON.parse(await readFile('package.json', 'utf8'));
   assert.equal(await page.getByText(packageInfo.version, { exact: true }).count(), 1);
   await page.screenshot({ path: path.join(evidence, 'about.png'), fullPage: true });
+  await page.getByText('第三方声明与许可证', { exact: true }).click();
   for (const [title, file] of [['第三方声明', 'THIRD_PARTY_NOTICES.md'], ['第三方许可证原文', 'third_party/licenses/THIRD_PARTY_LICENSES.txt']]) {
     await page.getByRole('button', { name: `查看${title}`, exact: true }).click();
     const text = page.getByLabel(title, { exact: true });

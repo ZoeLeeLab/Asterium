@@ -17,7 +17,7 @@ it('opens About from the settings menu and can return to other settings', () => 
   const about = within(nav).getByRole('button', { name: '关于' });
   expect(about).toBeEnabled();
   fireEvent.click(about);
-  expect(screen.getByRole('heading', { name: '关于星丛' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: '星丛 Asterium' })).toBeInTheDocument();
   expect(screen.getByText(APP_VERSION, { exact: true })).toBeInTheDocument();
   fireEvent.click(within(nav).getByRole('button', { name: '通用' }));
   expect(screen.getByRole('heading', { name: '通用' })).toBeInTheDocument();
@@ -25,15 +25,17 @@ it('opens About from the settings menu and can return to other settings', () => 
 
 it('supports a direct About route and accurately describes incomplete release features', () => {
   renderSettings('/settings?section=about');
-  expect(screen.getByRole('heading', { name: '关于星丛' })).toBeInTheDocument();
-  expect(screen.getByText(/尚未正式落地项目许可证/)).toBeInTheDocument();
-  expect(screen.getByText(/已有记忆导入能力仍在确认／尚未提供/)).toBeInTheDocument();
-  expect(screen.getByText(/未配置代码签名/)).toHaveTextContent('自动检查更新尚未提供');
+  expect(screen.getByRole('heading', { name: '星丛 Asterium' })).toBeInTheDocument();
+  expect(screen.getByText('待正式确定（拟 MPL-2.0）')).toBeInTheDocument();
+  expect(screen.getByText('未签名 · Beta')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('更新源待配置');
+  expect(screen.getByRole('button', { name: '检查更新' })).toBeDisabled();
 });
 
 it('displays the exact bundled third-party texts on demand without remote navigation', async () => {
   renderSettings('/settings?section=about');
   expect(screen.queryByLabelText('第三方声明')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText('第三方声明与许可证'));
   fireEvent.click(screen.getByRole('button', { name: '查看第三方声明' }));
   expect((await screen.findByLabelText('第三方声明')).textContent).toBe(notices);
   fireEvent.click(screen.getByRole('button', { name: '收起第三方声明' }));

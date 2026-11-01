@@ -1199,7 +1199,7 @@ interface PrototypeContextValue {
   rebindPartnerRoot: (partner: Extract<Partner, { sourceMode: 'local_cli' }>) => void;
   studioRooms: Record<string, StudioRoomSnapshot>;
   studioInteractions: Record<string, StudioInteraction>;
-  sendStudioMessage: (groupChatId: string, content: string, mentions?: StudioMention[]) => Promise<boolean>;
+  sendStudioMessage: (groupChatId: string, content: string, mentions?: StudioMention[], attachmentSelectionIds?: string[]) => Promise<boolean>;
   setStudioMuted: (groupChatId: string, partnerIds: string[]) => Promise<void>;
   setStudioSettings: (groupChatId: string, settings: StudioRoomSettings) => Promise<void>;
   resolveStudioDiscussion: (groupChatId: string, decision: 'continue' | 'end') => Promise<void>;
@@ -1242,6 +1242,7 @@ function studioMessages(snapshot: StudioRoomSnapshot): Message[] {
     status: 'delivered',
     runState: message.status === 'interrupted' ? 'cancelled' : 'completed',
     studioSeq: message.seq,
+    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
     ...(message.automation ? { automation: message.automation } : {}),
     ...(message.mentions?.length ? { studioMentions: message.mentions } : {}),
   }));
@@ -2279,10 +2280,10 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     rebindPartnerRoot: (partner) => {
       dispatch({ type: 'rebindPartnerRoot', partnerId: partner.id, conversation: newConversation(partner) });
     },
-    sendStudioMessage: async (groupChatId, content, mentions = []) => {
+    sendStudioMessage: async (groupChatId, content, mentions = [], attachmentSelectionIds = []) => {
       const text = content.trim();
       const groupChat = state.groupChats.find((item) => item.id === groupChatId);
-      if (!text || !groupChat || groupChat.archivedAt || !window.asteriumStudio) return false;
+      if ((!text && !attachmentSelectionIds.length) || !groupChat || groupChat.archivedAt || !window.asteriumStudio) return false;
       let snapshot = studioRooms[groupChatId];
       if (!snapshot) snapshot = await window.asteriumStudio.syncRoom({ roomId: groupChat.id, projectId: groupChat.projectId, name: groupChat.name, memberIds: groupChat.memberIds });
       if (snapshot.activeRound && !['completed', 'failed', 'cancelled'].includes(snapshot.activeRound.state)) return false;
@@ -2292,6 +2293,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
           room: { roomId: groupChat.id, projectId: groupChat.projectId, name: groupChat.name, memberIds: groupChat.memberIds },
           messageId: makeId('studio-message'),
           content: text,
+          ...(attachmentSelectionIds.length ? { attachmentSelectionIds } : {}),
           authorId: ASTERIUM_USER_ID,
           // Main owns the authoritative queue. Retain the existing field as a
           // compatibility candidate list for the unchanged IPC contract.

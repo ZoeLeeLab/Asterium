@@ -1,4 +1,11 @@
 export const DESKTOP_IPC = {
+  updatesGet: 'asterium:updates:get',
+  updatesCheck: 'asterium:updates:check',
+  updatesDownload: 'asterium:updates:download',
+  updatesCancel: 'asterium:updates:cancel',
+  updatesInstall: 'asterium:updates:install',
+  updatesOpenReleases: 'asterium:updates:open-releases',
+  updatesChanged: 'asterium:updates:changed',
   desktopNavigationTake: 'asterium:desktop-navigation:take',
   desktopNavigationReady: 'asterium:desktop-navigation:ready',
   generalSettingsGet: 'asterium:general-settings:get',
@@ -203,6 +210,7 @@ export const DESKTOP_IPC = {
 export type DesktopIpcChannel = typeof DESKTOP_IPC[keyof typeof DESKTOP_IPC];
 
 const DESKTOP_INVOKE_KEYS = [
+  'updatesGet', 'updatesCheck', 'updatesDownload', 'updatesCancel', 'updatesInstall', 'updatesOpenReleases',
   'desktopNavigationTake',
   'generalSettingsGet', 'generalSettingsUpdate',
   'automationsConfirmationsGet', 'automationsConfirmationsResolve',
@@ -246,6 +254,7 @@ const DESKTOP_INVOKE_KEYS = [
 export const DESKTOP_INVOKE_CHANNELS = DESKTOP_INVOKE_KEYS.map((key) => DESKTOP_IPC[key]) as readonly DesktopIpcChannel[];
 
 export const DESKTOP_PUSH_CHANNELS = [
+  DESKTOP_IPC.updatesChanged,
   DESKTOP_IPC.desktopNavigationReady,
   DESKTOP_IPC.generalSettingsChanged,
   DESKTOP_IPC.automationsChanged,

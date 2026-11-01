@@ -31,6 +31,5 @@ it('applies committed changes, handles push updates and retains the old value on
   await act(async () => { changed({ ...snapshot, revision: 1, settings: DEFAULT_GENERAL_SETTINGS }); });
   expect(screen.getByLabelText('发送快捷键')).toHaveValue('ctrl_enter');
   expect(screen.getByRole('checkbox', { name: /开启自启动/ })).toBeDisabled();
-  expect(screen.getByRole('checkbox', { name: /启动时自动检查更新/ })).toBeDisabled();
-  expect(screen.getByText('尚未配置更新源，暂不可用。')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: '前往关于页查看更新与设置' })).toHaveAttribute('href', '#/settings?section=about');
 });

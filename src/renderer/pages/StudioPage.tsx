@@ -5,6 +5,9 @@ import { RunChangeSummary } from '../components/studio/RunChangeSummary';
 import type { ProjectRunChange } from '../../shared/projectRunChanges';
 import { ProjectBrowserPane, type BrowserTab } from '../components/studio/ProjectBrowserPane';
 import { useStudioPreview } from '../components/studio/useStudioPreview';
+import { MessageAttachmentCards } from '../components/chat/MessageAttachmentCards';
+import { studioAttachmentConversationId } from '../../shared/studioRuntime';
+import type { PendingMessageAttachment } from '../../shared/agentProtocol';
 import {
   Archive, ArchiveRestore, AtSign, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleCheck, FileArchive, FileImage, FileSpreadsheet, FileText, FolderKanban, FolderOpen, Gamepad2, Home, Loader2,
   Flame, Hand, LockKeyhole, MapPin, MessageSquare, MessageSquarePlus, Mic, MicOff, MoreHorizontal, Pause, Pencil, Plane, Play, Plus, RotateCcw,
@@ -823,10 +826,10 @@ export function StudioPage() {
     }
   };
 
-  const submitStudioMessage = async (content: string, mentions: StudioMention[]) => {
+  const submitStudioMessage = async (content: string, mentions: StudioMention[], attachments: PendingMessageAttachment[] = []) => {
     if (!groupChat) return;
     setStudioSendError('');
-    const ok = await sendStudioMessage(groupChat.id, content, mentions);
+    const ok = await sendStudioMessage(groupChat.id, content, mentions, attachments.map(item => item.selectionId));
     if (!ok) setStudioSendError(activeRound ? '请等这一轮结束，或先停止当前伙伴。' : '没有可发言的伙伴；请检查成员、禁言和连接状态。');
     return ok;
   };
@@ -1568,6 +1571,7 @@ export function StudioPage() {
                 {!mine && <Avatar partnerId={author?.id} name={author?.publicIdentity.displayName ?? '伙伴'} src={author?.publicIdentity.avatarDataUrl} accent={author?.accent} size="md" />}
                 <div className="message-stack">
                   <div className="message-meta"><strong>{mine ? userProfile.displayName : `${author?.publicIdentity.displayName ?? '伙伴'}${author?.isRemoved ? '（已移除）' : ''}`}</strong>{message.studioSeq && <span className="studio-seq">#{message.studioSeq}</span>}<time>{message.createdAt}</time></div>
+                  <MessageAttachmentCards attachments={message.attachments} conversationId={studioAttachmentConversationId(groupChat.id)} onPreview={(attachment) => { if (!project) return; const contextId = studioAttachmentConversationId(groupChat.id); void preview.open({ projectId: project.id, action: 'file' }, `studio-attachment:${groupChat.id}:${attachment.id}`, attachment.name, async () => { if (!window.asteriumAttachments) throw new Error('附件预览不可用'); const result = await window.asteriumAttachments.read(attachment.id, contextId); return { content: { name: attachment.name, path: attachment.name, info: result.info, text: result.text, dataUrl: result.dataUrl } }; }); }} onContextMenu={() => undefined} />
                   <div className="message-bubble"><MarkdownContent className={mine ? 'message-content--user' : ''} studioReferences={messageReferences} studioReferenceAuthors={[userProfile.displayName, ...state.partners.map((partner) => partner.publicIdentity.displayName)]} studioMentions={mentionLabels} onStudioReference={jumpToStudioMessage}>{message.content}</MarkdownContent>{hasAttachedInteraction && renderStudioInteractionTimeline()}</div>
                   {message.studioMentions?.some((mention) => mention.source === 'partner') && <div className="studio-invitation-summary"><AtSign size={12} />{message.studioMentions.filter((mention) => mention.source === 'partner').map((mention) => <span key={mention.partnerId}>已邀请 {mention.label.startsWith('@') ? mention.label : `@${mention.label}`}</span>)}</div>}
                   {!mine && !message.isStreaming && (() => { const change = runChanges.records.find((record) => record.messageId === message.id && record.roomId === groupChat.id); return change && (change.files.length > 0 || change.commits.length > 0 || change.observedChanges) ? <RunChangeSummary change={change} onView={viewRunChange} /> : null; })()}

@@ -5,6 +5,7 @@ import type { StudioRoomStore } from './StudioRoomStore';
 import type { StudioPartnerRecord, StudioRuntimeCatalog } from './StudioRuntimeCatalog';
 import { studioPassPolicy } from './StudioPassPolicy';
 import type { ProjectExecutionPolicyStore } from '../project/ProjectExecutionPolicyStore';
+import type { StudioAttachments } from './StudioAttachments';
 
 interface StudioProjectMutationPort {
   run<T>(operation: () => Promise<T>): Promise<T>;
@@ -22,6 +23,7 @@ export class StudioOrchestrator {
     private readonly runtime: StudioRuntimeLifecyclePort,
     private readonly projectMutations?: StudioProjectMutationPort,
     private readonly executionPolicies?: Pick<ProjectExecutionPolicyStore, 'getOrCreate'>,
+    private readonly attachments?: Pick<StudioAttachments, 'prepareMessage' | 'published'>,
   ) {}
 
   handleSnapshot(snapshot: StudioRoomSnapshot) {
@@ -43,6 +45,8 @@ export class StudioOrchestrator {
 
   private async startRoundUnlocked(request: StudioStartRoundRequest) {
     const current = await this.rooms.getRoom(request.room.roomId);
+    if (current?.metadata.archived) throw new Error('STUDIO_ROOM_ARCHIVED');
+    if (current?.activeRound && !['completed', 'failed', 'cancelled'].includes(current.activeRound.state)) throw new Error('STUDIO_ROUND_ALREADY_ACTIVE');
     const room = current?.metadata ?? request.room;
     const settings = current?.settings ?? { speakingMode: DEFAULT_STUDIO_SPEAKING_MODE, selectedPartnerIds: [], discussionProtectionEnabled: false };
     const mutedPartnerIds = current?.mutedPartnerIds ?? [];
@@ -62,9 +66,12 @@ export class StudioOrchestrator {
     const externalParticipantIds = speakerQueue.filter((id) => members.some((partner) => partner.partnerId === id && partner.sourceMode === 'existing_thread'));
     const managedQueue = speakerQueue.filter((id) => !externalParticipantIds.includes(id));
     const policy = this.executionPolicies ? await this.executionPolicies.getOrCreate(room.projectId) : { permissionMode: 'manual' as const };
-    return externalParticipantIds.length
-      ? this.rooms.publishUserMessage({ ...request, room, speakerQueue: managedQueue }, policy.permissionMode, externalParticipantIds)
-      : this.rooms.publishUserMessage({ ...request, room, speakerQueue: managedQueue }, policy.permissionMode);
+    const message = this.attachments ? await this.attachments.prepareMessage(request) : request;
+    const published = externalParticipantIds.length
+      ? await this.rooms.publishUserMessage({ ...message, room, speakerQueue: managedQueue }, policy.permissionMode, externalParticipantIds)
+      : await this.rooms.publishUserMessage({ ...message, room, speakerQueue: managedQueue }, policy.permissionMode);
+    await this.attachments?.published(request);
+    return published;
   }
 
   async cancelRound(roomId: string) {
@@ -147,7 +154,8 @@ function groupRuntimePrompt(
         ? '系统'
         : partnerName;
     const suffix = message.status === 'interrupted' ? '（这段回复曾被中断）' : '';
-    return `[${message.seq}] ${author}${suffix}：${message.content}`;
+    const attachments = message.attachments?.map(item => `- ${item.name} (${item.mediaType}, ${item.sizeBytes} bytes), attachment_id: ${item.id}`).join('\n');
+    return `[${message.seq}] ${author}${suffix}：${message.content}${attachments ? `\n[用户附件]\n${attachments}` : ''}`;
   }).join('\n\n');
   const omission = prepared.omittedRange
     ? `较早的 ${prepared.omittedRange.fromSeq}–${prepared.omittedRange.throughSeq} 条消息因上下文预算未附带。\n\n`

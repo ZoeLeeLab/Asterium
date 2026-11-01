@@ -9,6 +9,16 @@ import type { MemoryArchiveChange, MemoryArchiveCommentRequest, MemoryArchiveCre
 import type { AsteriumAgentsApi, AsteriumAppearanceApi, AsteriumArtifactsApi, AsteriumAttachmentsApi, AsteriumConversationsApi, AsteriumMemoryApi, AsteriumNativeBindingsApi, AsteriumProjectsApi, AsteriumStudioApi, AsteriumStudioNotesApi } from '../shared/desktopBridge';
 import { DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 
+contextBridge.exposeInMainWorld('asteriumUpdates', {
+  get: () => ipcRenderer.invoke(AGENT_IPC.updatesGet),
+  check: () => ipcRenderer.invoke(AGENT_IPC.updatesCheck),
+  download: () => ipcRenderer.invoke(AGENT_IPC.updatesDownload),
+  cancel: () => ipcRenderer.invoke(AGENT_IPC.updatesCancel),
+  install: () => ipcRenderer.invoke(AGENT_IPC.updatesInstall),
+  openReleases: () => ipcRenderer.invoke(AGENT_IPC.updatesOpenReleases),
+  onChanged: listener => { const handler = (_event: Electron.IpcRendererEvent, snapshot: import('../shared/appUpdates').UpdateSnapshot) => listener(snapshot); ipcRenderer.on(AGENT_IPC.updatesChanged, handler); return () => ipcRenderer.removeListener(AGENT_IPC.updatesChanged, handler); },
+} satisfies import('../shared/appUpdates').AsteriumUpdatesApi);
+
 contextBridge.exposeInMainWorld('asteriumDesktopNavigation', {
   take: () => ipcRenderer.invoke(AGENT_IPC.desktopNavigationTake),
   onReady: listener => { const handler = () => listener(); ipcRenderer.on(AGENT_IPC.desktopNavigationReady, handler); return () => { ipcRenderer.removeListener(AGENT_IPC.desktopNavigationReady, handler); }; },
