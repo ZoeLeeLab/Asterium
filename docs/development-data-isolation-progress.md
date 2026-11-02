@@ -77,3 +77,13 @@ lint 退出码 1，报告 `tests/helpers/autoTest.mjs:211` 的 `no-useless-assig
 托管独立入口也通过：真实 Electron 四环境同时运行、重复实例拒绝、junction 拒绝、日常／开发重启保留；renderer-only 空白界面 7 项；从源码在临时 worker 内构建的 Wake mock 6 项和自动化 mock 4 项。没有调用真实模型或 CyberBoss，也没有构建或运行新产品候选。typecheck、lint、完整 16 条能力检查及 diff check 均通过。
 
 35 个独立 Node 入口和 Vitest 已接入新运行目录；unit／renderer 夹具保留原业务断言，仅改变目录及受管清理。当前阶段以 `test: S4 自动测试目录与脚本迁移` 单独提交。未打包，未执行新包安装、升级、真实 API／CLI 服务或外部宿主人工验收，这些不作为本轮已通过项目。
+
+S4 初始提交为 `73c183ad70ad5c5a498e3d9cfd6780ae866414ee`。
+
+## S4 补充：应用内启动测试的 TEMP 边界
+
+在 S5 范围核对中发现，日常星丛可能把自己的 runtime-temp 传给开发命令；测试分配器不能再把任意继承的 TEMP 当成独立系统测试根。只补强既有分配器：优先明确保留的系统测试根，Windows 默认使用独立 Local/Temp，并在创建任何测试目录前拒绝已标记的 daily/dev/acceptance/autotest 应用资料树。
+
+增加两项合成目录检查，覆盖继承日常 TEMP 时另选独立根，以及显式错误根在写入前拒绝；没有操作真实日常目录。生命周期和测试来源共 10 项通过，typecheck、lint、完整能力检查通过。最终完整离线回归：213 文件、1672 项通过、0 失败、2 项既有 TODO；日志单独保存在 `.qa/s4-temp-boundary-c1c930f0a47e40c79d44480802e8f5da/vitest.log`。
+
+为保留已汇报提交及审计归属，该修复以 `fix: S4 拒绝继承应用资料作为测试临时根` 追加本地提交，不改写 S4 初始提交。S5 仍只提交文档，待此补充代码提交存在后绑定其真实基线。

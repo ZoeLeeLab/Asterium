@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { spawnSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, symlinkSync, unlinkSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { cleanupAutoTestRun } from '../helpers/autoTest.mjs';
@@ -17,6 +17,27 @@ function run(mode) {
 }
 function owner(report) { return JSON.parse(readFileSync(path.join(report.root, '.asterium-autotest-run.v1.json'), 'utf8')); }
 describe('automatic test lifecycle', () => {
+  it.skipIf(process.platform !== 'win32')('does not inherit an application data TEMP as its system test root', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'inherited-temp-'));
+    const daily = path.join(root, 'daily'), local = path.join(root, 'local'), inherited = path.join(daily, 'runtime-temp');
+    mkdirSync(inherited, { recursive: true }); mkdirSync(local);
+    writeFileSync(path.join(daily, '.asterium-profile.v1.json'), JSON.stringify({ version: 1, profile: 'daily' }));
+    const s = settings('pass'); delete s.options.env.ASTERIUM_AUTOTEST_SYSTEM_TEMP;
+    Object.assign(s.options.env, { LOCALAPPDATA: local, TEMP: inherited, TMP: inherited });
+    const result = spawnSync(s.command, s.args, s.options); expect(result.status, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout.trim().split('\n')[0]);
+    expect(report.root.startsWith(path.join(local, 'Temp', 'Asterium-AutoTest') + path.sep)).toBe(true);
+    expect(existsSync(path.join(inherited, 'Asterium-AutoTest'))).toBe(false);
+    expect(existsSync(report.root)).toBe(false);
+  });
+  it('rejects an explicitly supplied system temp inside application data before creating test folders', () => {
+    const daily = mkdtempSync(path.join(os.tmpdir(), 'rejected-temp-')), inherited = path.join(daily, 'runtime-temp');
+    mkdirSync(inherited); writeFileSync(path.join(daily, '.asterium-profile.v1.json'), JSON.stringify({ version: 1, profile: 'daily' }));
+    const s = settings('pass'); s.options.env.ASTERIUM_AUTOTEST_SYSTEM_TEMP = inherited;
+    const result = spawnSync(s.command, s.args, s.options);
+    expect(result.status).toBe(1); expect(result.stderr).toContain('AUTOTEST_PROFILE_DATA_TEMP_REJECTED');
+    expect(existsSync(path.join(inherited, 'Asterium-AutoTest'))).toBe(false);
+  });
   it('preserves both execution and cleanup errors without removing failed evidence', () => {
     const value = run('both');
     expect(value.result.status).toBe(1);

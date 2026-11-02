@@ -27,7 +27,21 @@ function canonical(directory) {
 }
 
 export function createAutoTestRun() {
-  const systemTemp = canonical(process.env.ASTERIUM_AUTOTEST_SYSTEM_TEMP || os.tmpdir());
+  // An application-launched terminal may inherit TEMP inside the application's data.
+  // Use the preserved test root, or the Windows user's independent Local/Temp.
+  const selectedTemp = process.env.ASTERIUM_AUTOTEST_SYSTEM_TEMP
+    || (process.platform === 'win32' && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Temp') : os.tmpdir());
+  const systemTemp = canonical(selectedTemp);
+  for (let cursor = systemTemp;; cursor = path.dirname(cursor)) {
+    const marker = path.join(cursor, '.asterium-profile.v1.json');
+    if (fs.existsSync(marker)) {
+      const stat = fs.lstatSync(marker);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096) throw Error('AUTOTEST_PROFILE_MARKER_INVALID');
+      const owner = JSON.parse(fs.readFileSync(marker, 'utf8'));
+      if (owner.version === 1 && ['daily', 'dev', 'acceptance', 'autotest'].includes(owner.profile)) throw Error('AUTOTEST_PROFILE_DATA_TEMP_REJECTED');
+    }
+    if (path.dirname(cursor) === cursor) break;
+  }
   const base = canonical(path.join(systemTemp, 'Asterium-AutoTest')); fs.mkdirSync(base, { recursive: true });
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(base, 'run-')));
   const run = { version: 1, root, systemTemp, token: randomUUID(), pid: process.pid, createdAt: new Date().toISOString() };
