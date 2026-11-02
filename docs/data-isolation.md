@@ -37,6 +37,10 @@ Electron 用户资料、浏览器 sessionData、日志、崩溃记录及本进�
 
 S2 尚未进入现有公开 Beta；验收结果见 [五阶段记录](development-data-isolation-progress.md)。
 
+## S3 源码：候选验收入口
+
+新增 `tools/acceptance/Start-AsteriumAcceptance.ps1`，测试电脑通过系统 PowerShell 指定独立解压候选、批次和端口；`-DryRun` 只返回候选 SHA-256、资料位置和完整启动参数，不启动程序或创建资料目录。具体命令、单次操作及退出边界见 [启动器说明](../tools/acceptance/README.md)。仅适用于包含新 profile 的后续候选，不将已公开 beta.1 当作新功能候选。
+
 应用设置、聊天状态、连接配置与受管伙伴资料保存在当前 Windows 用户的 Electron `userData` 目录，伙伴资料位于其中的 `AsteriumData` 子目录。API Key 通过系统加密机制保存在该用户数据目录，不写入源码或 `.env`。
 
 项目文件与应用资料分别保存。已公开 Beta 的默认项目根是当前用户的“文档 / Asterium Projects”，也可以由用户另选文件夹。本地 CLI 的登录、原生线程与记忆由对应宿主管理。新源码的各环境默认位置见上表。
