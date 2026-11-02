@@ -67,7 +67,7 @@ npm ci
 npm start
 ```
 
-开发实例也应隔离私人资料。完整环境要求、检查命令、应用打包和测试电脑流程见[开发与验收文档](docs/development-and-validation.md)；源码启动与安装器构建是不同流程。
+当前源码的 `npm start` 默认使用独立的 `%LOCALAPPDATA%/Asterium-Dev`，与安装版日常资料分开；启动检查目录归属与真实路径，开发窗口有明确标记。这是尚未进入已公开 beta.1 的源码改动。完整边界见[数据隔离](docs/data-isolation.md)，环境要求、检查命令和测试电脑流程见[开发与验收文档](docs/development-and-validation.md)。
 
 本地 Claude 直接调用另行安装的未修改官方 Claude Code CLI，使用者先在官方 CLI 自行登录；星丛不接管订阅凭据，不内置 CLI，也不自动升级或回退 SDK。Codex 保持官方 app-server 接入。CLI 已验证版本、权限边界及模拟与真实联调的区别见[兼容性说明](docs/claude-cli-compatibility.md)。
 

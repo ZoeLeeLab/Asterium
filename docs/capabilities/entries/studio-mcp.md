@@ -22,7 +22,9 @@
   ],
   "docs": [
     "docs/capabilities/schema.md",
-    "docs/studio-attachments.md"
+    "docs/studio-attachments.md",
+    "docs/data-isolation.md",
+    "docs/development-data-isolation-s1.md"
   ],
   "lastVerifiedCommit": "a4a5ace1446b0a2601099cae337c21fbb56a8fb8"
 }
@@ -42,3 +44,9 @@
 公开历史 DTO 新增可选附件元数据，只白名单输出 id、name、mediaType、sizeBytes；即使内部账本额外带有字段，也不输出源路径或文件内容。没有新增附件传输工具，外部伙伴仍须另行共享文件。自动测试验证元数据与路径排除，原有凭据、成员代次、撤销和历史回执边界不变；不表示真实外部宿主接入完成。
 
 当前 lastVerifiedCommit 绑定已存在代码提交 `a4a5ace1446b0a2601099cae337c21fbb56a8fb8`，之前的真实来源 `39122d3a15ba44f14568d6826b7dc5b590266cea` 仍在历史中保留。全套检查及新包验收结果另见独立候选报告；不继承旧候选验收归属。
+
+## 2026-11-02 S1 未提交源码增量
+
+本轮源码按启动环境选择新资料的 MCP 默认端口：日常 17361、开发 17362、验收显式指定、自动测试允许 0 并返回系统实际分配端口。已有配置保留，冲突明确失败。非日常默认不恢复监听，手动配置仍沿用既有权限；后台恢复须在启动时显式开启。
+
+lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。

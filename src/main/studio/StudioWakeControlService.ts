@@ -10,6 +10,7 @@ const bindingSchema = z.object({ partnerId: z.string().min(1).max(200), connecti
 const schema = z.object({ version: z.literal(1), bindings: z.array(bindingSchema) }).strict();
 type LocalState = { state: StudioWakeEntry['state']; remote?: StudioWakeControlReply; error?: string };
 interface Options {
+  autoConnect?: boolean;
   connection(partnerId: string): ExistingThreadConnection | undefined;
   ready(partnerId: string): Promise<boolean>;
   secret(ref: string): Promise<string | undefined>;
@@ -53,7 +54,7 @@ export class StudioWakeControlService {
   }
   changed() {
     const next = this.changes.then(async () => {
-      if (this.closed.signal.aborted) return;
+      if (this.closed.signal.aborted || this.options.autoConnect === false) return;
       const { bindings } = await this.storage.read();
       for (const binding of bindings) {
         if (!binding.connectOnLaunch || this.attempted.has(binding.partnerId) || !this.options.connection(binding.partnerId) || !await this.options.ready(binding.partnerId)) continue;

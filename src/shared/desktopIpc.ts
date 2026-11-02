@@ -1,4 +1,5 @@
 export const DESKTOP_IPC = {
+  environmentGet: 'asterium:environment:get',
   updatesGet: 'asterium:updates:get',
   updatesCheck: 'asterium:updates:check',
   updatesDownload: 'asterium:updates:download',
@@ -210,6 +211,7 @@ export const DESKTOP_IPC = {
 export type DesktopIpcChannel = typeof DESKTOP_IPC[keyof typeof DESKTOP_IPC];
 
 const DESKTOP_INVOKE_KEYS = [
+  'environmentGet',
   'updatesGet', 'updatesCheck', 'updatesDownload', 'updatesCancel', 'updatesInstall', 'updatesOpenReleases',
   'desktopNavigationTake',
   'generalSettingsGet', 'generalSettingsUpdate',

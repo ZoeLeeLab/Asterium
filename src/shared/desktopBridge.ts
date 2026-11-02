@@ -342,6 +342,7 @@ export interface AsteriumConversationsApi {
 }
 
 export interface DesktopBridge {
+  asteriumEnvironment?: import('./runtimeEnvironment').AsteriumEnvironmentApi;
   asteriumUpdates?: import('./appUpdates').AsteriumUpdatesApi;
   asteriumDesktopNavigation?: import('./desktopNotifications').AsteriumDesktopNavigationApi;
   asteriumGeneralSettings?: import('./generalSettings').AsteriumGeneralSettingsApi;

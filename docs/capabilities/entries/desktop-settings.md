@@ -57,7 +57,9 @@
     "tests/unit/sourceMaterials.test.ts",
     "tests/windows-installer-shell-smoke.mjs",
     "tests/unit/appUpdateService.test.ts",
-    "tests/renderer/AppUpdates.test.tsx"
+    "tests/renderer/AppUpdates.test.tsx",
+    "tests/unit/runtimeEnvironment.test.ts",
+    "tests/profile-isolation-smoke.mjs"
   ],
   "docs": [
     "docs/release-status.md",
@@ -71,7 +73,8 @@
     "COPYRIGHT.md",
     "ASSET_LICENSE.md",
     "BRANDING.md",
-    "CREDITS.md"
+    "CREDITS.md",
+    "docs/development-data-isolation-s1.md"
   ],
   "lastVerifiedCommit": "031e04d295567dd0562b07769cc3fb846d8c2b89"
 }
@@ -114,3 +117,9 @@ Beta 固定使用独立安装身份和默认资料目录，保留显式 user-dat
 本阶段以纯文档提交绑定已存在基线 `bee7e4bfc1a3076b42cdeb69868552b748879d73`。运行通道和更新源实现来自 `7a1f2f3c69eabdd6c20bf220b22ee9a10f8132c6`，该提交的更新/关于页 20 项针对性测试通过；后续两笔仅把源码维护的桌面脚本更新为已配置公开源的断言并等待 IPC 状态，语法/静态检查通过，不将其写为打包执行已通过。本轮最终全套检查与新包的实际桌面执行另记候选收据。其余 15 条能力保留原真实基线。
 
 首轮冻结提交 `8ed99d9e893354c41d6f364a7d49df305f4e9b48` 的全套 207 个文件、1624 项测试及四版官方 CLI 共 76 个合成用例通过；随后应用构建遇到 Windows 的 LICENSES/licenses 冲突而失败，不能写为产品候选通过。资源路径修复已存在于 `031e04d295567dd0562b07769cc3fb846d8c2b89`，本纯文档提交将当前元数据绑定该代码基线；不改变原文、产品权限或更新通道，完整重新检查和新产物结果仍以新候选收据为准。
+
+## 2026-11-02 S1 未提交源码增量
+
+本轮源码增加 daily/dev/acceptance/autotest 启动环境，源代码默认开发资料，安装版默认日常资料；在业务存储创建前检查真实规范化路径、Windows junction／符号链接与目录归属。userData、sessionData 和运行临时目录独立，窗口／托盘明确标记环境，仅日常安装版注册自启动和执行安装更新。实现入口另含 src/main/settings/runtimeEnvironment.ts 和 src/shared/runtimeEnvironment.ts；新文件尚未提交，待获授权建立代码基线后补入结构化 codeEntries 并核验绑定。项目位置设置页尚未实施。
+
+lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。

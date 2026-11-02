@@ -45,7 +45,9 @@
   "docs": [
     "docs/release-status.md",
     "docs/automation-adapter-contract.md",
-    "docs/automations-user-guide.md"
+    "docs/automations-user-guide.md",
+    "docs/data-isolation.md",
+    "docs/development-data-isolation-s1.md"
   ],
   "lastVerifiedCommit": "39122d3a15ba44f14568d6826b7dc5b590266cea"
 }
@@ -58,3 +60,9 @@
 本条绑定本仓库首笔代码基线 `39122d3a15ba44f14568d6826b7dc5b590266cea`，已核对所列代码、测试和文档在该提交中存在。此绑定说明实现来源，不继承旧开发仓库、旧候选包或旧测试电脑的验收归属。
 
 维护者已确认发布副本首次启动为空白。最终提交的完整自动检查、安装器构建及后续普通账户安装验收分别记录于独立候选报告；源码核验或模拟结果不代表真实 API、外部宿主或普通账户安装通过。
+
+## 2026-11-02 S1 未提交源码增量
+
+本轮源码非日常启动默认不启动计划调度，也不由 writer availability 事件触发自动扫描；日记、记忆兜底及同步伙伴后的项目自动派发同样不自动恢复。显式启动开关可启用本次后台恢复，日常行为不变；管理及执行权限没有增加。
+
+lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。

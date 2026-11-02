@@ -9,12 +9,14 @@ import { StudioPage } from '../pages/StudioPage';
 import { APP_ROUTE, LAST_ROUTE_KEY, readLastVisitedRoute, rememberStudioRoute } from './navigationPersistence';
 import { PartnerAvatarMenu } from '../components/ui/PartnerAvatarMenu';
 import { AutomationConfirmationHost } from '../components/settings/AutomationConfirmationDialog';
+import type { RuntimeEnvironment } from '../../shared/runtimeEnvironment';
 
 export function App() {
   const [initialRoute] = useState(readLastVisitedRoute);
   return (
     <div className="app-viewport">
       <div className="window-drag-strip" aria-hidden="true" />
+      <EnvironmentBadge />
       <LastVisitedRoute />
       <DesktopNotificationNavigation />
       <UpdateNotice />
@@ -31,6 +33,18 @@ export function App() {
       <AutomationConfirmationHost />
     </div>
   );
+}
+
+function EnvironmentBadge() {
+  const [environment, setEnvironment] = useState<RuntimeEnvironment>();
+  useEffect(() => {
+    let active = true;
+    void window.asteriumEnvironment?.get().then(value => { if (active) setEnvironment(value); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  return environment && environment.profile !== 'daily'
+    ? <span className="runtime-environment-badge" role="status" title={environment.userDataDirectory}>{environment.label}</span>
+    : null;
 }
 
 function LastVisitedRoute() {

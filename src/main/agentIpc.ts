@@ -231,7 +231,8 @@ function assertTaskGateResolutionRequest(value: unknown): TaskGateResolutionRequ
   return value as unknown as TaskGateResolutionRequest;
 }
 
-export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindow | null, options: { generalSettings?: GeneralSettingsStore; notifications?: DesktopNotifications; updates?: AppUpdateService } = {}) {
+export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindow | null, options: { generalSettings?: GeneralSettingsStore; notifications?: DesktopNotifications; updates?: AppUpdateService; environment?: import('../shared/runtimeEnvironment').RuntimeEnvironment } = {}) {
+  const restoreBackgroundServices = options.environment?.restoreBackgroundServices ?? true;
   const notifications = options.notifications;
   const generalSettings = options.generalSettings ?? new GeneralSettingsStore(() => path.join(app.getPath('userData'), 'general-settings.v1.json'));
   const grants = new Map<string, string>();
@@ -248,7 +249,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const studioRuntimeCatalog = new StudioRuntimeCatalog();
   const projectWorkspaces = new ProjectWorkspaceStore(
     path.join(app.getPath('userData'), 'project-workspaces.v1.json'),
-    () => path.join(app.getPath('documents'), 'Asterium Projects'),
+    () => options.environment?.projectsDirectory ?? path.join(app.getPath('documents'), 'Asterium Projects'),
   );
   const projectExecutionPolicies = new ProjectExecutionPolicyStore(() => path.join(app.getPath('userData'), 'project-execution-policies.v1.json'));
   const projectDomain = new ProjectDomainStore(() => path.join(app.getPath('userData'), 'project-domain.v1.json'));
@@ -290,7 +291,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     },
   );
   const projectCoordinator = new ProjectMutationCoordinator();
-  const studioMcpAccess = new StudioMcpAccessStore(() => path.join(app.getPath('userData'), 'studio-mcp-access.v1.json'));
+  const studioMcpAccess = new StudioMcpAccessStore(() => path.join(app.getPath('userData'), 'studio-mcp-access.v1.json'), options.environment?.mcpPort, options.environment?.profile === 'autotest');
   const studioMcpService = new StudioMcpService(studioMcpAccess, studioRooms, projectCoordinator,
     (partnerId) => studioRuntimeCatalog.partner(partnerId)?.sourceMode === 'existing_thread');
   const studioWakeJournal = new StudioWakeEventStore(() => path.join(app.getPath('userData'), 'studio-wake-events.v1.json'));
@@ -506,6 +507,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   let codexInstallation: CodexInstallation | undefined;
   const diaryCatalog = new PartnerDiaryCatalog(studioRuntimeCatalog);
   const studioWakeControl = new StudioWakeControlService(() => path.join(app.getPath('userData'), 'studio-wake-settings.v1.json'), {
+    autoConnect: restoreBackgroundServices,
     connection: (partnerId) => {
       const current = diaryCatalog.current(partnerId);
       return studioRuntimeCatalog.partner(partnerId)?.sourceMode === 'existing_thread' && current?.identity.available ? current.existing : undefined;
@@ -518,7 +520,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
   const wakeReadinessChanged = () => { void studioWakeControl.changed().catch(() => undefined); };
   const studioMcpStartup = app.whenReady().then(async () => {
-    try { await studioMcpHost.restore(); } catch { /* Host status retains the error; manual start remains available. */ }
+    if (restoreBackgroundServices) try { await studioMcpHost.restore(); } catch { /* Host status retains the error; manual start remains available. */ }
     wakeReadinessChanged();
   });
   const diaries = new PartnerDiaryService(partnerProfiles);
@@ -568,8 +570,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const automationConfirmations = new AutomationConfirmations(() => { notifications?.confirmations(automationConfirmations.list()); const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.automationsConfirmationsChanged); });
   const automationHandles: { runtime?: AutomationRuntime; scheduler?: AutomationScheduler } = {};
   const automationService = new AutomationService(automationStore, {
-    runtimeReady: () => Boolean(automationHandles.scheduler),
-    get scheduler() { return automationHandles.scheduler; },
+    runtimeReady: () => restoreBackgroundServices && Boolean(automationHandles.scheduler),
+    get scheduler() { return restoreBackgroundServices ? automationHandles.scheduler : undefined; },
     targets: async () => {
       const targets: AutomationTargetOption[] = [];
       for (const c of await singleChatMessages.list()) {
@@ -599,6 +601,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return window;
   };
   ipcMain.handle(AGENT_IPC.desktopNavigationTake, event => { requireSender(event); return notifications?.takeNavigation(); });
+  ipcMain.handle(AGENT_IPC.environmentGet, event => { requireSender(event); if (!options.environment) throw new Error('ENVIRONMENT_UNAVAILABLE'); return options.environment; });
   ipcMain.handle(AGENT_IPC.generalSettingsGet, async event => { requireSender(event); return generalSettings.get(); });
   const requireUpdates = () => { if (!options.updates) throw new Error('UPDATES_UNAVAILABLE'); return options.updates; };
   ipcMain.handle(AGENT_IPC.updatesGet, event => { requireSender(event); return requireUpdates().get(); });
@@ -1662,7 +1665,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     },
     cancelRun: (command) => runCoordinator.cancel(command),
     planningRoot: async () => {
-      const root = path.join(app.getPath('temp'), 'Asterium', 'workflow-planning');
+      const root = path.join(options.environment?.temporaryDirectory ?? app.getPath('temp'), 'workflow-planning');
       await mkdir(root, { recursive: true });
       return root;
     },
@@ -1931,10 +1934,12 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     diaryCatalog.sync(value.partners);
     wakeReadinessChanged();
     const profiles = await partnerProfiles.sync(value.user, value.partners.filter(shouldPersistPartnerProfileSeed).map(persistedPartnerProfileSeed));
-    await memoryFallbackInventory.activate();
-    await memoryFallbackScheduler.start();
-    await diaries.recover(); await diaryScheduler.start(); await diaryScheduler.changed();
-    await projectTaskOrchestrator.activate(partnerRuntimePort);
+    if (restoreBackgroundServices) {
+      await memoryFallbackInventory.activate();
+      await memoryFallbackScheduler.start();
+      await diaries.recover(); await diaryScheduler.start(); await diaryScheduler.changed();
+      await projectTaskOrchestrator.activate(partnerRuntimePort);
+    }
     return profiles;
   });
 
@@ -2711,8 +2716,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     check: run => automationHandles.runtime!.check(run),
     execute: async (run, signal) => { try { return await automationHandles.runtime!.execute(run, signal); } finally { automationProjectLeases.get(run.id)?.release(); automationProjectLeases.delete(run.id); } },
   });
-  const automationStartup = app.whenReady().then(() => automationHandles.scheduler!.start()).catch(() => console.error('Automation startup requires storage review; no automatic replay.'));
-  const unsubscribeAutomationWriters = writerLeases.subscribeAvailable(() => { void automationHandles.scheduler?.tick(); });
+  const automationStartup = app.whenReady().then(() => restoreBackgroundServices ? automationHandles.scheduler!.start() : undefined).catch(() => console.error('Automation startup requires storage review; no automatic replay.'));
+  const unsubscribeAutomationWriters = writerLeases.subscribeAvailable(() => { if (restoreBackgroundServices) void automationHandles.scheduler?.tick(); });
   ipcMain.handle(AGENT_IPC.automationsGet, async event => { requireSender(event); return automationService.get(); });
   ipcMain.handle(AGENT_IPC.automationsConfirmationsGet, async event => { requireSender(event); return automationConfirmations.list(); });
   ipcMain.handle(AGENT_IPC.automationsConfirmationsResolve, async (event, request: unknown) => { requireSender(event); const reply = automationConfirmationReplySchema.parse(request); automationConfirmations.resolve(reply.id, reply.approved); });

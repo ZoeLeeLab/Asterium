@@ -4,6 +4,8 @@
 
 ## 开发环境与首次运行
 
+2026-11-02 源码 S1：`npm start` 默认使用独立开发资料，安装版默认日常资料。新 profile、目录链接检查和阶段停点见 [数据隔离](data-isolation.md) 与 [S1 核验](development-data-isolation-s1.md)。本轮只验证启动隔离和窄范围并行；不执行下方的全套构建、候选或安装流程。设置页及全套测试脚本迁移尚未实施。
+
 - Windows x64、Node.js 24.x、npm。
 - Windows PowerShell，以及系统中的 `Microsoft.NET/Framework64/v4.0.30319/csc.exe`。脚本通过 `SystemRoot` 定位编译器，启动和打包时会编译 Windows helper。
 - 可访问 npm、Electron 下载源和锁文件中 SheetJS 的官方下载地址；保持 TLS 校验。
@@ -19,6 +21,8 @@ npm start
 Node.js 开发环境与 Electron 内嵌的 Node.js 是两个环境。项目没有必须复制的 `.env.example`，连接凭据通过应用正式界面配置。执行这两个命令的说明不等于声明已在所有新环境验证过依赖安装；实际验证范围以版本记录为准。
 
 ## 源码与离线检查
+
+S1 的最小真实 Electron 检查为 `npm run test:profile-isolation`，只构建合成检查入口，不生成产品包或安装器。现有其他 smoke 未统一迁移到新 profile，须在后续阶段核对后再运行，不自动遍历。
 
 以下命令只在开发机的目标源码仓库中执行。为临时目录、缓存和产物预留空间，并记录实际配置；这些内容应保持在 Git 忽略范围内。
 

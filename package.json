@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "package": "electron-forge package",
     "test:startup": "node tests/electron-startup-smoke.mjs",
+    "test:profile-isolation": "node tests/profile-isolation-smoke.mjs",
     "test:memory-sqlite": "node tests/memory-sqlite-startup-smoke.mjs",
     "memory:sqlite": "node scripts/memory-sqlite-maintenance.mjs",
     "test:extensions": "node tests/api-extensions-acceptance.mjs",

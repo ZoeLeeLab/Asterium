@@ -14,26 +14,41 @@ import { AppUpdateService } from './settings/AppUpdateService';
 import { PUBLIC_UPDATE_REPOSITORY } from '../shared/appUpdates';
 import { APP_VERSION } from '../shared/appRelease';
 import { normalizeExternalHttpUrl } from './security/externalUrl';
-import { mkdirSync } from 'node:fs';
-import { BETA_APP_ID, BETA_APP_NAME } from '../shared/appRelease';
-import { betaUserDataDirectory } from './settings/betaIdentity';
+import { BETA_APP_NAME } from '../shared/appRelease';
+import { activateRuntimeEnvironment } from './settings/runtimeEnvironment';
 
 app.setName(BETA_APP_NAME);
-const explicitUserData = app.commandLine.getSwitchValue('user-data-dir');
-const betaUserData = betaUserDataDirectory(app.getPath('appData'), explicitUserData);
-mkdirSync(betaUserData, { recursive: true });
-app.setPath('userData', betaUserData);
+const environment = (() => {
+  try {
+    if (app.commandLine.getSwitchValue('asterium-background-services')) throw new Error('ASTERIUM_PROFILE_BACKGROUND_FLAG_INVALID');
+    return activateRuntimeEnvironment(app, {
+      isPackaged: app.isPackaged, appData: app.getPath('appData'),
+      localAppData: process.env.LOCALAPPDATA || path.resolve(app.getPath('appData'), '..', 'Local'),
+      documents: app.getPath('documents'), temp: app.getPath('temp'),
+      profile: app.commandLine.hasSwitch('asterium-profile') ? app.commandLine.getSwitchValue('asterium-profile') : undefined,
+      userData: app.commandLine.hasSwitch('user-data-dir') ? app.commandLine.getSwitchValue('user-data-dir') : undefined,
+      acceptanceBatch: app.commandLine.getSwitchValue('asterium-acceptance-batch') || undefined,
+      mcpPort: app.commandLine.hasSwitch('asterium-mcp-port') ? app.commandLine.getSwitchValue('asterium-mcp-port') : undefined,
+      backgroundServices: app.commandLine.hasSwitch('asterium-background-services'),
+    });
+  } catch (error) {
+    console.error('ASTERIUM_PROFILE_STARTUP_FAILED', error);
+    dialog.showErrorBox('星丛启动隔离检查失败', `${error instanceof Error ? error.message : 'ASTERIUM_PROFILE_INVALID'}\n请检查启动参数与资料目录。未加载聊天或连接配置。`);
+    app.exit(1);
+    throw error;
+  }
+})();
 
 let mainWindow: BrowserWindow | null = null;
 const generalSettings = new GeneralSettingsStore(() => path.join(app.getPath('userData'), 'general-settings.v1.json'),
-  app.isPackaged && process.platform === 'win32' ? windowsStartupRegistration(app, process.execPath) : undefined);
+  environment.allowStartup && process.platform === 'win32' ? windowsStartupRegistration(app, process.execPath) : undefined);
 let disposeAgentIpc: () => Promise<void> = async () => undefined;
 const lifecycle = new DesktopLifecycle({
   getWindow: () => mainWindow, closeAction: () => generalSettings.current().closeAction,
   createTray: (restore, quit) => {
     const tray = new Tray(nativeImage.createFromDataURL(appIcon));
     try {
-      tray.setToolTip('星丛 Asterium');
+      tray.setToolTip(environment.label);
       tray.setContextMenu(Menu.buildFromTemplate([{ label: '打开星丛', click: restore }, { type: 'separator' }, { label: '退出星丛', click: quit }]));
       tray.on('click', restore);
       return tray;
@@ -54,7 +69,7 @@ const updates = new AppUpdateService({
   includePrerelease: () => generalSettings.current().includePrereleaseUpdates,
   openExternal: url => shell.openExternal(url),
   install: async file => {
-    if (!app.isPackaged || process.platform !== 'win32') throw new Error('UPDATE_INSTALL_UNAVAILABLE');
+    if (!environment.allowUpdates || process.platform !== 'win32') throw new Error('UPDATE_INSTALL_UNAVAILABLE');
     await new Promise<void>((resolve, reject) => {
       const child = spawn(file, [], { detached: true, stdio: 'ignore', windowsHide: true, shell: false });
       child.once('error', reject); child.once('spawn', () => { child.unref(); resolve(); });
@@ -80,6 +95,7 @@ const notifications = new DesktopNotifications({
 
 function createWindow() {
   mainWindow = new BrowserWindow({
+    title: environment.label,
     width: 1536,
     height: 1024,
     minWidth: 1180,
@@ -102,6 +118,7 @@ function createWindow() {
   });
 
   installAppearanceRecovery(mainWindow);
+  mainWindow.on('page-title-updated', event => { event.preventDefault(); mainWindow?.setTitle(environment.label); });
   mainWindow.once('ready-to-show', () => mainWindow?.show());
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -130,13 +147,13 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
 registerTitlebarThemeChannel(ipcMain, () => mainWindow);
-disposeAgentIpc = registerAgentIpc(ipcMain, () => mainWindow, { generalSettings, notifications, updates });
+disposeAgentIpc = registerAgentIpc(ipcMain, () => mainWindow, { generalSettings, notifications, updates, environment });
 
 app.on('second-instance', () => { void app.whenReady().then(() => { if (!mainWindow) createWindow(); else lifecycle.restore(); }); });
 app.on('before-quit', event => { if (!lifecycle.canExit) { event.preventDefault(); void lifecycle.quit(); } });
 
 app.whenReady().then(async () => {
-  if (process.platform === 'win32') app.setAppUserModelId(BETA_APP_ID);
+  if (process.platform === 'win32') app.setAppUserModelId(environment.appUserModelId);
   try { await generalSettings.get(); } catch { console.error('GENERAL_SETTINGS_LOAD_FAILED'); }
   if (process.env.ASTERIUM_STARTUP_SMOKE === '1') {
     const runtime = await loadClaudeCliRuntime();
@@ -147,7 +164,7 @@ app.whenReady().then(async () => {
   }
   createWindow();
 
-  if (generalSettings.current().checkUpdatesAtStartup) void updates.check();
+  if (environment.allowUpdates && generalSettings.current().checkUpdatesAtStartup) void updates.check();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
