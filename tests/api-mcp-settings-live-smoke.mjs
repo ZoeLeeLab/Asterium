@@ -1,14 +1,24 @@
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm, createTestHttpServer as createServer, autoTestEvidence, createTestNetServer } from './helpers/autoTest.mjs';
 import { requireLiveTestSource } from './helpers/liveTestConfiguration.mjs';
-// Explicit opt-in: real DeepSeek requests, isolated app data, synthetic UI state and temporary files.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import net from 'node:net';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
+
+await runAutoTest(async () => {
+// Explicit opt-in: real DeepSeek requests, isolated app data, synthetic UI state and temporary files.
+
+
+
+
+
+
+
+
+
 
 if (process.env.ASTERIUM_API_LIVE_SMOKE !== '1') throw new Error('Set ASTERIUM_API_LIVE_SMOKE=1 to authorize real API smoke requests.');
 const root = path.resolve(import.meta.dirname, '..');
@@ -45,7 +55,7 @@ const http = createServer(async (request, response) => {
 });
 await new Promise(resolve => http.listen(0, '127.0.0.1', resolve));
 const httpUrl = 'http://127.0.0.1:' + http.address().port + '/mcp';
-const evidenceDirectory = path.join(root, '.qa', 's5-live-api');
+const evidenceDirectory = autoTestEvidence('s5-live-api');
 const partnerId = 's5-live-api-partner';
 const grantId = 's5-live-workspace';
 const credentialRef = 's5-live-credential';
@@ -301,7 +311,7 @@ async function finished(index, expected = 'run.completed') {
   return events;
 }
 async function reservePort() {
-  const server = net.createServer();
+  const server = createTestNetServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
@@ -334,3 +344,4 @@ async function removeSelected() {
   await page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
 }
+});

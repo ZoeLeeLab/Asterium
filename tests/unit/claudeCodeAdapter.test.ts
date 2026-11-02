@@ -1,5 +1,6 @@
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { PassThrough } from 'node:stream';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';

@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:cleanup": "node scripts/cleanup-autotest.mjs",
     "package": "electron-forge package",
     "test:startup": "node tests/electron-startup-smoke.mjs",
     "test:profile-isolation": "node tests/profile-isolation-smoke.mjs",

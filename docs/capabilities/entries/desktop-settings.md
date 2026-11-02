@@ -124,6 +124,8 @@ S1 已于 `ea6634abec534eedd07d65dec8853d4a4b30a315` 本地提交。接续 S2 �
 
 S3 增加独立 PowerShell 验收启动器，固定 acceptance profile、批次、端口和独立资料目录，回执含候选 SHA-256，提供不启动／不写资料的 DryRun。脚本不安装、不清理、不修改系统环境或既有候选；此阶段仅验证合成候选的参数及目录边界，不冒充新产品候选或完整手工验收。
 
+S4 将自动测试入口迁到独立运行目录，autotest 显式入口通过进程局部变量保留分配前的系统临时根用于布局核验；日常／开发启动不读取该测试变量。产品权限和正式资料路径不变。测试生命周期、清理边界及非真实联调范围见 [自动测试隔离](../../automatic-test-isolation.md)，代码基线由 S5 另作纯文档绑定。
+
 本轮源码增加 daily/dev/acceptance/autotest 启动环境，源代码默认开发资料，安装版默认日常资料；在业务存储创建前检查真实规范化路径、Windows junction／符号链接与目录归属。userData、sessionData 和运行临时目录独立，窗口／托盘明确标记环境，仅日常安装版注册自启动和执行安装更新。实现入口另含 src/main/settings/runtimeEnvironment.ts 和 src/shared/runtimeEnvironment.ts；新文件尚未提交，待获授权建立代码基线后补入结构化 codeEntries 并核验绑定。项目位置设置页尚未实施。
 
 lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。

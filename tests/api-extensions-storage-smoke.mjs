@@ -1,16 +1,25 @@
-// S2 packaged Main/preload persistence smoke. Synthetic data only; no MCP launch or model requests.
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm, autoTestEvidence, createTestNetServer } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 
+await runAutoTest(async () => {
+// S2 packaged Main/preload persistence smoke. Synthetic data only; no MCP launch or model requests.
+
+
+
+
+
+
+
+
 const root = path.resolve(import.meta.dirname, '..');
 const executable = process.env.ASTERIUM_PACKAGED_EXE ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe');
 const userData = await mkdtemp(path.join(os.tmpdir(), 'asterium-s2-storage-'));
-const evidence = path.join(root, '.qa', 's2-storage');
+const evidence = autoTestEvidence('s2-storage');
 let child;
 let browser;
 let page;
@@ -122,7 +131,7 @@ console.log(JSON.stringify(result, null, 2));
 
 async function launch() {
   launchFailure = undefined;
-  const server = net.createServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const server = createTestNetServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise((resolve) => server.close(resolve));
   child = spawn(executable, [`--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], { cwd: path.dirname(executable), windowsHide: true, stdio: 'ignore' });
   child.once('error', (error) => { launchFailure = error; });
@@ -152,3 +161,4 @@ async function until(probe, label) {
   while (Date.now() < deadline) { if (await probe()) return; await new Promise((resolve) => setTimeout(resolve, 150)); }
   throw new Error(`Timed out waiting for ${label}`);
 }
+});

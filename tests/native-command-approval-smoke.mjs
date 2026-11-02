@@ -1,11 +1,20 @@
-// Real packaged Main + UI + PowerShell, synthetic loopback model only.
+import { runAutoTest, createTestHttpServer as createServer, testRm as rm, launchTestElectron } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createServer } from 'node:http';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from 'playwright-core';
+
+await runAutoTest(async () => {
+// Real packaged Main + UI + PowerShell, synthetic loopback model only.
+
+
+
+
+
+
+
 
 const root = path.resolve(import.meta.dirname, '..');
 const temporary = await realpath(await mkdtemp(path.join(os.tmpdir(), 'asterium-native-command-')));
@@ -40,7 +49,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const endpoint = `http://127.0.0.1:${server.address().port}/v1`;
 let application, page;
 try {
-  application = await electron.launch({ executablePath: executable, args: [`--user-data-dir=${temporary}`] });
+  application = await launchTestElectron(electron, { executablePath: executable, args: [`--user-data-dir=${temporary}`] });
   page = await application.firstWindow(); page.setDefaultTimeout(20000);
   await page.waitForFunction(() => localStorage.getItem('asterium.prototype.v7'));
   await page.evaluate(async ({ endpoint, workspace }) => {
@@ -142,3 +151,4 @@ async function finished(index) {
   const events = await page.evaluate(i => globalThis.__nativeEvents.slice(i), index);
   assert.equal(events.at(-1).type, 'run.completed'); await page.getByRole('button', { name: '发送', exact: true }).waitFor(); return events;
 }
+});

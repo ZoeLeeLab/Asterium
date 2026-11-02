@@ -1,19 +1,25 @@
-import { createServer } from 'vite';
+import { runAutoTest, createTestViteServer as createServer, autoTestEvidence, launchTestBrowser } from './helpers/autoTest.mjs';
 import path from 'node:path';
-/* global window, document, HTMLElement, getComputedStyle */
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
-const output = path.resolve('.qa');
+await runAutoTest(async () => {
+/* global window, document, HTMLElement, getComputedStyle */
+
+
+
+const output = autoTestEvidence('chat-runtime-visual');
 await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
+const browser = await launchTestBrowser(chromium, { headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
 const context = await browser.newContext({ viewport: { width: 1536, height: 1024 } });
 const page = await context.newPage();
-const fixtureServer = await createServer({ configFile: 'vite.renderer.config.ts', server: { middlewareMode: true } });
+const fixtureServer = await createServer({ configFile: 'vite.renderer.config.ts', server: { host: '127.0.0.1', port: 0 } });
+await fixtureServer.listen();
+const root = `http://127.0.0.1:${fixtureServer.httpServer.address().port}`;
 try {
   const { createTestState } = await fixtureServer.ssrLoadModule(path.resolve('tests/fixtures/applicationState.ts'));
   await page.addInitScript(state => localStorage.setItem('asterium.prototype.v7', JSON.stringify(state)), createTestState());
-} finally { await fixtureServer.close(); }
+} finally { /* The managed finalizer closes the fixture server after the browser. */ }
 await page.addInitScript(() => {
   const artifactNames = ['runtime-notes.md', '界面检查.html', '需求说明.docx', '测试数据.xlsx', '演示文稿.pptx', '交付截图.png', '构建记录.txt', '最终清单.pdf'];
   const artifactName = (id) => artifactNames[id === 'visual-artifact' ? 0 : Number(id.split('-').at(-1))] ?? '交付文件.txt';
@@ -30,7 +36,7 @@ await page.addInitScript(() => {
     open: async () => undefined, reveal: async () => undefined, copyPath: async () => undefined, saveAs: async () => true, exportAs: async () => true,
   };
 });
-await page.goto('http://localhost:5173/#/chat', { waitUntil: 'networkidle' });
+await page.goto(`${root}/#/chat`, { waitUntil: 'networkidle' });
 await page.evaluate(() => {
   localStorage.setItem('asterium.chat.previewWidth', '420');
   const state = JSON.parse(localStorage.getItem('asterium.prototype.v7'));
@@ -275,3 +281,4 @@ await page.screenshot({ path: `${output}/chat-runtime-1280-dark.png`, fullPage: 
 const metrics = await page.locator('body').evaluate((body) => ({ scrollWidth: body.scrollWidth, clientWidth: body.clientWidth, scrollHeight: body.scrollHeight, clientHeight: body.clientHeight }));
 console.log(JSON.stringify({ ...metrics, artifactList: artifactMetrics, bubbles: bubbleMetrics, composer: composerMetrics }));
 await browser.close();
+});

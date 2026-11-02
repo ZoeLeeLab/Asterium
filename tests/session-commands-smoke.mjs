@@ -1,16 +1,24 @@
-// Offline packaged IPC/UI acceptance. Uses only synthetic isolated application data.
+import { runAutoTest, testRm as rm, autoTestEvidence, launchTestElectron } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { _electron as electron } from 'playwright-core';
 
+await runAutoTest(async () => {
+// Offline packaged IPC/UI acceptance. Uses only synthetic isolated application data.
+
+
+
+
+
+
 const root = path.resolve(import.meta.dirname, '..');
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'asterium-commands-smoke-'));
-const evidence = path.join(root, '.qa', 'session-commands-s3'); await mkdir(evidence, { recursive: true });
+const evidence = autoTestEvidence('session-commands-s3'); await mkdir(evidence, { recursive: true });
 let app;
 try {
-  app = await electron.launch({ executablePath: process.env.ASTERIUM_PACKAGED_EXE ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe'), args: [`--user-data-dir=${temporary}`] });
+  app = await launchTestElectron(electron, { executablePath: process.env.ASTERIUM_PACKAGED_EXE ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe'), args: [`--user-data-dir=${temporary}`] });
   const page = await app.firstWindow(); await page.getByLabel('主要页面').waitFor();
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('asterium.prototype.v7') ?? '{}').conversations?.length);
   const input = page.locator('.composer textarea'); await input.fill('保留这段未发送草稿');
@@ -47,3 +55,4 @@ try {
   assert.ok(path.dirname(resolved) === path.resolve(os.tmpdir()) && path.basename(resolved).startsWith('asterium-commands-smoke-'), 'UNSAFE_CLEANUP_PATH');
   await rm(resolved, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
 }
+});

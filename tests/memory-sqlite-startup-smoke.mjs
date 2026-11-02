@@ -1,11 +1,12 @@
-import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm, createTestNetServer } from './helpers/autoTest.mjs';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { withMemoryMaintenance } from '../scripts/memory-sqlite-maintenance.mjs';
 
+await runAutoTest(async () => {
 const executable = process.env.ASTERIUM_PACKAGED_EXE ?? path.resolve('out/Asterium-win32-x64/Asterium.exe');
 const userData = await mkdtemp(path.join(os.tmpdir(), 'asterium-sqlite-smoke-'));
 const profileRoot = path.join(userData, 'AsteriumData');
@@ -74,7 +75,7 @@ async function partnerDirectory(id) {
   throw new Error('Partner directory missing');
 }
 async function launch() {
-  const server = net.createServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const server = createTestNetServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise((resolve) => server.close(resolve));
   child = spawn(executable, [`--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], { cwd: path.dirname(executable), env: { ...process.env, ASTERIUM_STARTUP_SMOKE: '1' }, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-10000); });
@@ -100,3 +101,4 @@ async function stop() {
   }
   child = undefined;
 }
+});

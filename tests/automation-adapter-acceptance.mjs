@@ -1,11 +1,21 @@
-// Reference contract acceptance. --mock never starts a model. Real-host mode is read-only unless --dispatch is explicit.
+import { runAutoTest, testRm as rm, buildTestSdk } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { AutomationAdapterSession, automationAdapterCapabilitiesSchema, automationAdapterReceiptSchema, automationAdapterTriggerSchema } from '../out/automation-adapter/automation-adapter.mjs';
+
+await runAutoTest(async () => {
+const { AutomationAdapterSession, automationAdapterCapabilitiesSchema, automationAdapterReceiptSchema, automationAdapterTriggerSchema } = await buildTestSdk('vite.automation-adapter.config.ts', 'automation-adapter.mjs');
+// Reference contract acceptance. --mock never starts a model. Real-host mode is read-only unless --dispatch is explicit.
+
+
+
+
+
+
+
 const flags = process.argv.slice(2), option = name => { const at = flags.indexOf(name); return at < 0 ? undefined : flags[at + 1]; };
 const signal = () => AbortSignal.timeout(8000);
 const cases = [];
@@ -61,3 +71,4 @@ if (flags.includes('--mock')) {
       remaining: 'Query status and verify original host thread, existing approvals, same-conversation result and zero WeChat output. Acceptance is not completion.' }));
   }
 }
+});

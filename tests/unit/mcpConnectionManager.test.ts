@@ -1,7 +1,8 @@
 // @vitest-environment node
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { createHash } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';

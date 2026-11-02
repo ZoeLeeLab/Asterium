@@ -1,24 +1,29 @@
-import { createServer } from 'vite';
+import { runAutoTest, createTestViteServer as createServer, autoTestEvidence, launchTestBrowser } from './helpers/autoTest.mjs';
 import path from 'node:path';
-/* global location, window */
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
-const root = 'http://localhost:5173';
-const output = path.resolve('.qa');
+await runAutoTest(async () => {
+/* global location, window */
+
+
+
+const output = autoTestEvidence('visual-qa');
 await mkdir(output, { recursive: true });
 
-const browser = await chromium.launch({
+const browser = await launchTestBrowser(chromium, {
   headless: true,
   executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
 });
 const context = await browser.newContext({ viewport: { width: 1536, height: 1024 } });
 const page = await context.newPage();
-const fixtureServer = await createServer({ configFile: 'vite.renderer.config.ts', server: { middlewareMode: true } });
+const fixtureServer = await createServer({ configFile: 'vite.renderer.config.ts', server: { host: '127.0.0.1', port: 0 } });
+await fixtureServer.listen();
+const root = `http://127.0.0.1:${fixtureServer.httpServer.address().port}`;
 try {
   const { createTestState } = await fixtureServer.ssrLoadModule(path.resolve('tests/fixtures/applicationState.ts'));
   await page.addInitScript(state => localStorage.setItem('asterium.prototype.v7', JSON.stringify(state)), createTestState());
-} finally { await fixtureServer.close(); }
+} finally { /* The managed finalizer closes the fixture server after the browser. */ }
 await page.addInitScript(() => {
   let webSearchCredentialConfigured = false;
   window.asteriumAgents = {
@@ -347,3 +352,4 @@ console.log(JSON.stringify({
   attachmentContextOptionsVisible,
 }, null, 2));
 await browser.close();
+});

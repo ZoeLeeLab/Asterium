@@ -1,12 +1,13 @@
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { build } from 'vite';
 
+await runAutoTest(async () => {
 const root = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 const base = path.join(os.tmpdir(), 'Asterium-AutoTest');
@@ -118,3 +119,4 @@ try {
     console.log('Profile isolation fixture directory cleaned after all Electron processes exited.');
   } else console.error(`Evidence retained: ${run}`);
 }
+});

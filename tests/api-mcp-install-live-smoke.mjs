@@ -1,13 +1,23 @@
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm, autoTestEvidence, createTestNetServer } from './helpers/autoTest.mjs';
 import { requireLiveTestSource } from './helpers/liveTestConfiguration.mjs';
-// Self installation through the real API partner, approval cards, SDK discovery and settings UI.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
+
+await runAutoTest(async () => {
+// Self installation through the real API partner, approval cards, SDK discovery and settings UI.
+
+
+
+
+
+
+
+
 
 if (process.env.ASTERIUM_API_LIVE_SMOKE !== '1') throw new Error('Set ASTERIUM_API_LIVE_SMOKE=1 to authorize real API smoke requests.');
 const root = path.resolve(import.meta.dirname, '..');
@@ -30,7 +40,7 @@ const control = path.join(userData, 'mcp-tools.json');
 const lifecycle = path.join(userData, 'mcp-lifecycle.jsonl');
 const fixture = path.join(root, 'tests', 'fixtures', 'api-mcp-server.mjs');
 let extensionId;
-const evidenceDirectory = path.join(root, '.qa', 'install-live-api');
+const evidenceDirectory = autoTestEvidence('install-live-api');
 const partnerId = 'install-live-api-partner';
 const grantId = 'install-live-workspace';
 const credentialRef = 'install-live-credential';
@@ -222,7 +232,7 @@ async function finished(index, expected = 'run.completed') {
   return events;
 }
 async function reservePort() {
-  const server = net.createServer();
+  const server = createTestNetServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
@@ -238,3 +248,4 @@ function hash(bytes) { return createHash('sha256').update(bytes).digest('hex'); 
 async function trust() { return page.evaluate(async (id) => (await globalThis.asteriumExtensions.get()).extensions.find(e => e.id === id).trust, extensionId); }
 async function lifecycleEvents() { return (await readFile(lifecycle, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line)); }
 async function calls() { return (await lifecycleEvents()).filter(e => e.event === 'call'); }
+});

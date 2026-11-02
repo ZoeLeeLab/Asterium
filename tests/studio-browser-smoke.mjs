@@ -1,17 +1,28 @@
-// Offline packaged acceptance: real Main runtime/tools/Git + scripted provider SSE, isolated data only.
+import { runAutoTest, testRm as rm, autoTestEvidence, launchTestElectron } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { _electron as electron } from 'playwright-core';
+
+await runAutoTest(async () => {
+// Offline packaged acceptance: real Main runtime/tools/Git + scripted provider SSE, isolated data only.
+
+
+
+
+
+
+
+
 const exec = promisify(execFile);
 const root = path.resolve(import.meta.dirname, '..');
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'asterium-browser-smoke-'));
 const workspace = path.join(temporary, 'project'); const projectId = 'browser-project', partnerId = 'browser-partner', roomId = 'browser-room', grantId = 'browser-workspace';
-const evidence = path.join(root, '.qa', 'studio-browser'); await mkdir(evidence, { recursive: true });
+const evidence = autoTestEvidence('studio-browser'); await mkdir(evidence, { recursive: true });
 const result = { status: 'running', scriptedProvider: true, realTools: true, isolatedUserData: true, cases: [] };
 let application; let page;
 async function until(check, label, timeout = 30000) { const deadline = Date.now() + timeout; while (Date.now() < deadline) { if (await check()) return; await new Promise((resolve) => setTimeout(resolve, 150)); } throw new Error(`Timed out: ${label}`); }
@@ -29,7 +40,7 @@ try {
   const executable = process.env.ASTERIUM_PACKAGED_EXE ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe');
   result.archiveHash = createHash('sha256').update(await readFile(path.join(path.dirname(executable), 'resources', 'app.asar'))).digest('hex');
   const launch = async () => {
-    application = await electron.launch({ executablePath: executable, args: [`--user-data-dir=${temporary}`] });
+    application = await launchTestElectron(electron, { executablePath: executable, args: [`--user-data-dir=${temporary}`] });
     page = await application.firstWindow(); await page.locator('.app-grid, .settings-shell').first().waitFor();
     page.setDefaultTimeout(15000);
     page.on('pageerror', (error) => { (result.rendererErrors ??= []).push(error.message); });
@@ -777,3 +788,4 @@ finally {
   await writeFile(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
 }
 console.log(JSON.stringify(result, null, 2));
+});

@@ -24,7 +24,9 @@ const environment = (() => {
     return activateRuntimeEnvironment(app, {
       isPackaged: app.isPackaged, appData: app.getPath('appData'),
       localAppData: process.env.LOCALAPPDATA || path.resolve(app.getPath('appData'), '..', 'Local'),
-      documents: app.getPath('documents'), temp: app.getPath('temp'),
+      documents: app.getPath('documents'),
+      temp: app.commandLine.getSwitchValue('asterium-profile') === 'autotest' && process.env.ASTERIUM_AUTOTEST_SYSTEM_TEMP
+        ? process.env.ASTERIUM_AUTOTEST_SYSTEM_TEMP : app.getPath('temp'),
       profile: app.commandLine.hasSwitch('asterium-profile') ? app.commandLine.getSwitchValue('asterium-profile') : undefined,
       userData: app.commandLine.hasSwitch('user-data-dir') ? app.commandLine.getSwitchValue('user-data-dir') : undefined,
       acceptanceBatch: app.commandLine.getSwitchValue('asterium-acceptance-batch') || undefined,

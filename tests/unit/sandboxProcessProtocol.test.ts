@@ -1,7 +1,8 @@
 // @vitest-environment node
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { link, lstat, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdtemp, mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';

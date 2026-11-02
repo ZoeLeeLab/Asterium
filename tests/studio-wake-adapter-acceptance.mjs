@@ -1,12 +1,22 @@
-// --mock uses a local SSE fixture and a fixed-thread enqueue mock; never calls a model.
+import { runAutoTest, testRm as rm, createTestHttpServer as createServer, buildTestSdk } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { WakeBridgeSession, WakeDeliveryStore, studioWakeControlReplySchema, studioWakeControlRequestSchema } from '../out/studio-wake-adapter/studio-wake-adapter.mjs';
+
+await runAutoTest(async () => {
+const { WakeBridgeSession, WakeDeliveryStore, studioWakeControlReplySchema, studioWakeControlRequestSchema } = await buildTestSdk('vite.studio-wake.config.ts', 'studio-wake-adapter.mjs');
+// --mock uses a local SSE fixture and a fixed-thread enqueue mock; never calls a model.
+
+
+
+
+
+
+
+
 
 const flags = process.argv.slice(2);
 const option = (name) => { const i = flags.indexOf(name); return i < 0 ? undefined : flags[i + 1]; };
@@ -98,3 +108,4 @@ async function waitFor(check) {
   const deadline = Date.now() + 3000;
   while (!await check()) { assert.ok(Date.now() < deadline, 'MOCK_WAIT_TIMEOUT'); await delay(5); }
 }
+});

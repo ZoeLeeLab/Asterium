@@ -1,5 +1,6 @@
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { MemoryFallbackInventory } from '../../src/main/memory/fallback/MemoryFallbackInventory';

@@ -1,6 +1,7 @@
 // @vitest-environment node
+import { testRmSync as rmSync } from '../helpers/autoTest.mjs';
 import { afterAll, describe, expect, it } from 'vitest';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { PROFILE_MARKER, canonicalDirectory, prepareRuntimeEnvironment, resolveRuntimeEnvironment, type RuntimeEnvironmentOptions } from '../../src/main/settings/runtimeEnvironment';
