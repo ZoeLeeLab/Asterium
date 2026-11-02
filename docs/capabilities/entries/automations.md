@@ -27,7 +27,8 @@
     "src/main/automation/automationAdapterSdk.ts",
     "src/renderer/components/settings/AutomationsView.tsx",
     "src/renderer/components/settings/AutomationConfirmationDialog.tsx",
-    "src/renderer/components/layout/WorkspaceShortcuts.tsx"
+    "src/renderer/components/layout/WorkspaceShortcuts.tsx",
+    "src/main/agentIpc.ts"
   ],
   "tests": [
     "tests/unit/automation.test.ts",
@@ -40,18 +41,30 @@
     "tests/renderer/AutomationsView.test.tsx",
     "tests/renderer/AutomationConfirmationDialog.test.tsx",
     "tests/renderer/WorkspaceShortcuts.test.tsx",
-    "tests/studio-browser-smoke.mjs"
+    "tests/studio-browser-smoke.mjs",
+    "tests/unit/runtimeEnvironment.test.ts"
   ],
   "docs": [
     "docs/release-status.md",
     "docs/automation-adapter-contract.md",
     "docs/automations-user-guide.md",
     "docs/data-isolation.md",
-    "docs/development-data-isolation-s1.md"
+    "docs/development-data-isolation-s1.md",
+    "docs/automatic-test-isolation.md",
+    "docs/development-data-isolation-progress.md",
+    "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "39122d3a15ba44f14568d6826b7dc5b590266cea"
+  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
 }
 ---
+
+## 当前源码核验：2026-11-02 S5
+
+本条绑定已存在的代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；本次为纯文档核验，不使用自身或未来提交号。非日常启动默认不恢复计划调度，writer availability 也不自动触发扫描；同一启动选择约束日记、记忆兜底及伙伴同步后的项目自动派发。明确开启后台恢复时使用当前环境存储；日常行为及管理／执行权限不增加。
+
+本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
+
+## 历史阶段记录
 
 通用自动化的当前代码入口、测试和权限边界见以上元数据。
 

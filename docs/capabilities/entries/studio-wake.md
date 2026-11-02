@@ -17,23 +17,37 @@
     "src/main/studio/studioWakeAdapterSdk.ts",
     "src/main/studio/WakeBridgeSession.ts",
     "src/main/studio/WakeDeliveryQueue.ts",
-    "src/main/studio/WakeDeliveryStore.ts"
+    "src/main/studio/WakeDeliveryStore.ts",
+    "src/main/studio/StudioWakeControlService.ts",
+    "src/main/agentIpc.ts"
   ],
   "tests": [
     "tests/unit/studioWakeEvents.test.ts",
     "tests/unit/studioWakeMinimal.test.ts",
     "tests/unit/studioWakeControl.test.ts",
-    "tests/studio-wake-adapter-acceptance.mjs"
+    "tests/studio-wake-adapter-acceptance.mjs",
+    "tests/unit/runtimeEnvironment.test.ts"
   ],
   "docs": [
     "docs/capabilities/schema.md",
     "docs/claude-cli-release-blocker.md",
     "docs/data-isolation.md",
-    "docs/development-data-isolation-s1.md"
+    "docs/development-data-isolation-s1.md",
+    "docs/automatic-test-isolation.md",
+    "docs/development-data-isolation-progress.md",
+    "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "ccc08e5fbe9328f24b754d488892067751fdeff5"
+  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
 }
 ---
+
+## 当前源码核验：2026-11-02 S5
+
+本条绑定已存在的代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；本次为纯文档核验，不使用自身或未来提交号。非日常环境默认不进行 Wake 自动连接，后续 readiness 变化也不绕过该启动选择；显式手动控制仍保持原权限。参考 SDK 检查从源码构建于当前测试 worker，mock 合同不表示 CyberBoss 宿主原线程已真实接通。
+
+本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
+
+## 历史阶段记录
 
 星丛 Wake 通知与参考 SDK的当前代码入口、测试和权限边界见以上元数据。
 

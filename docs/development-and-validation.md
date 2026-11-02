@@ -4,7 +4,7 @@
 
 ## 开发环境与首次运行
 
-2026-11-02 源码 S1：`npm start` 默认使用独立开发资料，安装版默认日常资料。新 profile、目录链接检查和阶段停点见 [数据隔离](data-isolation.md) 与 [S1 核验](development-data-isolation-s1.md)。本轮只验证启动隔离和窄范围并行；不执行下方的全套构建、候选或安装流程。设置页及全套测试脚本迁移尚未实施。
+2026-11-02 当前源码：`npm start` 默认使用独立开发资料，安装版默认日常资料；已加入默认项目位置设置、验收启动器和自动测试隔离。见 [数据隔离](data-isolation.md)、[五阶段记录](development-data-isolation-progress.md) 与 [S5 审计](development-data-isolation-s5.md)。本轮已完成源码及离线检查，但未执行下方产品打包、候选安装或真实服务验收流程。
 
 - Windows x64、Node.js 24.x、npm。
 - Windows PowerShell，以及系统中的 `Microsoft.NET/Framework64/v4.0.30319/csc.exe`。脚本通过 `SystemRoot` 定位编译器，启动和打包时会编译 Windows helper。
@@ -24,7 +24,7 @@ Node.js 开发环境与 Electron 内嵌的 Node.js 是两个环境。项目没�
 
 S4 自动测试入口的独立目录、成功清理、失败留存与 watch 行为见 [自动测试隔离](automatic-test-isolation.md)。单脚本也建立新运行目录，旧产品包不因测试脚本迁移而获得新 profile，未包含隔离的包将被拒绝作为托管产品检查目标。
 
-S1 的最小真实 Electron 检查为 `npm run test:profile-isolation`，只构建合成检查入口，不生成产品包或安装器。现有其他 smoke 未统一迁移到新 profile，须在后续阶段核对后再运行，不自动遍历。
+最小真实 Electron 检查为 `npm run test:profile-isolation`，只构建合成入口，不生成产品包或安装器。其余产品 smoke 已接入托管 profile，但本轮没有可供其验收的新产品包；仍须按固定候选和检查范围逐项选择，不自动遍历或使用旧 Beta 代替。
 
 以下命令只在开发机的目标源码仓库中执行。为临时目录、缓存和产物预留空间，并记录实际配置；这些内容应保持在 Git 忽略范围内。
 

@@ -37,7 +37,15 @@
     "src/shared/appUpdates.ts",
     "src/main/settings/AppUpdateService.ts",
     "src/renderer/app/useAppUpdates.ts",
-    "src/renderer/app/UpdateNotice.tsx"
+    "src/renderer/app/UpdateNotice.tsx",
+    "src/main/settings/runtimeEnvironment.ts",
+    "src/shared/runtimeEnvironment.ts",
+    "src/main/settings/projectDirectory.ts",
+    "src/renderer/components/settings/StorageSettingsView.tsx",
+    "src/shared/desktopBridge.ts",
+    "src/shared/desktopIpc.ts",
+    "src/preload/preload.ts",
+    "tools/acceptance/Start-AsteriumAcceptance.ps1"
   ],
   "tests": [
     "tests/unit/generalSettings.test.ts",
@@ -59,7 +67,10 @@
     "tests/unit/appUpdateService.test.ts",
     "tests/renderer/AppUpdates.test.tsx",
     "tests/unit/runtimeEnvironment.test.ts",
-    "tests/profile-isolation-smoke.mjs"
+    "tests/profile-isolation-smoke.mjs",
+    "tests/unit/acceptanceLauncher.test.ts",
+    "tests/renderer/StorageSettings.test.tsx",
+    "tests/unit/autoTestIsolation.test.mjs"
   ],
   "docs": [
     "docs/release-status.md",
@@ -74,11 +85,22 @@
     "ASSET_LICENSE.md",
     "BRANDING.md",
     "CREDITS.md",
-    "docs/development-data-isolation-s1.md"
+    "docs/development-data-isolation-s1.md",
+    "docs/automatic-test-isolation.md",
+    "docs/development-data-isolation-progress.md",
+    "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "031e04d295567dd0562b07769cc3fb846d8c2b89"
+  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
 }
 ---
+
+## 当前源码核验：2026-11-02 S5
+
+本条绑定已存在的代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；本次为纯文档核验，不使用自身或未来提交号。S1–S4 已实现 daily/dev/acceptance/autotest 启动资料隔离、真实规范化路径与 Windows junction／符号链接检查；开发与验收明确标记环境，只有日常安装版注册自启动及执行安装更新。通用设置可为当前环境保存默认项目位置，失败保留原值，旧项目不搬迁。候选启动器只处理显式指定的独立候选和批次，SHA-256 计算不跳过。
+
+本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
+
+## 历史阶段记录
 
 桌面通用设置的当前代码入口、测试和权限边界见以上元数据。
 

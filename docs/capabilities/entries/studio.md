@@ -21,7 +21,9 @@
     "src/main/runtime/PartnerRuntimePort.ts",
     "src/renderer/components/studio/StudioComposer.tsx",
     "src/renderer/components/chat/MessageAttachmentCards.tsx",
-    "src/renderer/pages/StudioPage.tsx"
+    "src/renderer/pages/StudioPage.tsx",
+    "src/main/project/ProjectWorkspaceStore.ts",
+    "src/main/agentIpc.ts"
   ],
   "tests": [
     "tests/unit/studioRoomStore.test.ts",
@@ -29,17 +31,31 @@
     "tests/unit/studioOrchestrator.test.ts",
     "tests/unit/studioAttachments.test.ts",
     "tests/unit/partnerRuntimePort.test.ts",
-    "tests/renderer/StudioComposer.test.tsx"
+    "tests/renderer/StudioComposer.test.tsx",
+    "tests/unit/projectWorkspaceStore.test.ts",
+    "tests/renderer/StorageSettings.test.tsx"
   ],
   "docs": [
     "docs/capabilities/schema.md",
     "docs/release-status.md",
     "docs/studio-attachments.md",
-    "docs/releases/0.1.0-beta.1-r2.md"
+    "docs/releases/0.1.0-beta.1-r2.md",
+    "docs/data-isolation.md",
+    "docs/automatic-test-isolation.md",
+    "docs/development-data-isolation-progress.md",
+    "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "a4a5ace1446b0a2601099cae337c21fbb56a8fb8"
+  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
 }
 ---
+
+## 当前源码核验：2026-11-02 S5
+
+本条绑定已存在的代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；本次为纯文档核验，不使用自身或未来提交号。工作室新建项目显示当前环境配置的默认保存位置，并在实际创建前确认最终完整路径。项目成员、群聊代次、任务与工作区授权语义保持；已有项目不随默认目录变更而搬迁。
+
+本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
+
+## 历史阶段记录
 
 工作室与群聊的当前代码入口、测试和权限边界见以上元数据。
 
