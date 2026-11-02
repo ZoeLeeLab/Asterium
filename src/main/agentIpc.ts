@@ -1,5 +1,6 @@
 import type { DesktopNotifications } from './settings/DesktopNotifications';
 import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
+import { validateProjectDirectory } from './settings/projectDirectory';
 import { trimChatHistory } from '../shared/chatHistory';
 import { AutomationScheduler } from './automation/AutomationScheduler';
 import { AutomationRuntime } from './automation/AutomationRuntime';
@@ -249,7 +250,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const studioRuntimeCatalog = new StudioRuntimeCatalog();
   const projectWorkspaces = new ProjectWorkspaceStore(
     path.join(app.getPath('userData'), 'project-workspaces.v1.json'),
-    () => options.environment?.projectsDirectory ?? path.join(app.getPath('documents'), 'Asterium Projects'),
+    async () => {
+      const custom = (await generalSettings.get()).settings.defaultProjectRoot;
+      return custom ? validateProjectDirectory(custom) : options.environment?.projectsDirectory ?? path.join(app.getPath('documents'), 'Asterium Projects');
+    },
   );
   const projectExecutionPolicies = new ProjectExecutionPolicyStore(() => path.join(app.getPath('userData'), 'project-execution-policies.v1.json'));
   const projectDomain = new ProjectDomainStore(() => path.join(app.getPath('userData'), 'project-domain.v1.json'));
@@ -602,6 +606,26 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   };
   ipcMain.handle(AGENT_IPC.desktopNavigationTake, event => { requireSender(event); return notifications?.takeNavigation(); });
   ipcMain.handle(AGENT_IPC.environmentGet, event => { requireSender(event); if (!options.environment) throw new Error('ENVIRONMENT_UNAVAILABLE'); return options.environment; });
+  const storageLocations = async (): Promise<import('../shared/generalSettings').StorageLocations> => {
+    const custom = (await generalSettings.get()).settings.defaultProjectRoot;
+    return { userDataDirectory: app.getPath('userData'),
+      defaultProjectRoot: custom ?? options.environment?.projectsDirectory ?? path.join(app.getPath('documents'), 'Asterium Projects'), customized: Boolean(custom) };
+  };
+  ipcMain.handle(AGENT_IPC.storageGet, event => { requireSender(event); return storageLocations(); });
+  ipcMain.handle(AGENT_IPC.storageChooseProjectRoot, async event => {
+    const window = requireSender(event);
+    const choice = await dialog.showOpenDialog(window, { title: '选择默认项目保存位置', properties: ['openDirectory', 'createDirectory'] });
+    if (choice.canceled || !choice.filePaths[0]) return null;
+    await assertCanonicalPathOutsideProtectedRoots(choice.filePaths[0], protectedRoots);
+    await generalSettings.update({ defaultProjectRoot: choice.filePaths[0] });
+    return storageLocations();
+  });
+  ipcMain.handle(AGENT_IPC.storageResetProjectRoot, async event => { requireSender(event); await generalSettings.update({ defaultProjectRoot: null }); return storageLocations(); });
+  ipcMain.handle(AGENT_IPC.storageOpenProjectRoot, async event => {
+    requireSender(event);
+    const directory = await validateProjectDirectory((await storageLocations()).defaultProjectRoot);
+    const error = await shell.openPath(directory); if (error) throw new Error(error);
+  });
   ipcMain.handle(AGENT_IPC.generalSettingsGet, async event => { requireSender(event); return generalSettings.get(); });
   const requireUpdates = () => { if (!options.updates) throw new Error('UPDATES_UNAVAILABLE'); return options.updates; };
   ipcMain.handle(AGENT_IPC.updatesGet, event => { requireSender(event); return requireUpdates().get(); });
@@ -740,16 +764,25 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return snapshot;
   });
   ipcMain.handle(AGENT_IPC.projectCreate, async (event, value: unknown) => {
-    requireSender(event);
+    const window = requireSender(event);
     if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.name !== 'string') throw new Error('INVALID_PROJECT_CREATE_REQUEST');
     let selectedRoot: string | undefined;
     if (value.locationSelectionId !== undefined) {
       if (typeof value.locationSelectionId !== 'string') throw new Error('INVALID_PROJECT_LOCATION_SELECTION');
       selectedRoot = projectLocationSelections.get(value.locationSelectionId);
-      projectLocationSelections.delete(value.locationSelectionId);
       if (!selectedRoot) throw new Error('PROJECT_LOCATION_SELECTION_EXPIRED');
     }
     const request = value as unknown as ProjectCreateRequest;
+    const finalRoot = (await projectWorkspaces.get(request.projectId))?.rootPath ?? await projectWorkspaces.preview({ projectId: request.projectId, name: request.name, selectedRoot });
+    const confirmation = await dialog.showMessageBox(window, { type: 'question', title: '确认项目保存位置',
+      message: `「${request.name}」的项目文件将保存在：`, detail: finalRoot,
+      buttons: ['创建项目', '取消'], defaultId: 0, cancelId: 1, noLink: true });
+    if (confirmation.response !== 0) throw new Error('PROJECT_CREATE_CANCELLED');
+    if (typeof value.locationSelectionId === 'string') projectLocationSelections.delete(value.locationSelectionId);
+    if (!selectedRoot) {
+      const custom = (await generalSettings.get()).settings.defaultProjectRoot;
+      if (custom) await validateProjectDirectory(custom);
+    }
     const result = await projectService.createProject({
       projectId: request.projectId,
       name: request.name,
@@ -757,7 +790,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       ...(request.avatarDataUrl !== undefined ? { avatarDataUrl: request.avatarDataUrl } : {}),
       ...(request.tags !== undefined ? { tags: request.tags } : {}),
       ...(request.memberIds !== undefined ? { memberIds: request.memberIds } : {}),
-      ...(selectedRoot ? { selectedRoot } : {}),
+      selectedRoot: finalRoot,
     });
     return result;
   });

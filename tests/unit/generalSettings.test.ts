@@ -17,6 +17,21 @@ it('uses defaults, merges independent edits serially and reloads saved settings'
   expect(reloaded.revision).toBe(2); expect(reloaded.settings).toMatchObject({ closeAction: 'quit', notifications: { approval: false, completed: true, automationFailed: true } });
   expect(listener).toHaveBeenCalledTimes(2);
 });
+
+it('persists a custom project root per profile, preserves it on invalid edits, and resets without moving files', async () => {
+  const first = await setup(), second = await setup();
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'asterium-custom-projects-')); directories.push(directory);
+  const canonical = await import('node:fs/promises').then(({ realpath }) => realpath(directory));
+  await first.store.update({ defaultProjectRoot: directory });
+  expect((await new GeneralSettingsStore(first.file).get()).settings.defaultProjectRoot).toBe(canonical);
+  expect((await second.store.get()).settings.defaultProjectRoot).toBeUndefined();
+  await expect(first.store.update({ defaultProjectRoot: path.join(directory, 'missing') })).rejects.toThrow();
+  expect((await first.store.get()).settings.defaultProjectRoot).toBe(canonical);
+  await writeFile(path.join(directory, 'keep.txt'), 'preserve project files');
+  await first.store.update({ defaultProjectRoot: null });
+  expect((await new GeneralSettingsStore(first.file).get()).settings.defaultProjectRoot).toBeUndefined();
+  expect(await import('node:fs/promises').then(({ readFile }) => readFile(path.join(directory, 'keep.txt'), 'utf8'))).toBe('preserve project files');
+});
 it('rejects unknown settings and unavailable startup without changing stored state', async () => {
   const { store } = await setup();
   await expect(store.update({ shell: 'anything' })).rejects.toThrow();

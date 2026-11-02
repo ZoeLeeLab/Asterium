@@ -11,6 +11,23 @@ afterEach(async () => {
 });
 
 describe('ProjectWorkspaceStore', () => {
+  it('uses the previewed location, changes only future defaults and refuses an unavailable custom root', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-project-default-change-')); temporaryDirectories.push(root);
+    let defaultRoot = path.join(root, 'first');
+    let unavailable = false;
+    const store = new ProjectWorkspaceStore(path.join(root, 'index.json'), async () => { if (unavailable) throw new Error('CUSTOM_ROOT_UNAVAILABLE'); return defaultRoot; });
+    const input = { projectId: 'project-first-12345678', name: '测试项目' };
+    const preview = await store.preview(input);
+    const first = await store.create(input); expect(first.rootPath).toBe(preview);
+    defaultRoot = path.join(root, 'second');
+    const second = await store.create({ projectId: 'project-second', name: '新位置' });
+    expect(second.rootPath.startsWith(defaultRoot + path.sep)).toBe(true);
+    expect((await store.get(input.projectId))?.rootPath).toBe(first.rootPath);
+    unavailable = true;
+    await expect(store.create({ projectId: 'project-missing', name: '无法创建' })).rejects.toThrow('CUSTOM_ROOT_UNAVAILABLE');
+    expect(await store.get('project-missing')).toBeUndefined();
+    expect((await store.create(input)).rootPath).toBe(first.rootPath);
+  });
   it('creates a visible project folder with three non-destructive starter documents', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-project-'));
     temporaryDirectories.push(root);

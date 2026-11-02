@@ -57,6 +57,8 @@
 
 文件、命令与交付的当前代码入口、测试和权限边界见以上元数据。
 
+2026-11-02 S2 源码增量：默认项目根按当前环境设置解析，已有项目仍保留原位置；新建项目显示最终完整位置并由桌面用户确认，取消不写入项目文件。无效自定义目录报错，不自动回退或搬迁。权限和沙箱边界不变。验收与源码绑定见 [五阶段记录](../../development-data-isolation-progress.md)，S5 统一绑定此前已存在的代码提交；本段不将旧候选或旧 lastVerifiedCommit 记作本轮核验。
+
 ## 缩略图修复
 
 src/main/security/attachmentThumbnail.ts 从主进程已解析授权的快照路径读取字节并生成有尺寸上限的缩略图；无扩展名快照不再交 Windows Shell 缓存。解码失败返回无缩略图，文件不存在/体积超限继续拒绝。MessageAttachmentCards.tsx 以会话与附件 ID 隔离卡片状态，缩略图失败不改写快照可用性，避免状态更新取消自身请求。附件读取、发送、会话及群聊授权沿用原存储校验，无数据迁移、无新命令权限。新增 unit/renderer 测试和 tests/attachment-thumbnail-electron-smoke.mjs 使用合成图片、独立临时目录，不读取用户连接或 Key；具体结果另记本轮收据。新代码提交存在后再绑定 lastVerifiedCommit，不以旧包或旧提交冒充本轮新基线。

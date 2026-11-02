@@ -2050,13 +2050,19 @@ function NewGroupModal(props: {
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const [defaultProjectRoot, setDefaultProjectRoot] = useState('');
+  useEffect(() => {
+    let active = true;
+    void window.asteriumStorage?.get().then(value => { if (active) setDefaultProjectRoot(value.defaultProjectRoot); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   return <Modal size="md" title="新建工作室群聊" description="每个群聊归属一个项目；新项目会同时建立真实文件夹与基础资料。" onClose={props.onClose}>
     <div className="modal-body">
       <nav className="project-choice-tabs" aria-label="项目来源"><button className={props.projectChoice === 'new' ? 'active' : ''} type="button" disabled={props.busy} onClick={() => props.setProjectChoice('new')}>创建新项目</button><button className={props.projectChoice === 'existing' ? 'active' : ''} type="button" disabled={props.busy} onClick={() => props.setProjectChoice('existing')}>选择已有项目</button></nav>
       {props.projectChoice === 'existing' ? <div className="project-choice-list" role="radiogroup" aria-label="选择项目">{props.state.projects.map((item, index) => { const Icon = projectIcons[index] ?? FolderKanban; return <button className={props.selectedProjectId === item.id ? 'active' : ''} type="button" role="radio" aria-checked={props.selectedProjectId === item.id} key={item.id} disabled={props.busy} onClick={() => props.setSelectedProjectId(item.id)}><span><Icon size={19} /></span><span><strong>{item.name}</strong><small>{item.workspace?.status === 'ready' ? '真实项目文件夹已建立' : item.description}</small></span>{props.selectedProjectId === item.id && <i className="choice-dot" />}</button>; })}</div> : <div className="new-project-fields">
         <label className="modal-field">项目名称<input value={props.newProjectName} disabled={props.busy} onChange={(event) => props.setNewProjectName(event.target.value)} placeholder="例如：秋季示例项目 B" maxLength={50} /></label>
         <label className="modal-field">项目背景 <small>会写入项目方案的“背景”章节</small><textarea value={props.newProjectDescription} disabled={props.busy} onChange={(event) => props.setNewProjectDescription(event.target.value)} placeholder="简单写下为什么要做这个项目，也可以稍后补充。" maxLength={1000} /></label>
-        <section className="project-location-choice"><span className="project-location-choice__icon"><MapPin size={18} /></span><span><small>{props.projectLocation ? '使用指定文件夹' : '自动创建项目文件夹'}</small><strong title={props.projectLocation?.path}>{props.projectLocation?.path ?? '文档 / Asterium Projects / 项目名__ID'}</strong><em>会生成 3 份基础 MD 和 deliverables 交付区</em></span><div>{props.projectLocation && <button className="text-button" type="button" disabled={props.busy} onClick={() => props.setProjectLocation(null)}>恢复默认</button>}<button className="secondary-button" type="button" disabled={props.busy || !window.asteriumProjects} onClick={props.chooseProjectLocation}><FolderOpen size={14} />选择文件夹</button></div></section>
+        <section className="project-location-choice"><span className="project-location-choice__icon"><MapPin size={18} /></span><span><small>{props.projectLocation ? '使用指定文件夹' : '自动创建项目文件夹'}</small><strong title={props.projectLocation?.path}>{props.projectLocation?.path ?? (defaultProjectRoot || '创建前将显示最终保存位置')}</strong><em>会生成 3 份基础 MD 和 deliverables 交付区</em></span><div>{props.projectLocation && <button className="text-button" type="button" disabled={props.busy} onClick={() => props.setProjectLocation(null)}>恢复默认</button>}<button className="secondary-button" type="button" disabled={props.busy || !window.asteriumProjects} onClick={props.chooseProjectLocation}><FolderOpen size={14} />选择文件夹</button></div></section>
       </div>}
       <label className="modal-field">群聊名称<input value={props.newGroupName} disabled={props.busy} onChange={(event) => props.setNewGroupName(event.target.value)} placeholder="例如：方案讨论组" maxLength={50} /></label>
       {props.error && <p className="modal-error">{props.error}</p>}

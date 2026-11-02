@@ -1,5 +1,9 @@
 export const DESKTOP_IPC = {
   environmentGet: 'asterium:environment:get',
+  storageGet: 'asterium:storage:get',
+  storageChooseProjectRoot: 'asterium:storage:choose-project-root',
+  storageResetProjectRoot: 'asterium:storage:reset-project-root',
+  storageOpenProjectRoot: 'asterium:storage:open-project-root',
   updatesGet: 'asterium:updates:get',
   updatesCheck: 'asterium:updates:check',
   updatesDownload: 'asterium:updates:download',
@@ -212,6 +216,7 @@ export type DesktopIpcChannel = typeof DESKTOP_IPC[keyof typeof DESKTOP_IPC];
 
 const DESKTOP_INVOKE_KEYS = [
   'environmentGet',
+  'storageGet', 'storageChooseProjectRoot', 'storageResetProjectRoot', 'storageOpenProjectRoot',
   'updatesGet', 'updatesCheck', 'updatesDownload', 'updatesCancel', 'updatesInstall', 'updatesOpenReleases',
   'desktopNavigationTake',
   'generalSettingsGet', 'generalSettingsUpdate',

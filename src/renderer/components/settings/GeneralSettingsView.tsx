@@ -1,6 +1,7 @@
 import { Settings2 } from 'lucide-react';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
 import { APP_VERSION } from '../../../shared/appRelease';
+import { StorageSettingsView } from './StorageSettingsView';
 
 export function GeneralSettingsView() {
   const { settings, startupSupported, loading, saving, error, update, reload, available } = useGeneralSettings();
@@ -8,6 +9,7 @@ export function GeneralSettingsView() {
   return <>
     <header className="settings-heading"><div><span><Settings2 size={24} /></span><div><h1>通用</h1><p>设置星丛的启动、消息发送与通知方式。修改会自动保存。</p></div></div><small role="status">{loading ? '正在读取…' : saving ? '正在保存…' : available && !error ? '已保存' : ''}</small></header>
     <div className="general-settings">
+      <StorageSettingsView />
       {error && <div role="alert">{error}<button type="button" className="secondary-button" onClick={() => void reload()}>重新读取</button></div>}
       {!loading && !available && !error && <p role="status">桌面设置暂不可用，请在星丛桌面应用中打开。</p>}
       <section className="general-settings-card"><h2>启动与关闭</h2>

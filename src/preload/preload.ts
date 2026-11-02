@@ -9,6 +9,13 @@ import type { MemoryArchiveChange, MemoryArchiveCommentRequest, MemoryArchiveCre
 import type { AsteriumAgentsApi, AsteriumAppearanceApi, AsteriumArtifactsApi, AsteriumAttachmentsApi, AsteriumConversationsApi, AsteriumMemoryApi, AsteriumNativeBindingsApi, AsteriumProjectsApi, AsteriumStudioApi, AsteriumStudioNotesApi } from '../shared/desktopBridge';
 import { DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 
+contextBridge.exposeInMainWorld('asteriumStorage', {
+  get: () => ipcRenderer.invoke(AGENT_IPC.storageGet),
+  chooseProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageChooseProjectRoot),
+  resetProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageResetProjectRoot),
+  openProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageOpenProjectRoot),
+} satisfies import('../shared/generalSettings').AsteriumStorageApi);
+
 contextBridge.exposeInMainWorld('asteriumEnvironment', {
   get: () => ipcRenderer.invoke(AGENT_IPC.environmentGet),
 } satisfies import('../shared/runtimeEnvironment').AsteriumEnvironmentApi);

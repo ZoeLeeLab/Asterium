@@ -120,6 +120,8 @@ Beta 固定使用独立安装身份和默认资料目录，保留显式 user-dat
 
 ## 2026-11-02 S1 未提交源码增量
 
+S1 已于 `ea6634abec534eedd07d65dec8853d4a4b30a315` 本地提交。接续 S2 增加通用设置中的文件位置管理，用户可为当前环境选择默认项目保存位置；失败保留原设置，已有项目不搬迁，资料目录只读。S2 验收和后续绑定统一记录在 [五阶段记录](../../development-data-isolation-progress.md)，S5 再以纯文档提交绑定已存在代码基线。
+
 本轮源码增加 daily/dev/acceptance/autotest 启动环境，源代码默认开发资料，安装版默认日常资料；在业务存储创建前检查真实规范化路径、Windows junction／符号链接与目录归属。userData、sessionData 和运行临时目录独立，窗口／托盘明确标记环境，仅日常安装版注册自启动和执行安装更新。实现入口另含 src/main/settings/runtimeEnvironment.ts 和 src/shared/runtimeEnvironment.ts；新文件尚未提交，待获授权建立代码基线后补入结构化 codeEntries 并核验绑定。项目位置设置页尚未实施。
 
 lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。
