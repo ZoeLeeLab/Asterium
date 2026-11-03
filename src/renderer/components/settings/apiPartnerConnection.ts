@@ -28,9 +28,10 @@ export async function saveApiPartnerConnection(value: ApiConnectionValue, creden
   apiConfigurationSchema.parse({ version: 1, revision: 0, services: [service], models: [candidate], bindings: [] });
   let data = await bridge.apiConnectionsGet();
   const current = data.services.find(item => item.id === value.service!.id);
+  const currentService = current ? JSON.stringify(apiServiceSchema.parse(current)) : undefined;
   // A concurrent edit must not be overwritten by an old partner form.
-  if (current && JSON.stringify(current) !== JSON.stringify(value.service)) throw new Error('API_CONFIGURATION_CHANGED');
-  if (JSON.stringify(service) !== JSON.stringify(current)) data = await bridge.apiConnectionsMutate({ action: 'service', expectedRevision: data.revision, value: service });
+  if (current && currentService !== JSON.stringify(apiServiceSchema.parse(value.service))) throw new Error('API_CONFIGURATION_CHANGED');
+  if (JSON.stringify(service) !== currentService) data = await bridge.apiConnectionsMutate({ action: 'service', expectedRevision: data.revision, value: service });
   const existing = data.models.find(item => item.id === candidate.id);
   if (JSON.stringify(existing) === JSON.stringify(candidate)) return candidate.id;
   // Model parameter changes belong to this partner; do not alter a profile used by others.

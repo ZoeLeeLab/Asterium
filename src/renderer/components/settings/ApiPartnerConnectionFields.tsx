@@ -19,15 +19,17 @@ export function ApiPartnerConnectionFields({ value, onChange, onDirty }: { value
   const [activeProbe, setActiveProbe] = useState<string>(), [probeNotice, setProbeNotice] = useState('');
   const [editor, setEditor] = useState<{ service?: ApiService }>();
   const sequence = useRef(0);
+  const modelEdited = useRef(false);
   const activeRequest = useRef(false);
   const service = value.service ?? apiSitePreset('preset-deepseek')!;
   useEffect(() => {
     let alive = true;
+    const initialSequence = sequence.current;
     void window.asteriumAgents?.apiConnectionsGet?.().then(config => {
       if (!alive) return;
       setData(config);
       const saved = config.services.find(item => item.id === value.service?.id);
-      if (saved && !value.service?.credentialRef && !value.apiKey && !value.model && sequence.current === 0) onChange({ ...value, service: saved, selectedCredentialRef: saved.credentialRef });
+      if (saved && !value.service?.credentialRef && !value.apiKey && !value.model && !modelEdited.current && sequence.current === initialSequence) onChange({ service: saved, selectedCredentialRef: saved.credentialRef });
     }).catch(() => { if (alive) setError('站点读取失败，请重新打开伙伴设置。'); });
     const requestSequence = sequence;
     return () => { alive = false; requestSequence.current++; };
@@ -42,6 +44,7 @@ export function ApiPartnerConnectionFields({ value, onChange, onDirty }: { value
       provider: selected.legacyDeepSeek ? 'deepseek' : apiProviderForProtocol(selected.protocol), endpoint: selected.endpoint, apiKey: '', model: '', advancedError: '' });
   };
   const chooseModel = (id: string) => {
+    modelEdited.current = true;
     onDirty?.();
     const saved = data.models.find(item => item.serviceId === service.id && item.model === id);
     onChange({ ...value, model: id, modelId: saved?.id, modelConfig: saved ?? newApiModel(service, id), advancedError: '' });

@@ -588,6 +588,7 @@ export function SettingsPage() {
         apiModelId = await saveApiPartnerConnection(api, apiCredentialRef || 'none');
       } catch (error) {
         const unavailable = error instanceof Error && error.message.includes('SECURE_STORAGE_UNAVAILABLE');
+        if (error instanceof Error && error.message.includes('API_CONFIGURATION_CHANGED')) return setFormError('站点配置已变化，请重新打开伙伴设置后再保存。');
         return setFormError(unavailable ? '系统安全存储当前不可用，已拒绝保存 API Key。' : '连接未保存，请检查模型高级设置；如果站点已被修改，请重新打开伙伴设置。');
       } finally {
         setBusy(false);
