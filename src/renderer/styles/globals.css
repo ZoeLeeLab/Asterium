@@ -89,7 +89,7 @@ h1, h2, h3, p { margin: 0; }
 
 .avatar { position: relative; display: inline-grid; flex: 0 0 auto; aspect-ratio: 1 / 1; place-items: center; overflow: visible; border: 2px solid color-mix(in srgb,var(--surface-strong) 92%,white); border-radius: 50%; color: #fff; background: linear-gradient(145deg,#edf5fb,#d7e8f7); box-shadow: 0 0 0 1.5px #7288a4,0 6px 18px color-mix(in srgb,var(--avatar-accent) 20%,transparent); font-weight: 700; transition: box-shadow var(--motion-base),transform var(--motion-fast); }
 .avatar--selected { box-shadow: 0 0 0 2px #6f87a3,0 0 0 6px color-mix(in srgb,#d7e8f7 88%,transparent),0 8px 22px color-mix(in srgb,#86afd6 34%,transparent); }
-.avatar img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; object-position: center; }
 .avatar__fallback-image { position: absolute; inset: 0; transform: scale(1.06); }
 .avatar--sm { width: 38px; height: 38px; font-size: calc(13px * var(--ui-font-scale,1)); }
 .avatar--md { width: 50px; height: 50px; font-size: calc(17px * var(--ui-font-scale,1)); }
