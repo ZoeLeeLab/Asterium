@@ -30,6 +30,8 @@ export async function listDeepSeekModels(chatEndpoint: string, apiKey: string, f
 
 export function normalizeDeepSeekChatEndpoint(value: string) {
   const endpoint = parseOfficialDeepSeekEndpoint(value);
+  if (endpoint.pathname === '/') endpoint.pathname = '/chat/completions';
+  if (endpoint.pathname === '/v1' || endpoint.pathname === '/v1/') endpoint.pathname = '/v1/chat/completions';
   if (endpoint.pathname !== '/chat/completions' && endpoint.pathname !== '/v1/chat/completions') throw new Error('INVALID_DEEPSEEK_ENDPOINT');
   return endpoint.toString();
 }

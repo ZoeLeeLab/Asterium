@@ -329,6 +329,12 @@ contextBridge.exposeInMainWorld('asteriumPartnerDiary', {
 } satisfies import('../shared/partnerDiary').AsteriumPartnerDiaryApi);
 
 contextBridge.exposeInMainWorld('asteriumMemory', {
+  importText: {
+    preview: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportPreview, input),
+    confirm: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportConfirm, input),
+    cancel: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportCancel, input),
+    undo: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportUndo, input),
+  } satisfies import('../shared/memoryImport').MemoryImportApi,
   query: (request: MemoryArchiveQuery) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveQuery, request),
   briefing: (partnerId: string) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveBriefing, partnerId),
   create: (request: MemoryArchiveCreateRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveCreate, request),

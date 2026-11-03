@@ -7,11 +7,12 @@ import { PartnerMemoryService } from '../../src/main/memory/PartnerMemoryService
 import { SqliteMemoryArchiveStore } from '../../src/main/memory/SqliteMemoryArchiveStore';
 import { MemorySourceService } from '../../src/main/memory/MemorySourceService';
 import { SingleChatMessageStore } from '../../src/main/conversation/SingleChatMessageStore';
-import { MemoryConsolidation, fallbackBatch } from '../../src/main/memory/fallback/MemoryConsolidation';
+import { MemoryConsolidation, fallbackBatch, createMemoryFallbackAdapter } from '../../src/main/memory/fallback/MemoryConsolidation';
 import { fallbackHash, type FallbackJob } from '../../src/main/memory/fallback/MemoryFallbackJobStore';
 import type { ApiProviderAdapter, ApiProviderRequest } from '../../src/main/api/ApiProviderAdapter';
 import { DeepSeekProviderAdapter } from '../../src/main/adapters/DeepSeekProviderAdapter';
 import type { MemoryRecord } from '../../src/shared/memoryArchive';
+import type { MemoryFallbackProvider } from '../../src/shared/memoryFallback';
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
@@ -39,6 +40,42 @@ function planner(proposal: unknown, inspect?: (request: ApiProviderRequest, coun
 }
 const creation = { kind: 'create', key: 'new', type: 'stable_fact', body: 'new durable fact', weight: 3, sourceMessageIds: ['m2'] };
 describe('dedicated memory consolidation', () => {
+  it.each<MemoryFallbackProvider>(['deepseek', 'openai', 'responses', 'anthropic', 'gemini'])('runs %s through its real adapter with synthetic responses and commits only validated memory', async provider => {
+    const { consolidation, memories, job } = await fixture();
+    const requests: Array<{ url: string; body: Record<string, any>; headers: Headers }> = [];
+    const fetcher: typeof fetch = async (url, options) => {
+      const body = JSON.parse(String(options?.body));
+      requests.push({ url: String(url), body, headers: new Headers(options?.headers) });
+      const count = requests.length;
+      const name = count === 1 ? 'search_memory' : 'submit_memory_consolidation';
+      const args = count === 1 ? {} : { operations: [creation] };
+      const call = { id: `call-${count}`, name, arguments: JSON.stringify(args) };
+      let events: unknown[];
+      if (provider === 'anthropic') {
+        events = [{ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: call.id, name, input: args } }, { type: 'content_block_stop', index: 0 }, { type: 'message_delta', delta: { stop_reason: 'tool_use' } }, { type: 'message_stop' }];
+      } else if (provider === 'responses') {
+        events = [{ type: 'response.completed', response: { status: 'completed', output: [{ type: 'reasoning', id: 'reasoning-item', encrypted_content: 'synthetic-native-state' }, { type: 'function_call', call_id: call.id, name, arguments: call.arguments }] } }];
+      } else if (provider === 'gemini') {
+        events = [{ candidates: [{ content: { role: 'model', parts: [{ functionCall: { id: call.id, name, args }, thoughtSignature: 'synthetic-signature' }] }, finishReason: 'STOP' }] }];
+      } else {
+        events = [{ choices: [{ delta: { tool_calls: [{ index: 0, id: call.id, type: 'function', function: { name, arguments: call.arguments } }] }, finish_reason: 'tool_calls' }] }];
+      }
+      return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('') + (provider === 'deepseek' || provider === 'openai' ? 'data: [DONE]\n\n' : ''), { headers: { 'content-type': 'text/event-stream' } });
+    };
+    const endpoint = provider === 'deepseek' ? 'https://api.deepseek.com/chat/completions' : 'https://synthetic.invalid/v1';
+    const adapter = createMemoryFallbackAdapter({ provider, endpoint, model: 'synthetic-model', intervalMinutes: 20, credentialConfigured: true, partners: {} }, 'synthetic-key', fetcher);
+    await consolidation.execute(job, 'provider-op', adapter, new AbortController().signal, async () => true);
+    expect(requests).toHaveLength(2); expect((await memories.list('p'))[0].body).toBe(creation.body);
+    if (provider === 'anthropic') {
+      expect(requests[0].headers.get('x-api-key')).toBe('synthetic-key'); expect(requests[0].body.max_tokens).toBe(4096);
+    } else if (provider === 'gemini') {
+      expect(requests[0].headers.get('x-goog-api-key')).toBe('synthetic-key');
+      expect(JSON.stringify(requests[1].body)).toContain('synthetic-signature');
+    } else {
+      expect(requests[0].headers.get('authorization')).toBe('Bearer synthetic-key');
+      if (provider === 'responses') expect(JSON.stringify(requests[1].body)).toContain('synthetic-native-state');
+    }
+  });
   it('exposes only two read tools and proposal submission; captures frozen ±2 sources and durable receipts', async () => {
     const { consolidation, memories, job } = await fixture();
     const fake = planner({ operations: [creation] }, (request) => { expect(request.tools.map((tool) => tool.name)).toEqual(['search_memory', 'read_memory_source', 'submit_memory_consolidation']); });

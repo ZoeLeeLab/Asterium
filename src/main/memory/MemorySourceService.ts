@@ -19,6 +19,7 @@ export class MemorySourceService {
   ) {}
 
   async capture(partnerId: string, source: MemorySourceAnchor): Promise<MemorySourceAnchor> {
+    if (source.kind === 'imported_text') throw new Error('MEMORY_SOURCE_IMPORT_ONLY');
     const live = await this.liveWindow(partnerId, source, true);
     if (!live) throw new Error('MEMORY_SOURCE_NOT_FOUND');
     const target = live.messages.find((message) => message.offset === 0)!;
@@ -32,6 +33,9 @@ export class MemorySourceService {
   }
 
   async read(partnerId: string, source: MemorySourceAnchor): Promise<MemorySourceReadResult> {
+    if (source.kind === 'imported_text') return {
+      state: 'frozen', source: structuredClone(source), messages: [],
+    };
     let live: { messages: MemorySourceExcerptMessage[] } | undefined;
     let accessDenied = false;
     try {
@@ -63,7 +67,7 @@ export class MemorySourceService {
     };
   }
 
-  private async liveWindow(partnerId: string, source: MemorySourceAnchor, requireStudioMembership: boolean) {
+  private async liveWindow(partnerId: string, source: Exclude<MemorySourceAnchor, { kind: 'imported_text' }>, requireStudioMembership: boolean) {
     if (source.kind === 'single_chat') {
       const window = await this.singleChats.getWindow(source.conversationId, source.messageId, 2);
       if (!window) return undefined;

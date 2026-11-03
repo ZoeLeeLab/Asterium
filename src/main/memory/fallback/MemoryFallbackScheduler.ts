@@ -84,7 +84,7 @@ export class MemoryFallbackScheduler {
     if (this.disposed) return false;
     const [current, settings] = await Promise.all([this.jobs.get(job.key), this.settings.get()]);
     return Boolean(!this.disposed && current && this.due({ ...current, round: undefined }, settings) && settings.credentialConfigured
-      && settings.endpoint === config.endpoint && settings.model === config.model && settings.partners[job.partnerId]?.enabledAt === config.partners[job.partnerId]?.enabledAt
+      && settings.provider === config.provider && settings.endpoint === config.endpoint && settings.model === config.model && settings.partners[job.partnerId]?.enabledAt === config.partners[job.partnerId]?.enabledAt
       && job.messages.every((message) => current.messages.some((item) => item.messageId === message.messageId && item.hash === message.hash)));
   }
   private async process(candidate: FallbackJob, config: MemoryFallbackSettings) {

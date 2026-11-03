@@ -15,7 +15,7 @@
 - [API 会话与手动压缩](entries/api-sessions.md)
 - [通用自动化](entries/automations.md)
 - [桌面通用设置](entries/desktop-settings.md)
-- [伙伴记忆](entries/memory.md)
+- [伙伴记忆](entries/memory.md)（含旧对话文本导入）
 - [伙伴接入](entries/partners.md)
 - [运行状态、项目与协作工具](entries/runtime-tools.md)
 - [外部伙伴群聊 MCP](entries/studio-mcp.md)

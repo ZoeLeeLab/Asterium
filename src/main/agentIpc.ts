@@ -85,7 +85,8 @@ import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallbac
 import { MemoryFallbackSettingsStore } from './memory/fallback/MemoryFallbackSettingsStore';
 import { MemoryFallbackJobStore } from './memory/fallback/MemoryFallbackJobStore';
 import { MemoryFallbackInventory } from './memory/fallback/MemoryFallbackInventory';
-import { MemoryConsolidation } from './memory/fallback/MemoryConsolidation';
+import { MemoryImportService } from './memory/MemoryImportService';
+import { MemoryConsolidation, createMemoryFallbackAdapter } from './memory/fallback/MemoryConsolidation';
 import { MemoryFallbackScheduler } from './memory/fallback/MemoryFallbackScheduler';
 import { PartnerDiaryCatalog } from './diary/PartnerDiaryCatalog';
 import { PartnerDiarySettingsStore } from './diary/PartnerDiarySettingsStore';
@@ -409,11 +410,20 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
     return { apiKey, requestSettings, modelSettings, headers };
   }
+  const memoryImport = new MemoryImportService(partnerMemories, fallbackEligible, async input => {
+    const config = await memoryFallbackSettings.get();
+    if (config.provider !== input.provider || config.endpoint !== input.endpoint || config.model !== input.model) {
+      throw new Error('MEMORY_IMPORT_CONNECTION_CHANGED');
+    }
+    const apiKey = await memoryFallbackSettings.secret(config);
+    if (!apiKey) throw new Error('MEMORY_IMPORT_CREDENTIAL_REQUIRED');
+    return createMemoryFallbackAdapter(config, apiKey);
+  });
   const memoryFallbackScheduler = new MemoryFallbackScheduler(memoryFallbackSettings, memoryFallbackJobs, memoryFallbackInventory,
     new MemoryConsolidation(partnerMemories, memorySources), async (config) => {
-      const apiKey = await memoryFallbackSettings.secret();
+      const apiKey = await memoryFallbackSettings.secret(config);
       if (!apiKey) throw new Error('MEMORY_FALLBACK_CREDENTIAL_REQUIRED');
-      return apiProviders.require(config.provider).createAdapter({ endpoint: config.endpoint, model: config.model, apiKey, thinkingMode: 'disabled' });
+      return createMemoryFallbackAdapter(config, apiKey);
     }, fallbackEligible);
   const unsubscribeFallbackInventory = memoryFallbackInventory.subscribe(() => { void memoryFallbackScheduler.revalidate().catch(() => memoryFallbackScheduler.cancelCurrent()); });
   const runtimeFactory = new PartnerRuntimeFactory({
@@ -2047,7 +2057,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
   ipcMain.handle(AGENT_IPC.memoryFallbackListModels, async (event, value: unknown) => {
     requireSender(event);
-    return memoryFallbackSettings.listModels(value, (endpoint, apiKey) => apiProviders.listModels('deepseek', endpoint, apiKey));
+    return memoryFallbackSettings.listModels(value, (provider, endpoint, apiKey) => apiProviders.listModels(provider, endpoint, apiKey));
   });
   ipcMain.handle(AGENT_IPC.memoryFallbackConfigure, async (event, value: unknown) => {
     requireSender(event);
@@ -2064,6 +2074,23 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     memoryFallbackScheduler.cancelCurrent();
     await memoryFallbackInventory.refresh();
     return memoryFallbackScheduler.snapshot();
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryImportPreview, (event, value: unknown) => {
+    requireSender(event);
+    return memoryImport.preview(value);
+  });
+  ipcMain.handle(AGENT_IPC.memoryImportConfirm, (event, value: unknown) => {
+    requireSender(event);
+    return memoryImport.confirm(value);
+  });
+  ipcMain.handle(AGENT_IPC.memoryImportCancel, (event, value: unknown) => {
+    requireSender(event);
+    memoryImport.cancel(value);
+  });
+  ipcMain.handle(AGENT_IPC.memoryImportUndo, (event, value: unknown) => {
+    requireSender(event);
+    return memoryImport.undo(value);
   });
 
   ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
@@ -2788,6 +2815,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await mcpConnections.dispose();
     await diaryScheduler.dispose();
     unsubscribeFallbackInventory();
+    memoryImport.dispose();
     await memoryFallbackScheduler.dispose();
     for (const channel of DESKTOP_INVOKE_CHANNELS) ipcMain.removeHandler(channel);
     unsubscribePartnerWorkspaces();

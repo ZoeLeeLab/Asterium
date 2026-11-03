@@ -1,9 +1,19 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { assertMemoryArchiveRecords, assertMemoryRecord, assertMemorySources, memoryWeightOrDefault, type MemoryArchiveBriefing, type MemoryRecord, type MemorySourceAnchor } from '../../shared/memoryArchive';
 import type { MemoryArchiveListOptions, MemoryArchiveSnapshot, MemoryArchiveStore, MemoryArchiveStoreOptions, ReviseMemoryRecordInput } from './MemoryArchiveStore';
+
+import { memoryImportContentKey, type MemoryImportReceipt, type MemoryImportUndo } from '../../shared/memoryImport';
+
+interface StoredImportBatch {
+  result: MemoryImportReceipt;
+  records: Array<{ id: string; fingerprint: string }>;
+  undo?: MemoryImportUndo;
+}
+
+const importFingerprint = (record: MemoryRecord) => createHash('sha256').update(JSON.stringify(record)).digest('hex');
 
 const APPLICATION_ID = 0x4153544d;
 
@@ -78,6 +88,71 @@ export class SqliteMemoryArchiveStore implements MemoryArchiveStore {
   }
   async fallbackMemoryIds() { return this.run((db) => db.prepare('SELECT memory_id FROM fallback_memories ORDER BY memory_id').all().map((row) => row.memory_id as string)); }
   async fallbackReceipt(operationId: string) { return this.run((db) => this.receipt(db, operationId)); }
+  private readImportBatch(db: DatabaseSync, batchId: string): StoredImportBatch | undefined {
+    const exists = db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'import_batches'").get();
+    if (!exists) return undefined;
+    const row = db.prepare('SELECT receipt FROM import_batches WHERE batch_id = ?').get(batchId);
+    return row ? JSON.parse(String(row.receipt)) as StoredImportBatch : undefined;
+  }
+
+  async importReceipt(batchId: string) {
+    return this.run(db => this.readImportBatch(db, batchId)?.result);
+  }
+
+  async confirmImport(batchId: string, incoming: MemoryRecord[]) {
+    return this.run(db => {
+      const previous = this.readImportBatch(db, batchId);
+      if (previous) return previous.result;
+      const records = this.records(db);
+      const ids = new Set(records.map(record => record.memoryId));
+      const content = new Set(records.map(memoryImportContentKey));
+      const added = incoming.filter(record => {
+        this.owned(record);
+        const key = memoryImportContentKey(record);
+        if (ids.has(record.memoryId) || content.has(key)) return false;
+        ids.add(record.memoryId);
+        content.add(key);
+        return true;
+      });
+      assertMemoryArchiveRecords([...records, ...added], this.partnerId);
+      for (const record of added) this.write(db, record);
+      const result = { added: added.length, skipped: incoming.length - added.length };
+      const batch: StoredImportBatch = { result, records: added.map(record => ({ id: record.memoryId, fingerprint: importFingerprint(record) })) };
+      db.exec('CREATE TABLE IF NOT EXISTS import_batches (batch_id TEXT PRIMARY KEY, receipt TEXT NOT NULL CHECK(json_valid(receipt)))');
+      db.prepare('INSERT INTO import_batches VALUES (?, ?)').run(batchId, JSON.stringify(batch));
+      if (added.length) this.bump(db);
+      return result;
+    }, true);
+  }
+
+  async undoImport(batchId: string) {
+    return this.run(db => {
+      const batch = this.readImportBatch(db, batchId);
+      if (!batch) throw new Error('MEMORY_IMPORT_BATCH_NOT_FOUND');
+      if (batch.undo) return batch.undo;
+      const records = this.records(db);
+      const byId = new Map(records.map(record => [record.memoryId, record]));
+      const referenced = new Set(records.filter(record => !record.deletedAt).map(record => record.supersededByMemoryId));
+      const now = (this.options.now ?? (() => new Date().toISOString()))();
+      let removed = 0;
+      let retained = 0;
+      for (const entry of batch.records) {
+        const record = byId.get(entry.id);
+        if (!record || record.deletedAt) continue;
+        if (importFingerprint(record) !== entry.fingerprint || referenced.has(entry.id)) {
+          retained++;
+          continue;
+        }
+        this.write(db, { ...record, deletedAt: now, updatedAt: now });
+        removed++;
+      }
+      batch.undo = { removed, retained };
+      db.prepare('UPDATE import_batches SET receipt = ? WHERE batch_id = ?').run(JSON.stringify(batch), batchId);
+      if (removed) this.bump(db);
+      return batch.undo;
+    }, true);
+  }
+
   async applyFallback(operationId: string, expectedVersion: string, after: MemoryRecord[], receipt: string) {
     return this.run((db) => {
       const previous = this.receipt(db, operationId); if (previous !== undefined) return previous;

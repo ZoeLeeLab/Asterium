@@ -319,6 +319,7 @@ export interface AsteriumProjectNotebooksApi {
 }
 
 export interface AsteriumMemoryApi {
+  importText?: import('./memoryImport').MemoryImportApi;
   query: (request: MemoryArchiveQuery) => Promise<MemoryArchiveQueryResult>;
   briefing: (partnerId: string) => Promise<MemoryArchiveBriefing>;
   create: (request: MemoryArchiveCreateRequest) => Promise<MemoryRecord>;
