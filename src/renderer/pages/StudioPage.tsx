@@ -1602,7 +1602,7 @@ export function StudioPage() {
                 {mine && <Avatar name={userProfile.displayName} src={userAvatar} accent="#91a9cf" size="md" />}
               </article>;
             })}{studioInteraction?.timeline.length && !studioInteractionMessageId ? <article className="message-row studio-interaction-row"><Avatar partnerId={studioInteractionPartner?.id} name={studioInteractionPartner?.publicIdentity.displayName ?? '伙伴'} src={studioInteractionPartner?.publicIdentity.avatarDataUrl} accent={studioInteractionPartner?.accent} size="md" /><div className="message-stack"><div className="message-meta"><strong>{studioInteractionPartner?.publicIdentity.displayName ?? '伙伴'}</strong></div><div className="message-bubble">{renderStudioInteractionTimeline()}</div></div></article> : null}</div> : <div className="friendly-empty"><MessageSquarePlus size={34} /><h2>{project ? '当前项目还没有群聊' : '还没有项目'}</h2><p>{project ? '项目、文件与任务仍会保留，可以新建群聊继续协作。' : '新建第一个项目和群聊，开始工作室协作。'}</p><button className="primary-button" type="button" onClick={openProjectConversation}>{project ? '新建群聊' : '新建项目'}</button></div>}
-            {groupChat && <JumpToLatest key={groupChat.id} scrollRef={messageListRef} streaming={Boolean(activeRound)} onJump={() => { keepAtBottomRef.current = true; }} />}
+            {groupChat && <JumpToLatest key={groupChat.id} scrollRef={messageListRef} streaming={Boolean(activeRound)} partnerName={currentSpeaker?.publicIdentity.displayName} onJump={() => { keepAtBottomRef.current = true; }} />}
             </div>
         {activeRound?.state === 'waiting_discussion_decision' && <section className="studio-discussion-decision" role="alert">
           <span><Sparkles size={16} /><span><strong>伙伴已经讨论多轮</strong><small>要保留当前上下文继续，还是结束这一轮？</small></span></span>

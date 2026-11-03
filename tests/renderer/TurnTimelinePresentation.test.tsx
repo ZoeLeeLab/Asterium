@@ -162,7 +162,7 @@ describe('user-facing runtime presentation', () => {
       onOpenArtifact={vi.fn()}
     />);
 
-    const reasoningSummary = screen.getByText('正在琢磨…').closest('summary');
+    const reasoningSummary = screen.getByText('本地伙伴正在思考…').closest('summary');
     const reasoningDetails = reasoningSummary?.closest('details');
     expect(reasoningDetails).not.toHaveAttribute('open');
     fireEvent.click(reasoningSummary!);

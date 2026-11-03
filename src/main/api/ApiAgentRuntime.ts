@@ -535,6 +535,7 @@ export class ApiAgentRuntime implements PartnerAdapter {
             if (active.guidance.length) throw new Error('SUPERSEDED_BY_USER_GUIDANCE');
             commandAttempted = call.name === 'run_command';
             const executed = await prepared.execute(controller.signal, {
+              toolCallId: call.id,
               policy,
               nativeCommandApproved,
               ...(externalWritePath ? { externalWritePath } : {}),

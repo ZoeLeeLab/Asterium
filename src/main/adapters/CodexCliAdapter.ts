@@ -517,6 +517,7 @@ export class CodexCliAdapter implements PartnerAdapter {
     // Pin tools to this turn. A later retry may replace the adapter-level
     // controller, but late events from this turn must never target that retry.
     const runtimeTools = this.runtimeTools;
+    const toolLifetime = new AbortController();
     const runtimeWorkspaceDirectories = [...this.additionalDirectories];
     const client = await this.ensureClient();
     const resolvedAttachments = await resolveCommandAttachments(command, this.resolveAttachment);
@@ -649,7 +650,7 @@ export class CodexCliAdapter implements PartnerAdapter {
             { type: 'user_input.requested', requestId, questions },
           ];
         } else {
-          mapped = input.kind === 'mapped' ? [input.event] : this.mapInput(input.message, mapper, runId, nativeTurnId, queue, runtimeTools);
+          mapped = input.kind === 'mapped' ? [input.event] : this.mapInput(input.message, mapper, runId, nativeTurnId, queue, runtimeTools, toolLifetime.signal);
         }
         for (const event of mapped) {
           if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.cancelled') terminal = true;
@@ -677,6 +678,7 @@ export class CodexCliAdapter implements PartnerAdapter {
       disposeClose();
       queue.close();
       if (runId) {
+        toolLifetime.abort();
         this.active.delete(runId);
         this.runPermissionModes.delete(runId);
         for (const [authorizationId, pending] of this.pendingApprovals) {
@@ -687,7 +689,7 @@ export class CodexCliAdapter implements PartnerAdapter {
     }
   }
 
-  private mapInput(message: CodexRpcMessage, mapper: CodexEventMapper, runId: string, nativeTurnId: string, queue: AsyncEventQueue<StreamInput>, runtimeTools?: AsteriumRuntimeToolController): CodexMappedEvent[] {
+  private mapInput(message: CodexRpcMessage, mapper: CodexEventMapper, runId: string, nativeTurnId: string, queue: AsyncEventQueue<StreamInput>, runtimeTools: AsteriumRuntimeToolController | undefined, signal: AbortSignal): CodexMappedEvent[] {
     if (!messageBelongsToTurn(message, nativeTurnId)) return [];
     if (message.method === 'item/tool/requestUserInput' && message.id !== undefined) {
       const params = isRecord(message.params) ? message.params : {};
@@ -724,7 +726,7 @@ export class CodexCliAdapter implements PartnerAdapter {
         this.client?.respond(message.id, { success: true, contentItems: [{ type: 'inputText', text: `已登记交付：${name}` }] });
         return [{ type: 'file.produced', artifactId: `codex-delivery-${String(params.callId ?? message.id)}`, toolCallId: text(params.callId) || undefined, name, artifactRef: target, source: { kind: 'local_path', path: target }, registrationMethod: 'deliver_tool' }];
       }
-      if (toolName === 'asterium_automation' || toolName === 'asterium_status' || toolName === 'asterium_workspace' || toolName === 'mention_partner' || toolName === 'asterium_task' || toolName === 'submit_workflow_draft' || toolName === 'project_notebook'
+      if (delegationTools.some(tool => tool.name === toolName) || toolName === 'asterium_automation' || toolName === 'asterium_status' || toolName === 'asterium_workspace' || toolName === 'mention_partner' || toolName === 'asterium_task' || toolName === 'submit_workflow_draft' || toolName === 'project_notebook'
         || toolName === 'hold_memory' || toolName === 'search_memory' || toolName === 'comment_memory' || toolName === 'update_memory' || toolName === 'read_memory_source') {
         const args = isRecord(params.arguments) ? params.arguments : isRecord(params.input) ? params.input : {};
         const action = text(args.action);
@@ -737,6 +739,10 @@ export class CodexCliAdapter implements PartnerAdapter {
             else if (toolName === 'asterium_automation') {
               if (!runtimeTools.automation) throw new Error('AUTOMATION_TOOL_UNAVAILABLE');
               content = await runtimeTools.automation(args);
+            }
+            else if (delegationTools.some(tool => tool.name === toolName)) {
+              if (!runtimeTools.delegation) throw new Error('DELEGATION_TOOL_FORBIDDEN');
+              content = await runtimeTools.delegation(toolName, args, signal, text(params.callId) || String(message.id));
             }
             else if (toolName === 'project_notebook') {
               if (!runtimeTools.projectNotebook) throw new Error('ASTERIUM_PROJECT_NOTEBOOK_NOT_AVAILABLE');
@@ -1128,6 +1134,7 @@ export function asteriumDynamicTools(runtimeTools: AsteriumRuntimeToolController
     }] : []),
     ...(runtimeTools.task ? [asteriumTaskDynamicTool()] : []),
     ...(runtimeTools.projectNotebook ? [projectNotebookDynamicTool()] : []),
+    ...(runtimeTools.delegation ? delegationTools.map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters })) : []),
     ...memoryReadTools,
     ...(runtimeTools.memory?.access === 'write' ? memoryDynamicTools('write') : []),
   ];
@@ -1378,3 +1385,4 @@ class AsyncEventQueue<T> implements AsyncIterable<T> {
     };
   }
 }
+import { delegationTools } from '../runtime/PartnerDelegation';

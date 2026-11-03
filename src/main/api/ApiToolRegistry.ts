@@ -23,6 +23,7 @@ export interface ToolAuthorizationDescriptor {
 }
 
 export interface ApiToolExecutionAuthorization {
+  toolCallId?: string;
   policy?: ApiToolExecutionPolicy;
   /** Main runtime only, after an explicit command_native allow_once. Not model arguments. */
   nativeCommandApproved?: boolean;

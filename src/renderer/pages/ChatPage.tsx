@@ -54,6 +54,7 @@ import { FilePreviewPane, type PreviewTab } from '../components/chat/FilePreview
 import type { Message, MessageQuote } from '../types/domain';
 import type { ConversationAttachmentInfo, PendingMessageAttachment } from '../../shared/agentProtocol';
 import { assistantMessageText, formatMessageWithQuote } from '../app/messageQuote';
+import { partnerStatusLabel } from '../components/chat/partnerStatusLabel';
 import { friendlyRuntimeErrorMessage } from '../app/runtimeErrorPresentation';
 import type { FileDeletionInspection } from '../../shared/projectWorkspace';
 
@@ -116,6 +117,29 @@ export function ChatPage() {
   const [partnerArchiveTargetId, setPartnerArchiveTargetId] = useState('');
   const activeConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
   const activeConversationId = activeConversation?.id;
+  const [delegationBatches, setDelegationBatches] = useState<DelegationBatch[]>([]);
+  const [delegationError, setDelegationError] = useState('');
+  useEffect(() => {
+    const bridge = window.asteriumDelegation;
+    if (!activeConversationId || !bridge) return;
+    let disposed = false;
+    let reading = false;
+    const refresh = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const batches = await bridge.list(activeConversationId);
+        if (!disposed) setDelegationBatches(batches);
+      } catch {
+        if (!disposed) setDelegationError('委派记录暂时无法读取。');
+      } finally {
+        reading = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 1000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [activeConversationId]);
   const activePartner = state.partners.find((partner) => partner.id === (activeConversation?.partnerId ?? state.activePartnerId)) ?? availablePartners[0];
   const [handoffOpen, setHandoffOpen] = useState(false);
   const activeHandoff = contextHandoffDraft?.target.kind === 'single' && contextHandoffDraft.target.id === activeConversation?.id ? contextHandoffDraft : undefined;
@@ -234,7 +258,16 @@ export function ChatPage() {
   const sendWithAttachments = (content: string, pending: PendingMessageAttachment[], quote?: MessageQuote) => {
     if (activeConversation?.activeRun) {
       if (!canStageGuidance || pending.length || pendingGuidance || !content.trim()) return false;
-      setPendingGuidanceByConversation((current) => ({ ...current, [activeConversation.id]: { content: content.trim(), ...(quote ? { quote } : {}), targetRunId: activeConversation.activeRun!.runId, clientMessageId: `client-guidance-${globalThis.crypto.randomUUID()}`, state: 'staged' } }));
+      const conversationId = activeConversation.id;
+      const clientMessageId = `client-guidance-${globalThis.crypto.randomUUID()}`;
+      setPendingGuidanceByConversation((current) => ({ ...current, [conversationId]: { content: content.trim(), ...(quote ? { quote } : {}), targetRunId: activeConversation.activeRun!.runId, clientMessageId, state: 'staged' } }));
+      void window.asteriumDelegation?.interruptWait(conversationId).then(interrupted => {
+        if (!interrupted) return;
+        setPendingGuidanceByConversation(current => current[conversationId]?.clientMessageId === clientMessageId
+          ? { ...current, [conversationId]: { ...current[conversationId], state: 'deferred' } }
+          : current);
+        cancelChatRun(conversationId);
+      }).catch(() => undefined);
       setPendingQuote(undefined);
       return true;
     }
@@ -862,6 +895,31 @@ export function ChatPage() {
                         </div>
                       </div>
                       {showStreamTail && <span className="stream-tail" role="status" aria-label={`${author?.publicIdentity.displayName ?? '伙伴'}仍在工作`}><i /><i /><i /></span>}
+                      {mine && delegationBatches.filter(batch => batch.conversationId === activeConversation.id && batch.messageId === message.id).map(batch => (
+                        <section className="message-bubble" key={batch.id} aria-label="子代理任务">
+                          {batch.tasks.some(task => task.status === 'queued' || task.status === 'running') && <small role="status">正在等小弟汇报回来</small>}
+                          {batch.tasks.every(task => task.status !== 'queued' && task.status !== 'running') && batch.tasks.some(task => task.status === 'succeeded') && (
+                            <small role="status">{state.partners.find(partner => partner.id === batch.partnerId)?.publicIdentity.displayName ?? '伙伴'}派出的小弟回来了</small>
+                          )}
+                          {batch.summary && <MarkdownContent>{batch.summary}</MarkdownContent>}
+                          {batch.summaryState === 'interrupted' && <small>汇总未完成，原始回复可在下方查看。</small>}
+                          {batch.tasks.map(task => (
+                            <details key={task.id}>
+                              <summary>{state.partners.find(partner => partner.id === task.targetPartnerId)?.publicIdentity.displayName ?? task.targetPartnerId} · {({ queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断', timed_out: '超时' })[task.status]}</summary>
+                              <p>{task.instruction}</p>
+                              {task.materials?.length ? <small>{task.materials.map(material => material.name).join('、')}</small> : null}
+                              {task.result && <MarkdownContent>{task.result}</MarkdownContent>}
+                              {task.reason && <small>{task.reason}</small>}
+                              {!task.rejected && (task.status === 'queued' || task.status === 'running' || ['failed', 'interrupted', 'timed_out'].includes(task.status)) && <button type="button" className="secondary-button" onClick={() => {
+                                const action = task.status === 'queued' || task.status === 'running' ? 'cancel' : 'retry';
+                                setDelegationError('');
+                                void window.asteriumDelegation?.control(activeConversation.id, task.id, action).catch(() => setDelegationError('操作未完成，请刷新任务状态后重试。'));
+                              }}>{task.status === 'queued' || task.status === 'running' ? '取消任务' : '重试任务'}</button>}
+                            </details>
+                          ))}
+                          {delegationError && <small role="status">{delegationError}</small>}
+                        </section>
+                      ))}
                       <div className="message-actions"><button className={copiedMessageId === message.id ? 'copied' : ''} type="button" onClick={() => void copyMessage(message)} title="复制本段对话">{copiedMessageId === message.id ? <Check size={14} /> : <Copy size={14} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{canQuote && <button type="button" onClick={() => quoteWholeMessage(message)} title="引用这段回复"><Quote size={14} /><span>引用</span></button>}{canRegenerate && mine && isLatestUser && <button type="button" onClick={() => { setEditingMessageId(message.id); setEditingText(message.content); }} title="编辑并重新生成"><Pencil size={14} /><span>编辑并重新生成</span></button>}{canRegenerate && !mine && isLatestAssistant && <button type="button" onClick={() => regenerateChatTurn(activeConversation.id)} title="重新生成"><RotateCcw size={14} /><span>重新生成</span></button>}</div>
                     </div>
                     {mine && <Avatar name={userProfile.displayName} src={userAvatar} accent="#91a9cf" size="md" />}
@@ -870,12 +928,12 @@ export function ChatPage() {
               })}
               {activeConversation.awaitingFirstResponse && activePartner && <div className="first-response-wait" role="status" aria-live="polite">
                 <Avatar partnerId={activePartner.id} name={activePartner.publicIdentity.displayName} src={activePartner.publicIdentity.avatarDataUrl} accent={activePartner.accent} size="md" source={activePartner.sourceMode} />
-                <div className="first-response-wait__content"><strong>{activeConversation.workStatus || `${activePartner.publicIdentity.displayName} 正在整理思路`}</strong><span className="breathing-dots" aria-hidden="true"><i /><i /><i /></span></div>
+                <div className="first-response-wait__content"><strong>{activeConversation.workStatus ? partnerStatusLabel(activeConversation.workStatus, activePartner.publicIdentity.displayName) : `${activePartner.publicIdentity.displayName} 正在整理思路`}</strong><span className="breathing-dots" aria-hidden="true"><i /><i /><i /></span></div>
               </div>}
               {activeConversation.runNotice?.restored && <div className={`run-notice run-notice--${activeConversation.runNotice.state}`} role="status"><CircleAlert size={15} /><span>{activeConversation.runNotice.message}，已恢复原回复。</span></div>}
               <div ref={messageEndRef} />
             </div>
-            <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} onJump={() => { followLatestMessageRef.current = true; }} />
+            <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} partnerName={activePartner?.publicIdentity.displayName} onJump={() => { followLatestMessageRef.current = true; }} />
             </div>
           </>) : (
             <div className="friendly-empty">
@@ -1149,3 +1207,4 @@ function projectTransferError(error: unknown) {
 function deliveryLabel(status?: 'sending' | 'awaiting_confirmation' | 'delivered' | 'failed') {
   return { sending: '发送中', awaiting_confirmation: '待确认', delivered: '已送达', failed: '发送失败' }[status ?? 'delivered'];
 }
+import type { DelegationBatch } from '../../main/runtime/PartnerDelegation';

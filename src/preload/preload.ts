@@ -307,6 +307,12 @@ contextBridge.exposeInMainWorld('asteriumStudioNotes', {
   delete: (id: string): Promise<void> => ipcRenderer.invoke(AGENT_IPC.studioNoteDelete, id),
 } satisfies AsteriumStudioNotesApi);
 
+contextBridge.exposeInMainWorld('asteriumDelegation', {
+  list: (conversationId: string) => ipcRenderer.invoke(AGENT_IPC.delegationList, conversationId),
+  interruptWait: (conversationId: string) => ipcRenderer.invoke(AGENT_IPC.delegationInterruptWait, conversationId),
+  control: (conversationId: string, taskId: string, action: 'cancel' | 'retry') => ipcRenderer.invoke(AGENT_IPC.delegationControl, conversationId, taskId, action),
+});
+
 contextBridge.exposeInMainWorld('asteriumProjectNotebooks', {
   get: (target: ProjectNotebookTarget): Promise<ProjectNotebook | undefined> => ipcRenderer.invoke(AGENT_IPC.projectNotebookGet, target),
   replace: (request: ProjectNotebookUserReplaceRequest): Promise<ProjectNotebook> => ipcRenderer.invoke(AGENT_IPC.projectNotebookReplace, request),

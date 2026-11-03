@@ -19,26 +19,48 @@ export async function generateApiDiary(adapter: ApiProviderAdapter, source: stri
 }
 export interface NativeDiaryInput { executablePath: string; cwd: string; source: string; bootstrap: string; signal: AbortSignal; model?: string; }
 export async function generateClaudeDiary(input: NativeDiaryInput, query: typeof import('../adapters/ClaudeCliTransport').query) {
+  return generateClaudeOneShot(input, query, DIARY_RULES, 100_000, 'DIARY');
+}
+
+export async function generateClaudeOneShot(input: NativeDiaryInput, query: typeof import('../adapters/ClaudeCliTransport').query, rules: string, outputLimit: number, operation: 'DIARY' | 'DELEGATION' = 'DELEGATION') {
   const controller = new AbortController(); const abort = () => controller.abort(); input.signal.addEventListener('abort', abort, { once: true });
   if (input.signal.aborted) controller.abort();
   const stream = query({ prompt: input.source, options: {
     cwd: input.cwd, pathToClaudeCodeExecutable: input.executablePath, abortController: controller,
-    systemPrompt: `${input.bootstrap}\n\n${DIARY_RULES}`, settingSources: [], strictMcpConfig: true, mcpServers: {},
+    systemPrompt: `${input.bootstrap}\n\n${rules}`, settingSources: operation === 'DELEGATION' ? ['user'] : [], settings: { disableAllHooks: true }, strictMcpConfig: true, mcpServers: {},
     tools: [], allowedTools: [], permissionMode: 'dontAsk', persistSession: false, maxTurns: 1,
     ...(input.model ? { model: input.model } : {}),
   } });
+  let result: string | undefined;
   try {
     for await (const message of stream) {
       input.signal.throwIfAborted();
-      if (message.type === 'assistant' && message.message.content.some((block) => block.type === 'tool_use')) throw new Error('DIARY_TOOL_NOT_ALLOWED');
+      if (message.type === 'assistant' && message.message.content.some((block) => block.type === 'tool_use')) throw new Error(`${operation}_TOOL_NOT_ALLOWED`);
       if (message.type === 'result') {
-        if (message.subtype !== 'success' || message.is_error || !message.result.trim()) throw new Error('DIARY_GENERATION_FAILED');
-        if (message.result.length > 100_000) throw new Error('DIARY_OUTPUT_LIMIT');
-        return message.result;
+        if (message.subtype !== 'success' || message.is_error || typeof message.result !== 'string' || !message.result.trim()) {
+          if (operation === 'DELEGATION') throw new Error(claudeDelegationFailure(message.result));
+          throw new Error('DIARY_GENERATION_FAILED');
+        }
+        if (message.result.length > outputLimit) throw new Error(`${operation}_OUTPUT_LIMIT`);
+        result = message.result;
       }
     }
-    throw new Error('DIARY_INCOMPLETE');
+    input.signal.throwIfAborted();
+    if (!result) throw new Error(`${operation}_INCOMPLETE`);
+    return result;
+  } catch (error) {
+    if (operation !== 'DELEGATION' || input.signal.aborted || (error instanceof Error && error.message.startsWith('DELEGATION_'))) throw error;
+    throw new Error(claudeDelegationFailure(error instanceof Error ? error.message : undefined), { cause: error });
   } finally { input.signal.removeEventListener('abort', abort); controller.abort(); stream.close(); }
+}
+
+function claudeDelegationFailure(detail: unknown) {
+  const message = typeof detail === 'string' ? detail : '';
+  if (/CLAUDE_CLI_START_FAILED/.test(message)) return 'DELEGATION_CLAUDE_START_FAILED';
+  if (/not logged in|please run \/login|authentication|API Error:\s*(401|403)\b/i.test(message)) return 'DELEGATION_CLAUDE_AUTH_FAILED';
+  if (/model.{0,80}(not found|not available|not supported|does not exist)|invalid model|API Error:\s*404\b/i.test(message)) return 'DELEGATION_CLAUDE_MODEL_UNAVAILABLE';
+  if (/rate limit|API Error:\s*429\b/i.test(message)) return 'DELEGATION_CLAUDE_RATE_LIMITED';
+  return 'DELEGATION_CLAUDE_REQUEST_FAILED';
 }
 export function codexDiaryArgs() {
   return ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only',
@@ -52,9 +74,20 @@ export function codexDiaryArgs() {
 }
 type SpawnDiary = (executable: string, args: string[], options: { cwd: string; windowsHide: boolean; shell: false; stdio: ['pipe', 'pipe', 'pipe'] }) => ChildProcessWithoutNullStreams;
 export function generateCodexDiary(input: NativeDiaryInput, launch: SpawnDiary = spawn) {
+  return runCodexOneShot(input, codexDiaryArgs(), `${DIARY_RULES}\n\n[当天单聊资料]`, 100_000, launch);
+}
+
+export function generateCodexDelegation(input: NativeDiaryInput, rules: string, images: readonly string[], launch: SpawnDiary = spawn) {
+  const args = ['--ask-for-approval', 'never', ...codexDiaryArgs().slice(0, -1), '-c', 'agents.enabled=false',
+    ...(input.model ? ['--model', input.model] : []),
+    ...images.map(image => `--image=${image}`), '--', '-'];
+  return runCodexOneShot(input, args, rules, 20_000, launch);
+}
+
+function runCodexOneShot(input: NativeDiaryInput, args: string[], rules: string, limit: number, launch: SpawnDiary) {
   input.signal.throwIfAborted();
   return new Promise<string>((resolve, reject) => {
-    const child = launch(input.executablePath, codexDiaryArgs(), { cwd: input.cwd, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = launch(input.executablePath, args, { cwd: input.cwd, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
     const lines = readline.createInterface({ input: child.stdout }); let content = ''; let completed = false; let settled = false; let size = 0;
     const stop = () => {
       if (process.platform === 'win32' && child.pid) execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => child.kill());
@@ -81,8 +114,8 @@ export function generateCodexDiary(input: NativeDiaryInput, launch: SpawnDiary =
         if (event.type === 'turn.completed') completed = true;
       } catch { finish(new Error('DIARY_NATIVE_OUTPUT_INVALID')); }
     });
-    child.once('close', (code) => finish(code === 0 && completed && content.trim() && content.length <= 100_000 ? undefined : new Error('DIARY_INCOMPLETE')));
-    child.stdin.end(`${input.bootstrap}\n\n${DIARY_RULES}\n\n[当天单聊资料]\n${input.source}`);
+    child.once('close', (code) => finish(code === 0 && completed && content.trim() && content.length <= limit ? undefined : new Error('DIARY_INCOMPLETE')));
+    child.stdin.end(`${input.bootstrap}\n\n${rules}\n${input.source}`);
   });
 }
 export async function generateExistingDiary(connection: ExistingThreadConnection, secret: string, expectedThreadId: string, generationId: string, source: string, signal: AbortSignal, fetcher: typeof fetch = fetch) {

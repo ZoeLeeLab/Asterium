@@ -395,6 +395,11 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
         }
       }), ...memoryReadTools] : [
         ...(runtimeTools.automation ? [tool('asterium_automation', AUTOMATION_TOOL_DESCRIPTION, automationToolSchema.shape, async input => runtimeMemoryResult(() => runtimeTools.automation!(input, abortController.signal)))] : []),
+        ...(runtimeTools.delegation ? [
+          tool(delegationTools[0].name, delegationTools[0].description, {}, input => runtimeMemoryResult(() => runtimeTools.delegation!(delegationTools[0].name, input, abortController.signal))),
+          tool(delegationTools[1].name, delegationTools[1].description, delegationInput.shape, input => runtimeMemoryResult(() => runtimeTools.delegation!(delegationTools[1].name, input, abortController.signal))),
+          tool(delegationTools[2].name, delegationTools[2].description, delegationWaitInput.shape, input => runtimeMemoryResult(() => runtimeTools.delegation!(delegationTools[2].name, input, abortController.signal))),
+        ] : []),
         tool('asterium_status', 'Read authoritative Asterium state by key. In group chat, conversation reports the speaking mode, whether PASS is allowed, the queue, and whether partner mentions are available. Use workspace to confirm the current cwd and workspaceFolders instead of guessing from earlier messages. This tool never changes state.', {
           key: z.enum(['time', 'partner', 'partners', 'user', 'runtime', 'permissions', 'conversation', 'conversation_files', 'workspace']),
         }, async ({ key }) => ({ content: [{ type: 'text', text: await runtimeTools.status(key as AsteriumStatusKey) }] })),
@@ -932,6 +937,7 @@ export function claudeAsteriumAllowedTools(runtimeTools: AsteriumRuntimeToolCont
     ...memoryRead,
     ...memoryWrite,
     ...(runtimeTools.projectNotebook ? ['mcp__asterium__project_notebook'] : []),
+    ...(runtimeTools.delegation ? delegationTools.map(tool => `mcp__asterium__${tool.name}`) : []),
     'mcp__asterium__deliver_file',
   ];
 }
@@ -996,3 +1002,4 @@ class ClaudeEventQueue<T> implements AsyncIterable<T> {
     } };
   }
 }
+import { delegationTools, delegationInput, delegationWaitInput } from '../runtime/PartnerDelegation';

@@ -1,3 +1,4 @@
+import { partnerStatusLabel } from './partnerStatusLabel';
 import {
   Check,
   ChevronDown,
@@ -65,7 +66,7 @@ export function TurnTimeline({ message, partnerName, pendingAuthorization, pendi
         const text = visibleAssistantText(block.text);
         return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection}><MarkdownContent>{text}</MarkdownContent></QuoteableText> : null;
       }
-      if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} />;
+      if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} partnerName={partnerName} />;
       if (block.kind === 'actions') return <ActionGroup key={block.id} rows={block.rows} partnerName={partnerName} onOpenArtifact={onOpenArtifact} />;
       return <TimelineRow key={block.id} row={block.row} partnerName={partnerName} pendingAuthorization={pendingAuthorization} pendingUserInput={pendingUserInput} onResolveAuthorization={onResolveAuthorization} onResolveUserInput={onResolveUserInput} onOpenArtifact={onOpenArtifact} />;
     })}
@@ -155,11 +156,11 @@ function TimelineRow({ row, partnerName = '伙伴', pendingAuthorization, pendin
   if (row.kind === 'file') return <button className="timeline-file" type="button" onClick={() => onOpenArtifact(row.artifactId)}><FileCheck2 size={15} /><span><strong>{row.name}</strong><small>文件送到了</small></span><em>预览</em></button>;
   if (row.kind === 'authorization') {
     const active = pendingAuthorization?.authorizationId === row.authorizationId;
-    return <AuthorizationRow row={row} active={active} interactive={pendingAuthorization?.resolution !== 'display_only'} targets={active ? pendingAuthorization?.targets : undefined} extensionTrust={active ? pendingAuthorization?.extensionTrust : undefined} onResolveAuthorization={onResolveAuthorization} />;
+    return <AuthorizationRow row={{ ...row, summary: partnerStatusLabel(row.summary, partnerName) }} active={active} interactive={pendingAuthorization?.resolution !== 'display_only'} targets={active ? pendingAuthorization?.targets : undefined} extensionTrust={active ? pendingAuthorization?.extensionTrust : undefined} onResolveAuthorization={onResolveAuthorization} />;
   }
   if (row.kind === 'user_input') return <UserInputRow key={row.requestId} row={row} active={pendingUserInput?.requestId === row.requestId} onResolve={(answers, customAnswers) => onResolveUserInput(answers, customAnswers, row.requestId)} />;
   if (row.kind === 'plan') return <details className={`timeline-entry timeline-entry--plan state-${row.state}`} open={row.state === 'running'}><summary><ListTodo size={15} /><span>{row.summary}</span>{row.detail && <ChevronDown size={13} />}</summary>{row.detail && <pre>{row.detail}</pre>}</details>;
-  if (row.kind === 'reasoning') return <ReasoningRow row={row} />;
+  if (row.kind === 'reasoning') return <ReasoningRow row={row} partnerName={partnerName} />;
   if (row.kind === 'tool' || row.kind === 'computer') return <OperationRow row={row} partnerName={partnerName} onOpenArtifact={onOpenArtifact} />;
   if (row.kind === 'error') return <div className="timeline-entry timeline-entry--error state-failure"><CircleAlert size={15} /><span>{friendlyErrorLabel(row.summary, partnerName)}</span></div>;
   return <div className={`timeline-entry timeline-entry--status state-${row.state}`}><OutcomeIcon state={row.state} /><span>{friendlyStatusLabel(row.summary, row.state, partnerName)}</span></div>;
@@ -214,8 +215,8 @@ function authorizationRiskLabel(risk: Extract<ProcessRow, { kind: 'authorization
   return risk === 'high' ? '高风险' : risk === 'low' ? '低风险' : '需留意';
 }
 
-function ReasoningRow({ row }: { row: ReasoningItem }) {
-  const label = row.state === 'running' ? '正在琢磨…' : row.state === 'failure' ? '思考中断' : '想好了';
+function ReasoningRow({ row, partnerName }: { row: ReasoningItem; partnerName: string }) {
+  const label = row.state === 'running' ? partnerName + '正在思考…' : row.state === 'failure' ? '思考中断' : '想好了';
   if (!row.detail) return <div className={`timeline-reasoning timeline-reasoning--plain state-${row.state}`}><span>{label}</span>{row.state !== 'success' && <OutcomeIcon state={row.state} />}</div>;
   return <ReasoningDetails key={row.state} row={row} label={label} detail={row.detail} />;
 }
@@ -489,6 +490,8 @@ function runtimeOperationLabel(category: TurnOperationCategory, semantic: ToolSe
   if (semantic === 'delete') return state === 'running' ? `${partnerName}正在删除${files.length ? ` ${subject}` : ''}…` : state === 'failure' ? `${partnerName}没能删除${files.length ? ` ${subject}` : '这项内容'}` : `${partnerName}把${files.length ? ` ${subject} ` : '这项内容'}删掉了`;
   if (semantic === 'image_generation') return state === 'running' ? `${partnerName}正在画图…` : state === 'failure' ? `${partnerName}没能画完图片` : `${partnerName}把图片画好了`;
   if (semantic === 'collaboration') return state === 'running' ? `${partnerName}正在找小弟一起处理…` : state === 'failure' ? `${partnerName}和小弟没能处理完` : `${partnerName}和小弟一起处理好了`;
+  if (semantic === 'delegate_dispatch') return phrase('正在派出小弟…', '派出小弟了', '没能派出小弟');
+  if (semantic === 'delegate_wait') return phrase('正在等小弟汇报…', '结束了前台等待', '没能继续等待汇报');
   if (semantic === 'extension') return state === 'running' ? `${partnerName}正在使用扩展能力…` : state === 'failure' ? '扩展能力没有完成' : `${partnerName}使用扩展能力处理好了`;
   if (semantic === 'message_send') return state === 'running' ? `${partnerName}正在发送消息…` : state === 'failure' ? '消息没有发出去' : `${partnerName}把消息发出去了`;
   if (semantic === 'reminder_create') return state === 'running' ? `${partnerName}正在创建提醒…` : state === 'failure' ? '提醒没有创建成功' : `${partnerName}把提醒创建好了`;
@@ -551,6 +554,8 @@ function friendlyErrorLabel(summary: string, partnerName: string) {
 
 function friendlyStatusLabel(summary: string, state: 'running' | 'success' | 'failure', partnerName: string) {
   if (/用户.*停止|已停止|取消/.test(summary)) return '已由用户停止';
+  const namedSummary = partnerStatusLabel(summary, partnerName);
+  if (state === 'running' && namedSummary !== summary) return namedSummary;
   if (/重试|retry/i.test(summary)) return `${partnerName}换个办法再试试…`;
   if (state === 'failure') return '这一步没弄成';
   return state === 'running' ? `${partnerName}正在忙这一步…` : `${partnerName}这一步搞定了`;

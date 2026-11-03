@@ -173,7 +173,7 @@ describe('local Codex renderer flow', () => {
     act(() => listener?.({ ...base, eventId: 'event-5', type: 'authorization.requested', sequence: 5, authorizationId: 'auth-1', toolCallId: 'file-1', action: 'write_file', risk: 'medium', summary: 'Codex 请求修改文件。', targets: ['K:\\qa\\result.md'] }));
 
     expect(await screen.findByText('需要你的确认')).toBeInTheDocument();
-    expect(screen.getByText('Codex 请求修改文件。')).toBeInTheDocument();
+    expect(screen.getByText('测试助手请求修改文件。')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '允许一次' }));
     await waitFor(() => expect(resolveAuthorization).toHaveBeenCalledWith(expect.objectContaining({ authorizationId: 'auth-1', decision: 'allow_once', runId: 'turn-1' })));
 
@@ -201,7 +201,7 @@ describe('local Codex renderer flow', () => {
     expect(screen.getByText('已允许 · 写入文件')).toBeInTheDocument();
     expect(screen.getByText(/把 result\.md 写好了$/)).toBeInTheDocument();
     expect(screen.queryByText('授权记录')).not.toBeInTheDocument();
-    expect(screen.getByText('Codex 请求修改文件。')).toBeInTheDocument();
+    expect(screen.getByText('测试助手请求修改文件。')).toBeInTheDocument();
     expect(screen.queryByText('授权已确认，Codex 继续工作…')).not.toBeInTheDocument();
     expect(screen.getAllByTitle('预览 result.md')).toHaveLength(2);
     expect(screen.queryByText('需要你的确认')).not.toBeInTheDocument();
@@ -297,12 +297,12 @@ describe('local Codex renderer flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '新增伙伴' }));
     fireEvent.change(screen.getByLabelText('服务地址'), { target: { value: 'https://cyberboss.example.invalid' } });
     fireEvent.change(screen.getByLabelText(/认证信息/), { target: { value: 'renderer-bridge-secret' } });
-    fireEvent.change(screen.getByLabelText(/显示名称/), { target: { value: '外部伙伴' } });
-    fireEvent.change(screen.getByLabelText('称呼或 @ 名称'), { target: { value: '外部伙伴' } });
+    fireEvent.change(screen.getByLabelText(/显示名称/), { target: { value: '小七' } });
+    fireEvent.change(screen.getByLabelText('称呼或 @ 名称'), { target: { value: '小七' } });
     fireEvent.click(screen.getByRole('button', { name: '测试真实连接' }));
     expect(await screen.findByText(/星丛会动态跟随 CyberBoss 当前活跃线程/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '接回伙伴' }));
-    expect(await screen.findByText('外部伙伴 已加入星丛')).toBeInTheDocument();
+    expect(await screen.findByText('小七 已加入星丛')).toBeInTheDocument();
     expect(localStorage.getItem('asterium.prototype.v7')).not.toContain('renderer-bridge-secret');
     expect(localStorage.getItem('asterium.prototype.v7')).toContain('credential-cyberboss');
     await waitFor(() => {
@@ -310,18 +310,18 @@ describe('local Codex renderer flow', () => {
         partners?: Array<{ id: string; publicIdentity?: { displayName?: string } }>;
         conversations?: Array<{ partnerId: string; sessionId?: string; isPrimaryThread?: boolean }>;
       };
-      const storedPartner = stored.partners?.find((partner) => partner.publicIdentity?.displayName === '外部伙伴');
+      const storedPartner = stored.partners?.find((partner) => partner.publicIdentity?.displayName === '小七');
       const primaryConversations = stored.conversations?.filter((conversation) => conversation.partnerId === storedPartner?.id) ?? [];
       expect(primaryConversations).toHaveLength(1);
       expect(primaryConversations[0]).toMatchObject({ sessionId: '01a08723-bee6-7640-8917-28257cf5d1ab', isPrimaryThread: true });
     });
     fireEvent.click(screen.getByRole('button', { name: '去和 TA 聊聊' }));
 
-    const input = await screen.findByRole('textbox', { name: /给 外部伙伴 发送消息/ });
+    const input = await screen.findByRole('textbox', { name: /给 小七 发送消息/ });
     fireEvent.change(input, { target: { value: '星丛桥接测试' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(sendExistingThreadMessage).toHaveBeenCalledTimes(1));
-    expect(screen.getByText('外部伙伴 正在整理思路')).toBeInTheDocument();
+    expect(screen.getByText('小七 正在整理思路')).toBeInTheDocument();
     expect(sendExistingThreadMessage.mock.calls[0][0]).toEqual({
       serviceUrl: 'https://cyberboss.example.invalid',
       threadId: '01a08723-bee6-7640-8917-28257cf5d1ab',
@@ -342,7 +342,7 @@ describe('local Codex renderer flow', () => {
     act(() => listener?.({ ...base, eventId: 'bridge-event-1', type: 'session.bound', isNew: false, sequence: 1 }));
     act(() => listener?.({ ...base, eventId: 'bridge-event-2', type: 'message.accepted', sequence: 2 }));
     act(() => listener?.({ ...base, eventId: 'bridge-event-3', type: 'work.status', state: 'thinking', summary: '外部伙伴正在输入…', sequence: 3 }));
-    expect(screen.getByText('外部伙伴正在输入…')).toBeInTheDocument();
+    expect(screen.getByText('小七正在输入…')).toBeInTheDocument();
     expect(screen.getByTitle('当前桥接暂不支持远程取消')).toBeDisabled();
     act(() => listener?.({ ...base, eventId: 'bridge-event-4', type: 'text.delta', text: '宝宝，我从原线程收到啦。', sequence: 4 }));
     expect(await screen.findByText('宝宝，我从原线程收到啦。')).toBeInTheDocument();
@@ -360,7 +360,7 @@ describe('local Codex renderer flow', () => {
     expect(screen.getByText('宝宝，我从原线程收到啦。')).toBeInTheDocument();
     expect(screen.getAllByText('这是查到的结论。')).toHaveLength(1);
     expect(screen.queryByText('其他线程的消息')).not.toBeInTheDocument();
-    expect(screen.queryByText('外部伙伴 正在整理思路')).not.toBeInTheDocument();
+    expect(screen.queryByText('小七 正在整理思路')).not.toBeInTheDocument();
   });
 
   it('stores a DeepSeek credential by reference and renders a real streamed reply', async () => {

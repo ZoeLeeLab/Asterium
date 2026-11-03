@@ -4,11 +4,12 @@ import { useEffect, useState, type RefObject } from 'react';
 interface JumpToLatestProps {
   scrollRef: RefObject<HTMLDivElement | null>;
   streaming: boolean;
+  partnerName?: string;
   onJump: () => void;
 }
 
 /** Observe the actual message viewport, including late image/code layout changes. */
-export function JumpToLatest({ scrollRef, streaming, onJump }: JumpToLatestProps) {
+export function JumpToLatest({ scrollRef, streaming, partnerName, onJump }: JumpToLatestProps) {
   const [away, setAway] = useState(false);
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export function JumpToLatest({ scrollRef, streaming, onJump }: JumpToLatestProps
 
   if (!away) return null;
   return <div className="jump-to-latest" data-state={streaming ? 'streaming' : 'idle'}>
-    <button type="button" aria-label={streaming ? '回到底部（伙伴正在回复）' : '回到底部'} onClick={() => {
+    <button type="button" aria-label={streaming ? '回到底部（' + (partnerName ?? '伙伴') + '正在回复）' : '回到底部'} onClick={() => {
       const root = scrollRef.current;
       if (!root) return;
       onJump();
@@ -63,7 +64,7 @@ export function JumpToLatest({ scrollRef, streaming, onJump }: JumpToLatestProps
       setAway(false);
     }}>
       {streaming && <span className="jump-to-latest__dot" aria-hidden="true" />}
-      <span>{streaming ? '正在回复 · 回到底部' : '回到底部'}</span>
+      <span>{streaming ? (partnerName ?? '') + '正在回复 · 回到底部' : '回到底部'}</span>
       <ArrowDown className="jump-to-latest__arrow" size={15} aria-hidden="true" />
     </button>
   </div>;
