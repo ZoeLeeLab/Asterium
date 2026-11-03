@@ -10,6 +10,7 @@ export interface StudioRuntimeTurnRequest {
   prepared: StudioPreparedTurn;
   content: string;
   context: AsteriumRuntimeContextInput;
+  contextHandoff?: SendMessageCommand['contextHandoff'];
 }
 
 export interface StudioRuntimeCancellation {
@@ -102,7 +103,7 @@ export class PartnerRuntimePort implements StudioRuntimeLifecyclePort, ProjectTa
     });
   }
 
-  async startStudioTurn({ partner, prepared, content, context }: StudioRuntimeTurnRequest) {
+  async startStudioTurn({ partner, prepared, content, context, contextHandoff }: StudioRuntimeTurnRequest) {
     const route = {
       scope: 'group' as const,
       roomId: prepared.room.roomId,
@@ -124,6 +125,7 @@ export class PartnerRuntimePort implements StudioRuntimeLifecyclePort, ProjectTa
       ...(prepared.attachments?.length ? { attachments: prepared.attachments } : {}),
       execution: { permissionMode: prepared.round.permissionMode, planMode: 'default' },
       runtimeContext: context,
+      ...(contextHandoff ? { contextHandoff } : {}),
     };
     if (partner.runtime.kind === 'api') {
       command.apiContext = {

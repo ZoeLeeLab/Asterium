@@ -271,14 +271,14 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .pending-attachment > button { display: grid; width: 24px; height: 24px; padding: 0; place-items: center; border: 0; border-radius: 50%; color: var(--muted); background: transparent; }
 .pending-attachment > button:hover { color: var(--text-strong); background: var(--button-hover); }
 
-.composer { display: flex; flex: 0 0 auto; min-width: 0; flex-direction: column; gap: 2px; margin-top: 10px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 14px; background: color-mix(in srgb,var(--surface-strong) 82%,transparent); box-shadow: 0 10px 30px color-mix(in srgb,var(--page-bg) 18%,transparent); transition: border-color var(--motion-fast),box-shadow var(--motion-fast),background var(--motion-fast); }
+.composer, .studio-composer { display: flex; flex: 0 0 auto; min-width: 0; flex-direction: column; gap: 2px; margin-top: 10px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 14px; background: color-mix(in srgb,var(--surface-strong) 82%,transparent); box-shadow: 0 10px 30px color-mix(in srgb,var(--page-bg) 18%,transparent); transition: border-color var(--motion-fast),box-shadow var(--motion-fast),background var(--motion-fast); }
 .composer--compact { display: grid; grid-template-columns: 48px minmax(0,1fr) 48px 48px; align-items: center; gap: 9px; flex-basis: 92px; padding: 8px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb,var(--surface-strong) 72%,transparent); box-shadow: var(--shadow-soft); }
 .composer textarea { width: 100%; min-height: 52px; max-height: 144px; padding: 4px 10px; overflow-y: auto; resize: none; border: 0; border-radius: 10px; color: var(--text-strong); background: transparent; outline: 0; line-height: 1.55; scrollbar-width: none; }
 .composer--compact textarea { min-height: 42px; padding: 9px 16px; background: var(--surface-soft); }
 .composer textarea::placeholder { color: var(--muted); }
 .composer--compact textarea:focus { box-shadow: inset 0 0 0 1px var(--accent); }
-.message-canvas > .composer { margin: 0 12px 12px; border-color: color-mix(in srgb,var(--border-strong) 88%,transparent); background: color-mix(in srgb,var(--surface-strong) 84%,var(--surface-soft)); }
-.message-canvas > .composer:focus-within { border-color: color-mix(in srgb,var(--accent) 72%,var(--border-strong)); background: color-mix(in srgb,var(--surface-strong) 92%,var(--accent-soft)); box-shadow: 0 0 0 1px color-mix(in srgb,var(--accent) 16%,transparent),0 10px 34px color-mix(in srgb,var(--accent) 16%,transparent); }
+:is(.message-canvas > .composer, .discussion-view > .studio-composer) { margin: 0 12px 12px; border-color: color-mix(in srgb,var(--border-strong) 88%,transparent); background: color-mix(in srgb,var(--surface-strong) 84%,var(--surface-soft)); }
+:is(.message-canvas > .composer, .discussion-view > .studio-composer):focus-within { border-color: color-mix(in srgb,var(--accent) 72%,var(--border-strong)); background: color-mix(in srgb,var(--surface-strong) 92%,var(--accent-soft)); box-shadow: 0 0 0 1px color-mix(in srgb,var(--accent) 16%,transparent),0 10px 34px color-mix(in srgb,var(--accent) 16%,transparent); }
 .composer-toolbar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; padding: 3px 0 0; border-top: 1px solid color-mix(in srgb,var(--border) 72%,transparent); }
 .composer-toolbar__actions { display: flex; min-width: 0; align-items: center; gap: 3px; }
 .composer-tool-button { display: inline-flex; height: 30px; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; color: var(--muted); background: transparent; font-size: calc(11px * var(--ui-font-scale,1)); font-weight: 560; white-space: nowrap; transition: color var(--motion-fast),border-color var(--motion-fast),background var(--motion-fast); }
@@ -688,6 +688,72 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .artifact-row { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; border-radius: var(--radius-sm); transition: background var(--motion-fast); }
 .artifact-row:hover, .artifact-row:focus-within { background: var(--surface-hover); }
 .resource-list .artifact-row .artifact-main:hover { background: transparent; }
+.project-location-confirmation {
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface-soft);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.context-handoff-action,
+.context-handoff-draft {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 16px 6px;
+}
+.context-handoff-action {
+  margin-top: 6px;
+}
+.context-handoff-action > button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-strong);
+}
+.context-handoff-action > button:hover { background: var(--accent-soft); }
+.context-handoff-draft {
+  padding: 6px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface-soft);
+}
+.context-handoff-sources {
+  display: grid;
+  gap: 6px;
+  max-height: min(38vh, 300px);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
+}
+.modal-backdrop--dim { background: rgb(13 27 49 / 22%); backdrop-filter: none; }
+.modal-backdrop--dim > .modal-card {
+  background-color: var(--page-bg);
+  background-image: linear-gradient(var(--surface-strong), var(--surface-strong));
+}
+.context-handoff-selection { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.context-handoff-sources > button {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+.context-handoff-sources > button[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.context-handoff-check { display: grid; place-items: center; flex: 0 0 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: 4px; }
+.context-handoff-sources > button[aria-checked="true"] .context-handoff-check { background: var(--accent); color: var(--surface-strong); }
+.context-handoff-sources > button > span:last-child { display: grid; gap: 3px; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
 .artifact-list { position: relative; max-height: 290px; padding-right: 2px; overflow-x: hidden; overflow-y: auto; scrollbar-color: transparent transparent; scrollbar-gutter: stable; scrollbar-width: thin; }
 .artifact-list::-webkit-scrollbar { width: 6px; }
 .artifact-list::-webkit-scrollbar-track { background: transparent; }

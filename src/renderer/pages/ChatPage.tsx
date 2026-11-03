@@ -1,3 +1,5 @@
+import { supportsContextHandoff } from '../app/singleChatRuntime';
+import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
 import { MessageAttachmentCards } from '../components/chat/MessageAttachmentCards';
 import { useCollapsibleRails } from '../components/layout/useCollapsibleRails';
 import { SessionCommandNotice } from '../components/chat/SessionCommandNotice';
@@ -76,6 +78,9 @@ export function ChatPage() {
     setConversationPlanMode,
     prepareConversationWorkspace,
     sendChatMessage,
+    selectGroupChat,
+    contextHandoffDraft,
+    setContextHandoffDraft,
     chatCompactions,
     dismissChatCompaction,
     executeChatCommand,
@@ -112,6 +117,12 @@ export function ChatPage() {
   const activeConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
   const activeConversationId = activeConversation?.id;
   const activePartner = state.partners.find((partner) => partner.id === (activeConversation?.partnerId ?? state.activePartnerId)) ?? availablePartners[0];
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const activeHandoff = contextHandoffDraft?.target.kind === 'single' && contextHandoffDraft.target.id === activeConversation?.id ? contextHandoffDraft : undefined;
+  const handoffTargets = activePartner && supportsContextHandoff(activePartner)
+    ? state.groupChats.filter(room => !room.archivedAt && room.memberIds.includes(activePartner.id))
+      .map(room => ({ kind: 'group' as const, id: room.id, partnerId: activePartner.id, label: `${room.name} · ${activePartner.publicIdentity.displayName}` }))
+    : [];
   const partnerRemoved = Boolean(activePartner?.isRemoved);
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN');
   const newChatPartners = availablePartners.filter((partner) => partner.sourceMode !== 'existing_thread');
@@ -210,7 +221,7 @@ export function ChatPage() {
         ? await window.asteriumAttachments?.commit(activeConversation.id, pending.map((item) => item.selectionId), messageId)
         : undefined;
       if (pending.length && !attachments) return false;
-      const sent = await sendChatMessage(activeConversation.id, content, attachments, messageId, workspaceDecision, quote);
+      const sent = await sendChatMessage(activeConversation.id, content, attachments, messageId, workspaceDecision, quote, activeHandoff);
       if (!sent) return false;
       setPendingQuote(undefined);
       void window.asteriumAttachments?.list(activeConversation.id).then(setUserAttachments);
@@ -678,7 +689,7 @@ export function ChatPage() {
       setArtifactProjectTarget(null);
       setOverlay(null);
     } catch (error) {
-      setArtifactProjectError(projectTransferError(error));
+      if (!(error instanceof Error && error.message.includes('PROJECT_CREATE_CANCELLED'))) setArtifactProjectError(projectTransferError(error));
     } finally {
       setArtifactProjectBusy(false);
     }
@@ -879,6 +890,15 @@ export function ChatPage() {
         {commandResult && <SessionCommandNotice result={commandResult} onDismiss={dismissCommandResult} />}
         {compaction && <SessionCommandNotice result={compaction} onDismiss={dismissCompaction} label="会话压缩状态" />}
         {activeConversation?.planMode === 'plan' && <div className="plan-mode-banner"><ListTodo size={14} /><span><strong>Plan 模式</strong>{activeConversation.planStatus === 'waiting_user' ? ' · 等待你的回答' : activeConversation.planStatus === 'ready' ? ' · 计划已就绪' : ' · 仅规划，不修改'}</span></div>}
+        {activeConversation && handoffTargets.length > 0 && <div className="context-handoff-action"><button className="text-button" type="button" onClick={() => setHandoffOpen(true)}>带上下文去群聊</button></div>}
+        {activeHandoff && <ContextHandoffDraftCard draft={activeHandoff} partnerName={activePartner?.publicIdentity.displayName ?? '伙伴'} disabled={Boolean(activeConversation?.activeRun)} onRemove={() => setContextHandoffDraft(undefined)} />}
+        {handoffOpen && activeConversation && handoffTargets.length > 0 && <ContextHandoffDialog
+          key={`handoff:${activeConversation.id}`} source={{ kind: 'single', id: activeConversation.id }} messages={activeConversation.messages}
+          targets={handoffTargets} partners={state.partners} onClose={() => setHandoffOpen(false)} onStage={draft => {
+            setContextHandoffDraft(draft);
+            selectGroupChat(draft.target.id);
+            navigate('/studio/discussion');
+          }} />}
         <Composer
           key={activeConversation?.id ?? 'no-conversation'}
           draftKey={activeConversation ? `chat:${activeConversation.id}` : undefined}
@@ -1120,6 +1140,7 @@ function artifactPreviewError(error: unknown, fileName: string) {
 function projectTransferError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? '');
   if (message.includes('PROJECT_WORKSPACE_NOT_READY')) return '这个旧项目还没有真实文件夹，请先在工作室中初始化项目目录。';
+  if (message.includes('PROJECT_CREATE_LOCATION_CHANGED')) return '项目保存位置已变化，请重新确认。';
   if (message.includes('PROJECT_LOCATION_SELECTION_EXPIRED')) return '目录选择已失效，请重新选择。';
   if (message.includes('PROJECT_DIRECTORY')) return '无法使用这个项目文件夹，请检查目录权限或换一个位置。';
   return message && !message.includes('PROJECT_SAVE_UNAVAILABLE') ? message : '暂时无法保存到项目，请稍后重试。';

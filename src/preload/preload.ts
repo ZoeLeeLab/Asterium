@@ -192,6 +192,7 @@ contextBridge.exposeInMainWorld('asteriumConversations', {
 contextBridge.exposeInMainWorld('asteriumProjects', {
   chooseLocation: () => ipcRenderer.invoke(AGENT_IPC.projectChooseLocation),
   initializeDomain: (request: import('../shared/projectDomain').ProjectDomainInitializeRequest) => ipcRenderer.invoke(AGENT_IPC.projectDomainInitialize, request),
+  previewCreateLocation: (request: Pick<import('../shared/projectDomain').ProjectCreateRequest, 'projectId' | 'name' | 'locationSelectionId'>) => ipcRenderer.invoke(AGENT_IPC.projectPreviewCreateLocation, request),
   create: (request: import('../shared/projectDomain').ProjectCreateRequest) => ipcRenderer.invoke(AGENT_IPC.projectCreate, request),
   update: (request: import('../shared/projectDomain').ProjectUpdateRequest) => ipcRenderer.invoke(AGENT_IPC.projectUpdate, request),
   createTask: (request: import('../shared/projectDomain').ProjectTaskCreateRequest) => ipcRenderer.invoke(AGENT_IPC.projectTaskCreate, request),
@@ -327,6 +328,14 @@ contextBridge.exposeInMainWorld('asteriumPartnerDiary', {
   read: (input) => ipcRenderer.invoke(AGENT_IPC.diaryRead, input),
   exportMarkdown: (input) => ipcRenderer.invoke(AGENT_IPC.diaryExport, input),
 } satisfies import('../shared/partnerDiary').AsteriumPartnerDiaryApi);
+
+contextBridge.exposeInMainWorld('asteriumContextHandoff', {
+  onDelivered: listener => {
+    const handler = (_event: unknown, id: string) => listener(id);
+    ipcRenderer.on(AGENT_IPC.contextHandoffDelivered, handler);
+    return () => ipcRenderer.removeListener(AGENT_IPC.contextHandoffDelivered, handler);
+  },
+} satisfies import('../shared/contextHandoff').ContextHandoffApi);
 
 contextBridge.exposeInMainWorld('asteriumMemory', {
   importText: {

@@ -1,3 +1,4 @@
+import { withHandoffContext } from '../../shared/contextHandoff';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { access, realpath, stat, unlink, writeFile } from 'node:fs/promises';
@@ -260,7 +261,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
     this.active.set(runId, { kind: 'legacy', child, cancelled: false });
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-2000); });
-    child.stdin.end(`${command.content.text}${attachmentPrompt(resolvedAttachments)}\n\n${DELIVERY_INSTRUCTION}`, 'utf8');
+    child.stdin.end(`${withHandoffContext(command.content.text, command.contextHandoff)}${attachmentPrompt(resolvedAttachments)}\n\n${DELIVERY_INSTRUCTION}`, 'utf8');
     yield remember(wrap({ type: 'session.bound', isNew: !command.sessionId }));
 
     const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -479,7 +480,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
       alwaysLoad: true,
     }) : undefined;
     const cliQuery = query({
-      prompt: `${command.content.text}${attachmentPrompt(resolvedAttachments)}`,
+      prompt: `${withHandoffContext(command.content.text, command.contextHandoff)}${attachmentPrompt(resolvedAttachments)}`,
       options: {
         abortController,
         cwd: this.workingDirectory,

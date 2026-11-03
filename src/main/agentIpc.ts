@@ -85,6 +85,7 @@ import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallbac
 import { MemoryFallbackSettingsStore } from './memory/fallback/MemoryFallbackSettingsStore';
 import { MemoryFallbackJobStore } from './memory/fallback/MemoryFallbackJobStore';
 import { MemoryFallbackInventory } from './memory/fallback/MemoryFallbackInventory';
+import { ContextHandoffService } from './runtime/ContextHandoffService';
 import { MemoryImportService } from './memory/MemoryImportService';
 import { MemoryConsolidation, createMemoryFallbackAdapter } from './memory/fallback/MemoryConsolidation';
 import { MemoryFallbackScheduler } from './memory/fallback/MemoryFallbackScheduler';
@@ -410,6 +411,15 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
     return { apiKey, requestSettings, modelSettings, headers };
   }
+  const contextHandoff = new ContextHandoffService(singleChatMessages, studioRooms, id => {
+    const partner = studioRuntimeCatalog.partner(id);
+    return Boolean(partner?.available && (partner.runtime.kind === 'local' || partner.runtime.kind === 'api'));
+  }, id => studioRuntimeCatalog.partner(id)?.publicIdentity.displayName ?? '伙伴');
+  const notifyHandoffDelivered = (event: PartnerEvent, command: SendMessageCommand) => {
+    if (event.type !== 'message.accepted' || !command.contextHandoff) return;
+    const window = getWindow();
+    if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.contextHandoffDelivered, command.contextHandoff.id);
+  };
   const memoryImport = new MemoryImportService(partnerMemories, fallbackEligible, async input => {
     const config = await memoryFallbackSettings.get();
     if (config.provider !== input.provider || config.endpoint !== input.endpoint || config.model !== input.model) {
@@ -774,8 +784,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
     return snapshot;
   });
-  ipcMain.handle(AGENT_IPC.projectCreate, async (event, value: unknown) => {
-    const window = requireSender(event);
+  async function resolveProjectCreateLocation(value: unknown) {
     if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.name !== 'string') throw new Error('INVALID_PROJECT_CREATE_REQUEST');
     let selectedRoot: string | undefined;
     if (value.locationSelectionId !== undefined) {
@@ -785,11 +794,16 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
     const request = value as unknown as ProjectCreateRequest;
     const finalRoot = (await projectWorkspaces.get(request.projectId))?.rootPath ?? await projectWorkspaces.preview({ projectId: request.projectId, name: request.name, selectedRoot });
-    const confirmation = await dialog.showMessageBox(window, { type: 'question', title: '确认项目保存位置',
-      message: `「${request.name}」的项目文件将保存在：`, detail: finalRoot,
-      buttons: ['创建项目', '取消'], defaultId: 0, cancelId: 1, noLink: true });
-    if (confirmation.response !== 0) throw new Error('PROJECT_CREATE_CANCELLED');
-    if (typeof value.locationSelectionId === 'string') projectLocationSelections.delete(value.locationSelectionId);
+    return { request, selectedRoot, finalRoot };
+  }
+  ipcMain.handle(AGENT_IPC.projectPreviewCreateLocation, async (event, value: unknown) => {
+    requireSender(event);
+    return (await resolveProjectCreateLocation(value)).finalRoot;
+  });
+  ipcMain.handle(AGENT_IPC.projectCreate, async (event, value: unknown) => {
+    requireSender(event);
+    const { request, selectedRoot, finalRoot } = await resolveProjectCreateLocation(value);
+    if (request.confirmedRoot !== finalRoot) throw new Error('PROJECT_CREATE_LOCATION_CHANGED');
     if (!selectedRoot) {
       const custom = (await generalSettings.get()).settings.defaultProjectRoot;
       if (custom) await validateProjectDirectory(custom);
@@ -803,6 +817,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       ...(request.memberIds !== undefined ? { memberIds: request.memberIds } : {}),
       selectedRoot: finalRoot,
     });
+    if (request.locationSelectionId) projectLocationSelections.delete(request.locationSelectionId);
     return result;
   });
   ipcMain.handle(AGENT_IPC.projectUpdate, async (event, value: unknown) => {
@@ -1258,7 +1273,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event);
     if (!isStudioStartRoundRequest(value)) throw new Error('INVALID_STUDIO_ROUND_REQUEST');
     if (!studioOrchestration.orchestrator) throw new Error('STUDIO_ORCHESTRATOR_NOT_READY');
-    return studioOrchestration.orchestrator.startRound(value);
+    const draft = value.contextHandoff === undefined ? undefined
+      : await contextHandoff.validate(value.contextHandoff, { kind: 'group', id: value.room.roomId });
+    return studioOrchestration.orchestrator.startRound(value, draft);
   });
 
   ipcMain.handle(AGENT_IPC.studioPrepareTurn, async (event, value: unknown) => {
@@ -1604,6 +1621,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       await sessionBootstrapRecorder.onBound(event, command);
     },
     onEvent: async (event, command) => {
+      notifyHandoffDelivered(event, command);
       await automationHandles.runtime?.observe(event);
       await captureGuidanceSource(event, command);
       await projectTaskRuntimeRef.current?.onEvent(event, command);
@@ -2166,6 +2184,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     assertAgentCommand(value.command);
     const request = value as ApiSendRequest;
     if (request.command.type !== 'message.send' || request.command.connectionSource !== 'api_partner') throw new Error('INVALID_API_SEND_COMMAND');
+    if (request.command.contextHandoff !== undefined) {
+      if (request.command.route) throw new Error('HANDOFF_SCOPE_UNAVAILABLE');
+      request.command.contextHandoff = await contextHandoff.validate(request.command.contextHandoff, { kind: 'single', id: request.command.conversationId }, request.command.partnerId);
+    }
     return startApiRuntime(request);
   });
 
@@ -2320,6 +2342,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (value.command.type !== 'message.send') throw new Error('INVALID_LOCAL_CLI_SEND_COMMAND');
     const request = value as LocalCliSendRequest;
     if (request.command.connectionSource !== 'local_cli') throw new Error('INVALID_LOCAL_CLI_CONNECTION_SOURCE');
+    if (request.command.contextHandoff !== undefined) {
+      if (request.command.route || request.partnerId !== request.command.partnerId) throw new Error('HANDOFF_SCOPE_UNAVAILABLE');
+      request.command.contextHandoff = await contextHandoff.validate(request.command.contextHandoff, { kind: 'single', id: request.command.conversationId }, request.command.partnerId);
+    }
     return startLocalRuntime(request);
   });
 
@@ -2359,6 +2385,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await runCoordinator.resume(value as ResumeSessionCommand);
   });
 
+  function handoffFingerprint(command: SendMessageCommand) {
+    return command.contextHandoff ? createHash('sha256').update(JSON.stringify(command.contextHandoff)).digest('hex') : undefined;
+  }
+
   async function startApiRuntime(request: ApiSendRequest) {
     await attachAutomationCommand(request.command);
     request = { ...request, connection: await apiConnections.resolve(request.command.partnerId, request.connection) };
@@ -2370,7 +2400,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const attachmentCapabilities = resolveApiAttachmentCapabilities(request.connection);
     const normalizedProvider = apiProviders.normalizeConnection(request.connection);
     const apiOptions = await configuredApiOptions(request.connection);
-    const fingerprint = JSON.stringify({ connection: request.connection, command: { ...request.command, sessionBootstrap: undefined, sessionBootstrapVersion: undefined } });
+    const fingerprint = JSON.stringify({
+      connection: request.connection,
+      command: { ...request.command, sessionBootstrap: undefined, sessionBootstrapVersion: undefined, contextHandoff: handoffFingerprint(request.command) },
+    });
     return runCoordinator.runIdempotent(request.command.clientMessageId, fingerprint, async () => {
       let primaryDirectory: string | undefined;
       let additionalDirectories: string[] = [];
@@ -2461,6 +2494,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       sessionId: request.command.sessionId,
       forkFromTurnId: request.command.forkFromTurnId,
       content: request.command.content,
+      contextHandoff: handoffFingerprint(request.command),
       execution: request.command.execution,
       attachments: request.command.attachments,
       partnerRootGrantId: request.partnerRootGrantId,
@@ -2626,6 +2660,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
             await captureGuidanceSource(routedEvent, command);
             await sessionBootstrapRecorder.onEvent(routedEvent, command);
             await markAcceptedStudioSpeakingMode(routedEvent, command);
+            notifyHandoffDelivered(routedEvent, command);
             if (routedEvent.type === 'message.accepted') delivery(command, 'delivered');
             if (routedEvent.type === 'run.failed') delivery(command, 'failed', routedEvent.error);
             const outgoing = await transformRuntimeEvent(routedEvent, artifactBaseDirectory);

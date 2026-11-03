@@ -95,6 +95,23 @@ function textRound(text: string): ApiProviderStreamEvent[] {
 }
 
 describe('ApiAgentRuntime loop', () => {
+  it('includes a handoff only in the current model turn and keeps it out of persisted API history', async () => {
+    const store = new ApiAgentSessionStore(await tempDirectory());
+    const requests: ApiProviderRequest[] = [];
+    const runtime = new ApiAgentRuntime({
+      provider: scriptedProvider([textRound('收到'), textRound('继续')], requests), toolsEnabled: false, sessionStore: store,
+    });
+    const input = command();
+    const events = await collect(runtime.sendMessage({ ...input, contextHandoff: {
+      id: '0514124c-0bf5-463e-a7a1-0dc289ab8e5d', source: { kind: 'group', id: 'group-1' },
+      target: { kind: 'single', id: input.conversationId }, partnerId: input.partnerId, messageIds: ['source'], text: 'synthetic-private-handoff',
+    } }));
+    expect(JSON.stringify(requests[0].messages)).toContain('synthetic-private-handoff');
+    expect(JSON.stringify(await store.load(input.partnerId, input.conversationId))).not.toContain('synthetic-private-handoff');
+    await collect(runtime.sendMessage({ ...input, clientMessageId: 'client-2', sessionId: events[0].sessionId }));
+    expect(JSON.stringify(requests[1].messages)).not.toContain('synthetic-private-handoff');
+  });
+
   it('overrides stale tool claims when disabled, keeps XML as inert text, then discovers automation on the same session after opt-in', async () => {
     const store = new ApiAgentSessionStore(await tempDirectory());
     const requests: ApiProviderRequest[] = [];

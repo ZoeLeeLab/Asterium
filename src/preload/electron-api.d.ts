@@ -21,6 +21,7 @@ declare global {
     asteriumStudio?: DesktopBridge['asteriumStudio'];
     asteriumStudioNotes?: DesktopBridge['asteriumStudioNotes'];
     asteriumProjectNotebooks?: DesktopBridge['asteriumProjectNotebooks'];
+    asteriumContextHandoff?: import('../shared/contextHandoff').ContextHandoffApi;
     asteriumMemory?: DesktopBridge['asteriumMemory'];
     asteriumNativeBindings?: DesktopBridge['asteriumNativeBindings'];
     asteriumConversations?: DesktopBridge['asteriumConversations'];

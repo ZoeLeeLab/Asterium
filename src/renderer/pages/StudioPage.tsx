@@ -1,3 +1,5 @@
+import { supportsContextHandoff } from '../app/singleChatRuntime';
+import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
 import { useCollapsibleRails } from '../components/layout/useCollapsibleRails';
 import { WorkspaceShortcuts } from '../components/layout/WorkspaceShortcuts';
 import { useProjectRunChanges } from '../components/studio/useProjectRunChanges';
@@ -121,12 +123,14 @@ export function StudioPage() {
   const {
     state, selectProject, createProject, updateProject, createProjectTask, updateProjectTask, removeProjectTask, removeProject, initializeProjectWorkspace, selectGroupChat, createGroupChat, updateGroupChat, setGroupMembers, setProjectMembers,
     archiveGroupChat, sendStudioMessage, studioRooms, studioInteractions, setStudioMuted, cancelStudioRound,
+    contextHandoffDraft, setContextHandoffDraft, selectConversation,
     setStudioSettings, resolveStudioDiscussion, resolveStudioAuthorization, resolveStudioUserInput,
   } = usePrototype();
   const initialGroupChat = state.groupChats.find((item) => item.id === state.activeGroupChatId && !item.archivedAt)
     ?? state.groupChats.find((item) => !item.archivedAt);
   const openMemberPickerOnEntry = Boolean((location.state as { openMemberPicker?: boolean } | null)?.openMemberPicker);
   const memorySourceTarget = (location.state as MemorySourceNavigationState | null)?.memorySourceTarget;
+  const [handoffOpen, setHandoffOpen] = useState(false);
   const [showMembers, setShowMembers] = useState(openMemberPickerOnEntry);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => new Set([state.activeProjectId || state.projects[0]?.id].filter(Boolean)));
   const [openHeaderMenu, setOpenHeaderMenu] = useState<'speaking' | 'permission'>();
@@ -252,6 +256,12 @@ export function StudioPage() {
   if (browserState.projectId !== project?.id) setBrowserState({ projectId: project?.id, open: false, tab: 'files' });
   useEffect(() => { localStorage.setItem('asterium.studio.browserWidth', String(browserWidth)); }, [browserWidth]);
   const studioRoom = groupChat ? studioRooms[groupChat.id] : undefined;
+  const activeHandoff = contextHandoffDraft?.target.kind === 'group' && contextHandoffDraft.target.id === groupChat?.id ? contextHandoffDraft : undefined;
+  const handoffTargets = state.conversations.flatMap(conversation => {
+    const partner = state.partners.find(item => item.id === conversation.partnerId);
+    if (!partner || !supportsContextHandoff(partner) || conversation.isArchived || conversation.isDisabled || !groupChat?.memberIds.includes(partner.id)) return [];
+    return [{ kind: 'single' as const, id: conversation.id, partnerId: partner.id, label: `${partner.publicIdentity.displayName} · ${conversation.title}` }];
+  });
   const activeRound = studioRoom?.activeRound && !['completed', 'failed', 'cancelled'].includes(studioRoom.activeRound.state) ? studioRoom.activeRound : undefined;
   const projectPermissionMode = project && projectExecutionPolicy?.projectId === project.id ? projectExecutionPolicy.permissionMode : 'manual';
   const ProjectPermissionIcon = projectPermissionOption(projectPermissionMode).icon;
@@ -635,7 +645,7 @@ export function StudioPage() {
       setShowNewConversation(false);
       navigate('/studio/discussion');
     } catch (error) {
-      setProjectError(projectWorkspaceError(error));
+      if (!(error instanceof Error && error.message.includes('PROJECT_CREATE_CANCELLED'))) setProjectError(projectWorkspaceError(error));
     } finally {
       setProjectBusy(false);
     }
@@ -829,7 +839,16 @@ export function StudioPage() {
   const submitStudioMessage = async (content: string, mentions: StudioMention[], attachments: PendingMessageAttachment[] = []) => {
     if (!groupChat) return;
     setStudioSendError('');
-    const ok = await sendStudioMessage(groupChat.id, content, mentions, attachments.map(item => item.selectionId));
+    const ok = await sendStudioMessage(groupChat.id, content, mentions, attachments.map(item => item.selectionId), activeHandoff).catch(error => {
+      if (error instanceof Error && error.message.includes('HANDOFF_')) {
+        setStudioSendError(error.message.includes('HANDOFF_SOURCE_UNAVAILABLE') || error.message.includes('HANDOFF_TEXT_TOO_LONG')
+          ? '选中的原话已变化或超出长度限制，请重新选择。'
+          : '未能发送交接。请确认目标伙伴仍在群里，并将其加入本轮发言名单。');
+        return undefined;
+      }
+      throw error;
+    });
+    if (ok === undefined) return false;
     if (!ok) setStudioSendError(activeRound ? '请等这一轮结束，或先停止当前伙伴。' : '没有可发言的伙伴；请检查成员、禁言和连接状态。');
     return ok;
   };
@@ -1554,6 +1573,7 @@ export function StudioPage() {
           onScrollTargetHandled={() => setTaskScrollTargetId(undefined)}
         /> : (
           <section className="discussion-view">
+            <div className="message-scroll-region">
             {groupChat ? <div
               ref={messageListRef}
               className="message-list studio-messages"
@@ -1583,13 +1603,23 @@ export function StudioPage() {
               </article>;
             })}{studioInteraction?.timeline.length && !studioInteractionMessageId ? <article className="message-row studio-interaction-row"><Avatar partnerId={studioInteractionPartner?.id} name={studioInteractionPartner?.publicIdentity.displayName ?? '伙伴'} src={studioInteractionPartner?.publicIdentity.avatarDataUrl} accent={studioInteractionPartner?.accent} size="md" /><div className="message-stack"><div className="message-meta"><strong>{studioInteractionPartner?.publicIdentity.displayName ?? '伙伴'}</strong></div><div className="message-bubble">{renderStudioInteractionTimeline()}</div></div></article> : null}</div> : <div className="friendly-empty"><MessageSquarePlus size={34} /><h2>{project ? '当前项目还没有群聊' : '还没有项目'}</h2><p>{project ? '项目、文件与任务仍会保留，可以新建群聊继续协作。' : '新建第一个项目和群聊，开始工作室协作。'}</p><button className="primary-button" type="button" onClick={openProjectConversation}>{project ? '新建群聊' : '新建项目'}</button></div>}
             {groupChat && <JumpToLatest key={groupChat.id} scrollRef={messageListRef} streaming={Boolean(activeRound)} onJump={() => { keepAtBottomRef.current = true; }} />}
-          </section>
-        )}
-        {!isWork && activeRound?.state === 'waiting_discussion_decision' && <section className="studio-discussion-decision" role="alert">
+            </div>
+        {activeRound?.state === 'waiting_discussion_decision' && <section className="studio-discussion-decision" role="alert">
           <span><Sparkles size={16} /><span><strong>伙伴已经讨论多轮</strong><small>要保留当前上下文继续，还是结束这一轮？</small></span></span>
           <div><button className="secondary-button" type="button" onClick={() => void resolveStudioDiscussion(groupChat!.id, 'end')}>结束本轮</button><button className="primary-button" type="button" onClick={() => void resolveStudioDiscussion(groupChat!.id, 'continue')}>继续讨论</button></div>
         </section>}
         {studioSendError && !isWork && <p className="studio-inline-error studio-composer-error">{studioSendError}</p>}
+        {!isWork && groupChat && handoffTargets.length > 0 && <div className="context-handoff-action"><button className="text-button" type="button" onClick={() => setHandoffOpen(true)}>带上下文去单聊</button></div>}
+        {!isWork && activeHandoff && <ContextHandoffDraftCard draft={activeHandoff}
+          partnerName={state.partners.find(partner => partner.id === activeHandoff.partnerId)?.publicIdentity.displayName ?? '伙伴'}
+          disabled={Boolean(activeRound)} onRemove={() => setContextHandoffDraft(undefined)} />}
+        {!isWork && handoffOpen && groupChat && handoffTargets.length > 0 && <ContextHandoffDialog
+          key={`handoff:${groupChat.id}`} source={{ kind: 'group', id: groupChat.id }} messages={groupChat.messages}
+          targets={handoffTargets} partners={state.partners} onClose={() => setHandoffOpen(false)} onStage={draft => {
+            setContextHandoffDraft(draft);
+            selectConversation(draft.target.id);
+            navigate('/chat');
+          }} />}
         {!isWork && <StudioComposer
           key={groupChat?.id ?? 'empty-studio-room'}
           draftKey={groupChat ? `studio:${groupChat.id}` : undefined}
@@ -1601,6 +1631,8 @@ export function StudioPage() {
           placeholder={!groupChat ? '请先新建群聊' : activeRound ? '伙伴正在发言；可以继续输入，本轮结束后再发送' : studioRoom?.settings.speakingMode === 'free_discussion' ? '输入消息；输入 @ 可选择伙伴' : studioRoom?.settings.speakingMode === 'selected_partners' ? '输入消息；仅由已选伙伴回答' : '输入消息；每位伙伴依次回应一次'}
           onSend={submitStudioMessage}
         />}
+          </section>
+        )}
       </section>
 
       {browserOpen && <div className="rail-resizer studio-browser-resizer" role="separator" tabIndex={0} aria-label="调整项目浏览宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize('browser', event)} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setBrowserWidth((width) => clamp(width + 20, 240, 480)); if (event.key === 'ArrowRight') setBrowserWidth((width) => clamp(width - 20, 240, 480)); }} />}
@@ -2223,6 +2255,7 @@ function readRailWidth(key: string, fallback: number, min: number, max: number) 
 function projectWorkspaceError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? '');
   if (message.includes('PROJECT_DIRECTORY_ALREADY_USED')) return '这个文件夹已经属于另一个项目，请换一个目录。';
+  if (message.includes('PROJECT_CREATE_LOCATION_CHANGED')) return '项目保存位置已变化，请重新确认。';
   if (message.includes('PROJECT_LOCATION_SELECTION_EXPIRED')) return '目录选择已失效，请重新选择。';
   if (message.includes('PROJECT_DIRECTORY')) return '无法建立项目文件夹，请检查目录权限或换一个位置。';
   if (message.includes('PROJECT_NAME_INVALID')) return '项目名称不能为空或过长。';

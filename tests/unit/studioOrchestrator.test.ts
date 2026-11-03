@@ -45,6 +45,55 @@ function queuedSnapshot(): StudioRoomSnapshot {
 }
 
 describe('Main StudioOrchestrator', () => {
+  it('attaches a private handoff to the selected speaker once and rejects a target outside the queue', async () => {
+    const queued = queuedSnapshot();
+    const target = 'partner-local', other = 'partner-other';
+    queued.metadata.memberIds = [target, other];
+    const resting = { ...queued, activeRound: undefined, messages: [] };
+    const catalog = new StudioRuntimeCatalog();
+    catalog.sync({ displayName: '用户', introduction: '', updatedAt: createdAt }, [localSeed(target), localSeed(other)]);
+    const draft = {
+      id: '0514124c-0bf5-463e-a7a1-0dc289ab8e5d', source: { kind: 'single' as const, id: 'single-one' },
+      target: { kind: 'group' as const, id: queued.metadata.roomId }, partnerId: target, messageIds: ['source'], text: 'synthetic-private-handoff',
+    };
+    const rooms = {
+      getRoom: vi.fn(async () => resting),
+      publishUserMessage: vi.fn(async () => queued),
+      cancelRound: vi.fn(async () => queued),
+      failPreparedTurn: vi.fn(async () => queued),
+    };
+    const runtime: StudioRuntimeLifecyclePort = {
+      prepareStudioTurn: vi.fn(async (partner): Promise<StudioPreparedTurn> => ({
+        room: queued.metadata, round: queued.activeRound!, settings: queued.settings,
+        mutedPartnerIds: [], conversationId: 'group:' + partner.partnerId, bindingGeneration: 1,
+        inputThroughSeq: 1, processedAfterSeq: 0, messages: queued.messages, models: {},
+      })),
+      startStudioTurn: vi.fn(async () => ({ runId: 'run-one', sessionId: 'session-one' })),
+      cancelRun: vi.fn(),
+    };
+    const orchestrator = new StudioOrchestrator(rooms, catalog, runtime);
+    const request = { room: queued.metadata, messageId: 'message-one', content: '公开问题', authorId: ASTERIUM_USER_ID, speakerQueue: [] };
+    resting.settings = { ...resting.settings, speakingMode: 'selected_partners', selectedPartnerIds: [other] };
+    await expect(orchestrator.startRound(request, draft)).rejects.toThrow('HANDOFF_PARTNER_NOT_QUEUED');
+    expect(rooms.publishUserMessage).not.toHaveBeenCalled();
+
+    resting.settings = queued.settings;
+    await orchestrator.startRound(request, draft);
+    expect(JSON.stringify(rooms.publishUserMessage.mock.calls)).not.toContain(draft.text);
+    const otherTurn = { ...queued, activeRound: {
+      ...queued.activeRound!, members: [{ ...queued.activeRound!.members[0], partnerId: other }],
+    } };
+    orchestrator.handleSnapshot(otherTurn);
+    await vi.waitFor(() => expect(runtime.startStudioTurn).toHaveBeenCalledTimes(1));
+    expect(runtime.startStudioTurn).toHaveBeenNthCalledWith(1, expect.not.objectContaining({ contextHandoff: expect.anything() }));
+    orchestrator.handleSnapshot(queued);
+    await vi.waitFor(() => expect(runtime.startStudioTurn).toHaveBeenCalledTimes(2));
+    expect(runtime.startStudioTurn).toHaveBeenNthCalledWith(2, expect.objectContaining({ contextHandoff: draft }));
+    orchestrator.handleSnapshot(queued);
+    await vi.waitFor(() => expect(runtime.startStudioTurn).toHaveBeenCalledTimes(3));
+    expect(runtime.startStudioTurn).toHaveBeenNthCalledWith(3, expect.not.objectContaining({ contextHandoff: expect.anything() }));
+  });
+
   it.each([
     {
       label: 'round robin rotation',

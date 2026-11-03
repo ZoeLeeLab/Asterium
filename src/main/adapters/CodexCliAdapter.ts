@@ -1,3 +1,4 @@
+import { withHandoffContext } from '../../shared/contextHandoff';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
@@ -1078,7 +1079,7 @@ export class CodexCliAdapter implements PartnerAdapter {
 }
 
 export function codexTurnText(command: SendMessageCommand, attachmentText = '') {
-  return `${command.content.text}${attachmentText}`;
+  return `${withHandoffContext(command.content.text, command.contextHandoff)}${attachmentText}`;
 }
 
 async function resolveCommandAttachments(command: SendMessageCommand, resolver?: AttachmentPathResolver) {

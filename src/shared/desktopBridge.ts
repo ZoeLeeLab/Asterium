@@ -236,6 +236,7 @@ export interface AsteriumProjectsApi {
   browse?: (request: ProjectBrowseRequest) => Promise<ProjectBrowseResult>;
   chooseLocation: () => Promise<ProjectLocationSelection | null>;
   initializeDomain: (request: ProjectDomainInitializeRequest) => Promise<ProjectDomainSnapshot>;
+  previewCreateLocation?: (request: Pick<ProjectCreateRequest, 'projectId' | 'name' | 'locationSelectionId'>) => Promise<string>;
   create: (request: ProjectCreateRequest) => Promise<ProjectCreateResult>;
   update: (request: ProjectUpdateRequest) => Promise<ProjectRecord>;
   createTask: (request: ProjectTaskCreateRequest) => Promise<ProjectTask>;

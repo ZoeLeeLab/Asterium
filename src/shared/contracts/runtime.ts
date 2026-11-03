@@ -143,6 +143,7 @@ export interface SendMessageCommand extends CommandBase {
   forkFromTurnId?: string;
   content: { type: 'text'; text: string };
   attachments?: MessageAttachment[];
+  contextHandoff?: import('../contextHandoff').ContextHandoff | import('../contextHandoff').ResolvedContextHandoff;
   apiContext?: ApiTextContext;
   runtimeContext?: AsteriumRuntimeContextInput;
   sessionBootstrap?: SessionBootstrapDocument;

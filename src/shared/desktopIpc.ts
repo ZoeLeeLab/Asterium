@@ -123,6 +123,7 @@ export const DESKTOP_IPC = {
   conversationSyncMessages: 'asterium:conversation:sync-messages',
   projectChooseLocation: 'asterium:project:choose-location',
   projectDomainInitialize: 'asterium:project-domain:initialize',
+  projectPreviewCreateLocation: 'asterium:project:preview-create-location',
   projectCreate: 'asterium:project:create',
   projectUpdate: 'asterium:project:update',
   projectTaskCreate: 'asterium:project-task:create',
@@ -197,6 +198,7 @@ export const DESKTOP_IPC = {
   projectNotebookListArchived: 'asterium:project-notebook:list-archived',
   projectNotebookExport: 'asterium:project-notebook:export',
   projectNotebookPurge: 'asterium:project-notebook:purge',
+  contextHandoffDelivered: 'asterium:context-handoff:delivered',
   memoryImportPreview: 'asterium:memory-import:preview',
   memoryImportConfirm: 'asterium:memory-import:confirm',
   memoryImportCancel: 'asterium:memory-import:cancel',
@@ -245,7 +247,7 @@ const DESKTOP_INVOKE_KEYS = [
   'attachmentInspect', 'attachmentRead', 'attachmentOpen', 'attachmentReveal', 'attachmentCopyPath',
   'attachmentExportAs', 'attachmentSaveToProject', 'attachmentThumbnail', 'attachmentDeleteConversation',
   'conversationDelete', 'conversationListDeleted', 'conversationSyncMessages',
-  'projectChooseLocation', 'projectDomainInitialize', 'projectCreate', 'projectUpdate', 'projectTaskCreate', 'projectTaskUpdate', 'projectTaskRemove',
+  'projectChooseLocation', 'projectDomainInitialize', 'projectPreviewCreateLocation', 'projectCreate', 'projectUpdate', 'projectTaskCreate', 'projectTaskUpdate', 'projectTaskRemove',
   'projectRoleList', 'projectRoleCreate', 'projectRoleUpdate', 'projectRoleArchive', 'projectRoleRemove',
   'projectWorkflowCatalog', 'projectWorkflowList', 'projectWorkflowCreate', 'projectWorkflowUpdate', 'projectWorkflowRemove', 'projectWorkflowActivate',
   'projectWorkflowTemplateSave', 'projectWorkflowTemplateUpdate', 'projectWorkflowTemplateRemove',
@@ -285,6 +287,7 @@ export const DESKTOP_PUSH_CHANNELS = [
   DESKTOP_IPC.projectExecutionPolicyChanged,
   DESKTOP_IPC.studioRoomChanged,
   DESKTOP_IPC.memoryArchiveChanged,
+  DESKTOP_IPC.contextHandoffDelivered,
   DESKTOP_IPC.event,
 ] as const satisfies readonly DesktopIpcChannel[];
 
