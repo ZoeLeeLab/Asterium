@@ -111,7 +111,7 @@ export class PartnerRuntimeFactory {
     });
   }
 
-  async getExisting(request: ExistingThreadRuntimeRequest) {
+  async getExisting(request: ExistingThreadRuntimeRequest, onReply?: ConstructorParameters<typeof ExistingThreadAdapter>[2]) {
     const adapterKey = `existing_thread:${request.partnerId}:${request.credentialRef}:${request.threadId}`;
     let adapter = this.options.host.get(adapterKey);
     if (adapter) return adapter;
@@ -124,7 +124,7 @@ export class PartnerRuntimeFactory {
       initialLastEventId: await this.options.bridgeCursors.get(cursorKey),
       onLastEventId: (eventId) => { void this.options.bridgeCursors.set(cursorKey, eventId); },
     });
-    adapter = new ExistingThreadAdapter(client, request.threadId);
+    adapter = new ExistingThreadAdapter(client, request.threadId, onReply);
     return this.options.host.set(adapterKey, adapter);
   }
 

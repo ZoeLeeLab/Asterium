@@ -1055,6 +1055,23 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
       }));
     case 'agentEvent': {
       const event = action.event;
+      if (event.type === 'existing_thread.reply') {
+        const partner = state.partners.find((item) => item.id === event.partnerId);
+        if (partner?.sourceMode !== 'existing_thread' || partner.isRemoved || partner.threadId !== event.threadId) return state;
+        return updateConversation(state, event.conversationId, (conversation) => {
+          const id = `cyberboss-reply:${event.threadId}:${event.eventId}`;
+          if (conversation.partnerId !== event.partnerId || conversation.sessionId !== event.threadId
+            || conversation.messages.some((message) => message.id === id)) return conversation;
+          const message: Message = {
+            id,
+            authorId: event.partnerId,
+            content: event.text,
+            occurredAt: event.occurredAt,
+            createdAt: new Date(event.occurredAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+          };
+          return { ...conversation, messages: [...conversation.messages, message], updatedAt: new Date().toISOString() };
+        });
+      }
       if (event.type === 'existing_thread.changed') {
         const partner = state.partners.find((item): item is ExistingThreadPartner => item.id === event.partnerId && item.sourceMode === 'existing_thread');
         const conversationsCurrent = state.conversations

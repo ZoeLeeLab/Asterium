@@ -12,11 +12,21 @@ function responseStream(text: string) {
 
 describe('ExistingThreadAdapter', () => {
   it('binds the fixed existing thread and maps typing plus assistant events', async () => {
+    let reconnected = false;
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith('/api/auth')) return new Response('{}', { status: 200, headers: { 'Set-Cookie': 'cyberboss_web_session=s; Secure' } });
       if (url.endsWith('/api/session')) return new Response('{}', { status: 200 });
       if (url.endsWith('/api/messages')) return new Response('{}', { status: 202 });
+      if (url.endsWith('/api/events?lastEventId=4')) {
+        reconnected = true;
+        return responseStream([
+          'id: 4\nevent: chat\ndata: {"role":"assistant","text":"宝宝，我在～","clientMessageId":null}\n\n',
+          'id: 5\nevent: chat\ndata: {"role":"assistant","text":"这是工具后的回复","clientMessageId":null}\n\n',
+          'id: 6\nevent: chat\ndata: {"role":"user","text":"其他客户端发送的新消息","clientMessageId":"other"}\n\n',
+          'id: 7\nevent: chat\ndata: {"role":"assistant","text":"其他轮回复","clientMessageId":null}\n\n',
+        ].join(''));
+      }
       if (url.includes('/api/events')) return responseStream([
         'id: 1\nevent: chat\ndata: {"role":"assistant","text":"更早的回复","status":"","clientMessageId":"","createdAt":"","media":[]}\n\n',
         'id: 2\nevent: chat\ndata: {"role":"user","text":"在吗？","status":"","clientMessageId":"client-stable","createdAt":"","media":[]}\n\n',
@@ -25,7 +35,10 @@ describe('ExistingThreadAdapter', () => {
       ].join(''));
       throw new Error(`unexpected ${url}`);
     });
-    const adapter = new ExistingThreadAdapter(new CyberBossBridgeClient({ serviceUrl: 'https://cyberboss.example.invalid', secret: 'x', fetcher }), threadId);
+    const onReply = vi.fn();
+    const adapter = new ExistingThreadAdapter(new CyberBossBridgeClient({
+      serviceUrl: 'https://cyberboss.example.invalid', secret: 'x', fetcher, reconnectDelay: async () => undefined,
+    }), threadId, onReply);
     const command: SendMessageCommand = {
       protocolVersion: AGENT_PROTOCOL_VERSION, type: 'message.send', commandId: 'command', partnerId: 'external', conversationId: 'conversation',
       connectionSource: 'existing_thread', clientMessageId: 'client-stable', sessionId: threadId, content: { type: 'text', text: '在吗？' },
@@ -36,6 +49,13 @@ describe('ExistingThreadAdapter', () => {
     expect(events.map((event) => event.type)).toEqual(['session.bound', 'message.accepted', 'work.status', 'text.delta', 'work.status', 'run.completed']);
     expect(events.find((event) => event.type === 'text.delta')).toMatchObject({ text: '宝宝，我在～' });
     expect(events.some((event) => event.type === 'text.delta' && event.text === '更早的回复')).toBe(false);
+    try {
+      await vi.waitFor(() => expect(onReply).toHaveBeenCalledWith(command, threadId, expect.objectContaining({ id: '5', text: '这是工具后的回复' })));
+      expect(reconnected).toBe(true);
+      expect(onReply).toHaveBeenCalledTimes(1);
+    } finally {
+      await adapter.dispose();
+    }
     expect(adapter.capabilities.cancellation).toBe(false);
   });
 });

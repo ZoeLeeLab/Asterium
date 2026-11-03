@@ -146,6 +146,7 @@ import {
   type SendMessageReceipt,
   type ExistingThreadConnection,
   type ExistingThreadChangedEvent,
+  type ExistingThreadReplyEvent,
   type ExistingThreadConnectionStatus,
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
@@ -2268,6 +2269,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         credentialRef: connection.credentialRef,
         serviceUrl: connection.serviceUrl,
         threadId: connection.threadId,
+      }, (command, threadId, reply) => {
+        const window = getWindow();
+        if (!window || window.isDestroyed()) return;
+        window.webContents.send(AGENT_IPC.event, {
+          type: 'existing_thread.reply',
+          partnerId: command.partnerId,
+          conversationId: command.conversationId,
+          threadId,
+          eventId: reply.id,
+          occurredAt: Number.isFinite(Date.parse(reply.createdAt)) ? reply.createdAt : new Date().toISOString(),
+          text: reply.text,
+        } satisfies ExistingThreadReplyEvent);
       });
       return useLegacyRunPath ? startAdapterRun(adapter, request.command) : runCoordinator.start(adapter, request.command);
     });

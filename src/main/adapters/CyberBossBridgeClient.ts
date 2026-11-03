@@ -128,6 +128,7 @@ export class CyberBossBridgeClient {
         const decoder = new TextDecoder();
         for (;;) {
           const next = await reader.read();
+          if (signal.aborted) return;
           if (next.done) break;
           for (const event of parser.push(decoder.decode(next.value, { stream: true }))) {
             if (this.acceptEvent(event.id)) yield event;

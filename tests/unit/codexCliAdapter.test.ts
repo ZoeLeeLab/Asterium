@@ -91,6 +91,27 @@ async function collect(stream: AsyncIterable<PartnerEvent>) {
 }
 
 describe('CodexCliAdapter', () => {
+  it('keeps one turn open across assistant text, a tool, and a second assistant message', async () => {
+    const transport = new FakeTransport(false);
+    const adapter = new CodexCliAdapter('codex.exe', 'K:\\qa', () => transport);
+    const iterator = adapter.sendMessage(command())[Symbol.asyncIterator]();
+    await iterator.next();
+    await iterator.next();
+    const route = { threadId: 'thread-1', turnId: 'turn-1' };
+    transport.emit({ method: 'item/agentMessage/delta', params: { ...route, itemId: 'before', delta: '我先查一下。' } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'text.delta', text: '我先查一下。' });
+    transport.emit({ method: 'item/completed', params: { ...route, item: { id: 'before', type: 'agentMessage', text: '我先查一下。' } } });
+    transport.emit({ method: 'item/started', params: { ...route, item: { id: 'tool', type: 'commandExecution', status: 'inProgress', command: 'echo ok' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool.started', toolCallId: 'tool' });
+    transport.emit({ method: 'item/completed', params: { ...route, item: { id: 'tool', type: 'commandExecution', status: 'completed', command: 'echo ok' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool.completed', toolCallId: 'tool' });
+    transport.emit({ method: 'item/completed', params: { ...route, item: { id: 'after', type: 'agentMessage', text: '查完了，这是结论。' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'text.delta', text: '查完了，这是结论。' });
+    transport.emit({ method: 'turn/completed', params: { threadId: route.threadId, turn: { id: route.turnId, status: 'completed' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'run.completed' });
+    expect((await iterator.next()).done).toBe(true);
+  });
+
   it('forwards free-form answers to native Codex without leaking Asterium custom-choice metadata', async () => {
     const transport = new FakeTransport(true, [{ id: 7, method: 'item/tool/requestUserInput', params: { threadId: 'thread-1', turnId: 'turn-1', questions: [{ id: 'format', question: '选择格式', options: [{ label: 'A' }] }] } }]);
     const adapter = new CodexCliAdapter('codex.exe', 'K:\\qa', () => transport);

@@ -345,8 +345,21 @@ describe('local Codex renderer flow', () => {
     expect(screen.getByText('外部伙伴正在输入…')).toBeInTheDocument();
     expect(screen.getByTitle('当前桥接暂不支持远程取消')).toBeDisabled();
     act(() => listener?.({ ...base, eventId: 'bridge-event-4', type: 'text.delta', text: '宝宝，我从原线程收到啦。', sequence: 4 }));
-    act(() => listener?.({ ...base, eventId: 'bridge-event-5', type: 'run.completed', finishReason: 'end_turn', sequence: 5 }));
     expect(await screen.findByText('宝宝，我从原线程收到啦。')).toBeInTheDocument();
+    act(() => listener?.({ ...base, eventId: 'bridge-event-5', type: 'run.completed', finishReason: 'end_turn', sequence: 5 }));
+    const lateReply = {
+      type: 'existing_thread.reply' as const, partnerId: base.partnerId, conversationId: base.conversationId,
+      threadId: base.sessionId, eventId: '2148', occurredAt: base.occurredAt, text: '这是查到的结论。',
+    };
+    act(() => {
+      listener?.(lateReply);
+      listener?.(lateReply);
+      listener?.({ ...lateReply, threadId: 'another-thread', text: '其他线程的消息' });
+    });
+    expect(await screen.findByText('这是查到的结论。')).toBeInTheDocument();
+    expect(screen.getByText('宝宝，我从原线程收到啦。')).toBeInTheDocument();
+    expect(screen.getAllByText('这是查到的结论。')).toHaveLength(1);
+    expect(screen.queryByText('其他线程的消息')).not.toBeInTheDocument();
     expect(screen.queryByText('外部伙伴 正在整理思路')).not.toBeInTheDocument();
   });
 

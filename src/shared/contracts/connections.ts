@@ -45,6 +45,16 @@ export interface ExistingThreadConnectionStatus extends CredentialStatus {
   };
 }
 
+export interface ExistingThreadReplyEvent {
+  type: 'existing_thread.reply';
+  partnerId: string;
+  conversationId: string;
+  threadId: string;
+  eventId: string;
+  occurredAt: string;
+  text: string;
+}
+
 export interface ExistingThreadChangedEvent {
   protocolVersion: typeof AGENT_PROTOCOL_VERSION;
   type: 'existing_thread.changed';

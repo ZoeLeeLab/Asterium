@@ -1,5 +1,5 @@
 import type { ArtifactSourceClaim, MessageAttachment } from './attachments';
-import type { ExistingThreadChangedEvent } from './connections';
+import type { ExistingThreadChangedEvent, ExistingThreadReplyEvent } from './connections';
 import type { SingleChatIndexedMessage } from '../singleChatMessages';
 import {
   AGENT_PROTOCOL_VERSION,
@@ -441,7 +441,7 @@ export interface MessageDeliveryEvent {
   error?: ProtocolError;
 }
 
-export type RendererAgentEvent = PartnerEvent | MessageDeliveryEvent | ExistingThreadChangedEvent;
+export type RendererAgentEvent = PartnerEvent | MessageDeliveryEvent | ExistingThreadChangedEvent | ExistingThreadReplyEvent;
 
 export interface SendMessageReceipt {
   runId: RunId;
