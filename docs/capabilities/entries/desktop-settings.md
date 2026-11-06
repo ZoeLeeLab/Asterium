@@ -15,12 +15,16 @@
   "codeEntries": [
     "src/shared/generalSettings.ts",
     "src/main/settings/GeneralSettingsStore.ts",
+    "src/main/settings/windowsScreenshotShortcut.ts",
     "src/renderer/components/settings/GeneralSettingsView.tsx",
     "src/renderer/components/settings/AboutSettingsView.tsx",
     "src/renderer/pages/SettingsPage.tsx",
     "src/main/settings/DesktopLifecycle.ts",
     "src/main/main.ts",
     "src/renderer/app/sendShortcut.ts",
+    "src/renderer/components/chat/ConversationSearch.tsx",
+    "src/renderer/components/layout/AppNavigation.tsx",
+    "src/renderer/pages/ChatPage.tsx",
     "src/main/settings/DesktopNotifications.ts",
     "src/main/settings/windowsStartup.ts",
     "src/renderer/app/DesktopNotificationNavigation.tsx",
@@ -49,6 +53,7 @@
   ],
   "tests": [
     "tests/unit/generalSettings.test.ts",
+    "tests/unit/windowsScreenshotShortcut.test.ts",
     "tests/renderer/GeneralSettings.test.tsx",
     "tests/renderer/AboutSettings.test.tsx",
     "tests/empty-start-browser-smoke.mjs",
@@ -56,6 +61,7 @@
     "tests/unit/desktopLifecycle.test.ts",
     "tests/general-settings-smoke.mjs",
     "tests/renderer/SendShortcut.test.tsx",
+    "tests/renderer/NavigationFlows.test.tsx",
     "tests/unit/desktopNotifications.test.ts",
     "tests/renderer/DesktopNotificationNavigation.test.tsx",
     "tests/unit/executionBackendRouter.test.ts",
@@ -90,7 +96,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
+  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
 }
 ---
 
@@ -99,6 +105,16 @@
 本条绑定已存在的代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；本次为纯文档核验，不使用自身或未来提交号。S1–S4 已实现 daily/dev/acceptance/autotest 启动资料隔离、真实规范化路径与 Windows junction／符号链接检查；开发与验收明确标记环境，只有日常安装版注册自启动及执行安装更新。通用设置可为当前环境保存默认项目位置，失败保留原值，旧项目不搬迁。候选启动器只处理显式指定的独立候选和批次，SHA-256 计算不跳过。
 
 本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
+
+## 搜索当前单聊
+
+单聊顶部的放大镜可搜索当前对话中渲染的消息正文。搜索栏按匹配消息计数，高亮关键词，支持用上下箭头按钮或 Enter、Shift+Enter 跳转。Esc 可关闭搜索栏。切换单聊时清空关键词。左栏的聊天记录搜索按对话筛选，工具卡、引用卡和附件名不计入当前正文搜索。
+
+当前搜索核验绑定代码提交 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。67 项相关渲染层测试通过。另用独立 Chromium 环境确认跨 Markdown 行内格式高亮、定位和键盘操作。当前单聊搜索随 Beta.3 安装包交付。
+
+## 截图快捷键
+
+在「设置 → 通用 → 消息发送」可选 Windows 默认的 `Win+Shift+S`，也可选择一个 `Ctrl+Shift` 组合键在星丛窗口内打开 Windows 截图工具。星丛保存该资料环境下的选项。Windows 默认组合键仍由系统处理。截图后可回到单聊，用普通粘贴快捷键加入待发送附件。自动测试覆盖默认值、设置保存和窗口焦点判断，截图工具的实际唤起仍待 Windows 界面验收。
 
 ## 历史阶段记录
 

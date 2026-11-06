@@ -16,10 +16,12 @@
     "src/main/studio/StudioMcpTools.ts",
     "src/main/studio/StudioMcpHost.ts",
     "src/main/studio/StudioMcpAccessStore.ts",
-    "src/main/agentIpc.ts"
+    "src/main/agentIpc.ts",
+    "src/renderer/components/settings/StudioMcpSettings.tsx"
   ],
   "tests": [
     "tests/unit/studioMcp.test.ts",
+    "tests/renderer/StudioMcpSettings.test.tsx",
     "tests/unit/studioExternalRoom.test.ts",
     "tests/unit/runtimeEnvironment.test.ts"
   ],
@@ -32,7 +34,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
+  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
 }
 ---
 
@@ -41,6 +43,10 @@
 本条绑定已存在的代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；本次为纯文档核验，不使用自身或未来提交号。新资料的 MCP 默认端口按环境区分，自动测试允许端口 0 并在状态中返回实际监听端口；已有配置保留，端口冲突明确失败。非日常启动默认不恢复监听，明确开启后台恢复或手动配置仍沿用既有权限。伙伴凭据、成员资格及撤销边界未放宽。
 
 本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
+
+## 凭据复制
+
+在 MCP 管理页生成接入凭据后，可以复制到系统剪贴板。写入完成后才显示「已复制」，失败后可用同一份凭据重试。隐藏或离开页面后，这次生成的凭据无法再次复制。自动测试使用合成凭据覆盖复制完成、失败重试及隐藏。
 
 ## 历史阶段记录
 

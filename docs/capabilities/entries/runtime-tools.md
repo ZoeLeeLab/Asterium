@@ -22,7 +22,12 @@
     "src/main/adapters/ClaudeCodeAdapter.ts",
     "src/main/security/ConversationAttachmentStore.ts",
     "src/main/runtime/PartnerRuntimePort.ts",
-    "src/main/studio/StudioAttachments.ts"
+    "src/main/studio/StudioAttachments.ts",
+    "src/main/runtime/PartnerDelegation.ts",
+    "src/main/runtime/ExistingPartnerReview.ts",
+    "src/main/adapters/CyberBossBridgeClient.ts",
+    "src/main/agentIpc.ts",
+    "src/shared/existingPartnerReview.ts"
   ],
   "tests": [
     "tests/unit/asteriumRuntimeTools.test.ts",
@@ -38,15 +43,18 @@
     "tests/unit/nativeSessionCompaction.test.ts",
     "tests/claude-cli-acceptance.mjs",
     "tests/unit/studioAttachments.test.ts",
-    "tests/unit/partnerRuntimePort.test.ts"
+    "tests/unit/partnerRuntimePort.test.ts",
+    "tests/unit/existingPartnerReview.test.ts",
+    "tests/renderer/ExistingPartnerReview.test.tsx"
   ],
   "docs": [
     "docs/capabilities/schema.md",
     "docs/release-status.md",
     "docs/claude-cli-compatibility.md",
-    "docs/studio-attachments.md"
+    "docs/studio-attachments.md",
+    "docs/existing-partner-review-v1.md"
   ],
-  "lastVerifiedCommit": "a4a5ace1446b0a2601099cae337c21fbb56a8fb8"
+  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
 }
 ---
 
@@ -67,8 +75,14 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 
 本轮将群聊用户附件交给既有本地/API 运行通道，conversation_files 的附件列表按 Main 当前绑定的群聊及输入边界提供。单轮原生/多模态输入最多附带上下文中最近 10 个唯一附件，公开历史与查询仍保留附件引用。工具、审批与会话格式继续沿用，不增加模型权限；具体文件理解与真实协作待新候选验收。
 
-当前 lastVerifiedCommit 绑定已存在代码提交 `a4a5ace1446b0a2601099cae337c21fbb56a8fb8`，之前的真实来源 `2b084045c0f923bba54127d0cb3366a730df55f5` 仍在历史中保留。全套检查及新包验收结果另见独立候选报告；不继承旧候选验收归属。
+首版补齐阶段曾绑定代码提交 `a4a5ace1446b0a2601099cae337c21fbb56a8fb8`，此前来源 `2b084045c0f923bba54127d0cb3366a730df55f5` 保留在历史中。全套检查及新包验收结果另见独立候选报告。
 
 ## 伙伴委派
 
-单聊委派工具、持久队列、结果与取消入口见 [阶段核验](../../partner-delegation-implementation.md)。按用户后续决定，本地 Codex 可作为执行伙伴接收文本和指定图片。该入口使用宿主读取权限，任务目录外的强制拒读仍待验收。结构化核验 SHA 仍指历史代码，委派范围以阶段记录为准。
+单聊委派工具、持久队列、结果与取消入口见 [阶段核验](../../partner-delegation-implementation.md)。本地 Codex 可作为执行伙伴接收文本和指定图片。该入口使用宿主读取权限，任务目录外的强制拒读仍待验收。
+
+接回伙伴的 Markdown 复核增加了星丛侧客户端与模拟验收。启用需宿主声明 v1 能力并匹配已绑定原线程。单次只发送一份 Markdown 文件及简短转交说明，回执回到发起单聊任务卡。附件文件不内联到任务消息正文。普通单聊附件、图片和其他文件格式仍不在此能力范围内。Sidecar 由宿主侧接线，实际部署单独验收。详见 [接回伙伴复核契约](../../existing-partner-review-v1.md)。
+
+本条结构化 SHA 绑定已存在的 Markdown 复核代码提交 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。仓库内验证覆盖模拟宿主的文件上传、同 ID 恢复查询、忙碌重试和界面回卡，实际连接与验收原件在私有环境留存。
+
+单聊任务卡跟在发起委派的伙伴气泡中对应的「派出小弟」记录之后。任务详情默认折叠。无法确定对应记录时，卡片在原轮气泡顶部显示。后台返回的结果仍更新原轮的卡片。
