@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AtomicJsonStore, type AtomicJsonStorePath } from '../storage/AtomicJsonStore';
 import { DEFAULT_GENERAL_SETTINGS, generalSettingsSchema, generalSettingsUpdateSchema, type GeneralSettings, type GeneralSettingsSnapshot } from '../../shared/generalSettings';
+import { validateProjectDirectory } from './projectDirectory';
 
 const schema = z.object({ version: z.literal(1), revision: z.number().int().nonnegative(), settings: generalSettingsSchema }).strict();
 export interface StartupRegistration { get: () => boolean; set: (enabled: boolean) => void; }
@@ -28,7 +29,10 @@ export class GeneralSettingsStore {
       const data = await this.storage.readNow();
       const beforeStartup = this.startup?.get() ?? false;
       if (patch.launchAtLogin !== undefined && !this.startup) throw new Error('STARTUP_UNAVAILABLE');
-      const settings = generalSettingsSchema.parse({ ...data.settings, ...patch, launchAtLogin: patch.launchAtLogin ?? beforeStartup, notifications: { ...data.settings.notifications, ...patch.notifications } });
+      const merged = { ...data.settings, ...patch, launchAtLogin: patch.launchAtLogin ?? beforeStartup, notifications: { ...data.settings.notifications, ...patch.notifications } };
+      if (patch.defaultProjectRoot === null) delete merged.defaultProjectRoot;
+      else if (patch.defaultProjectRoot !== undefined) merged.defaultProjectRoot = await validateProjectDirectory(patch.defaultProjectRoot);
+      const settings = generalSettingsSchema.parse(merged);
       const sandboxChanged = settings.sandboxEnabled !== data.settings.sandboxEnabled || settings.sandboxAllowNetwork !== data.settings.sandboxAllowNetwork;
       const finishTransition = sandboxChanged ? await this.sandboxTransition?.(data.settings, settings) : undefined;
       try {

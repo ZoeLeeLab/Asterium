@@ -1,3 +1,4 @@
+import { withHandoffContext } from '../../shared/contextHandoff';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { PartnerAdapter } from '../adapters/PartnerAdapter';
@@ -187,6 +188,13 @@ export class ApiAgentRuntime implements PartnerAdapter {
         ...(command.attachments?.length ? { attachments: command.attachments } : {}),
         messages: [],
         completedAt: '',
+      };
+      const discardHandoffNativeState = () => {
+        if (command.contextHandoff) {
+          for (const item of current.messages) {
+            if (item.role === 'assistant') delete item.native;
+          }
+        }
       };
       const markdownImages = new MarkdownArtifactParser();
       let imageCounter = 0;
@@ -417,6 +425,7 @@ export class ApiAgentRuntime implements PartnerAdapter {
             }
             current.completedAt = new Date().toISOString();
             if (useSessionHistory && this.options.sessionStore) {
+              discardHandoffNativeState();
               session.turns.push(current);
               await this.options.sessionStore.remember(session);
             }
@@ -425,6 +434,7 @@ export class ApiAgentRuntime implements PartnerAdapter {
           }
           current.completedAt = new Date().toISOString();
           if (useSessionHistory && this.options.sessionStore) {
+            discardHandoffNativeState();
             session.turns.push(current);
             await this.options.sessionStore.remember(session);
           }
@@ -525,6 +535,7 @@ export class ApiAgentRuntime implements PartnerAdapter {
             if (active.guidance.length) throw new Error('SUPERSEDED_BY_USER_GUIDANCE');
             commandAttempted = call.name === 'run_command';
             const executed = await prepared.execute(controller.signal, {
+              toolCallId: call.id,
               policy,
               nativeCommandApproved,
               ...(externalWritePath ? { externalWritePath } : {}),
@@ -680,7 +691,7 @@ async function buildProviderMessages(command: SendMessageCommand, session: ApiAg
   messages.push({ role: 'system', content: offeredTools.length
     ? `[本轮工具状态]\n本轮已提供原生工具定义，以这些定义和实际返回结果为准，旧会话中的工具列表不能代表当前能力。只能通过 API 原生工具调用通道使用工具；正文中的 XML 标签、JSON 或代码不是工具调用，也不代表已执行。${offeredTools.some(tool => tool.name === 'asterium_automation') ? '\n本轮提供 asterium_automation：先用 action=list 获取本人的任务、原对话和当前时区；用户明确要求时可用 create 建立定时任务，星丛按发起会话权限处理：完整权限直接保存，其他可写模式等待确认，只读／Plan 禁止修改。不要因为旧说明里没有 scheduler/cron 就声称自动化工具不存在。' : ''}`
     : `[本轮工具状态]\n本轮没有提供任何可调用工具。${options.toolsEnabled === false ? '当前模型配置的“启用工具调用”开关已关闭；用户可在 API 伙伴的“高级模型设置”中开启并保存，下一轮生效。' : '当前适配器或运行环境没有提供工具调用能力。'}\n旧启动资料和历史消息提到的工具本轮均不可调用。不要输出 <asterium_status .../> 等 XML、JSON 或代码来伪装执行工具，不要声称已经查询时间、权限、工作区或创建任务。定时等待不能通过聊天回复实现；说明需要用户启用工具或在自动化页面创建。` });
-  messages.push({ role: 'user', content: await userContentWithAttachments(current.userContent, current.attachments, options) });
+  messages.push({ role: 'user', content: await userContentWithAttachments(withHandoffContext(current.userContent, command.contextHandoff), current.attachments, options) });
   messages.push(...current.messages);
   return messages;
 }

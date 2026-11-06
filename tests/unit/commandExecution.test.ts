@@ -1,8 +1,9 @@
 // @vitest-environment node
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { spawn } from 'node:child_process';
-import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
+import { mkdtemp, realpath, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

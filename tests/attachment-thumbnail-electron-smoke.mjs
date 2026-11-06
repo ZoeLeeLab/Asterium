@@ -1,4 +1,4 @@
-// Synthetic images only. Does not start Asterium or read its user data/keys.
+import { autoTestOutput, runAutoTest } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,9 +7,19 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { build } from 'vite';
 
+await runAutoTest(async () => {
+// Synthetic images only. Does not start Asterium or read its user data/keys.
+
+
+
+
+
+
+
+
 const root = path.resolve(import.meta.dirname, '..');
-const index = process.argv.indexOf('--output'), output = process.argv[index + 1];
-if (process.platform !== 'win32' || index < 0 || !output || !path.isAbsolute(output)) throw Error('Use --output <fresh absolute evidence directory> on Windows');
+const index = process.argv.indexOf('--output'), output = autoTestOutput(index < 0 ? undefined : process.argv[index + 1]);
+if (process.platform !== 'win32' || !output || !path.isAbsolute(output)) throw Error('Use --output <fresh absolute evidence directory> on Windows');
 const directory = path.resolve(output), relative = path.relative(root, directory);
 if (directory === path.parse(directory).root || relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep)) || fs.existsSync(directory)) throw Error('Evidence directory must be fresh and outside the repository');
 fs.mkdirSync(directory, { recursive: true });
@@ -51,3 +61,4 @@ const report = JSON.parse(fs.readFileSync(path.join(directory, 'result.json')));
 fs.writeFileSync(path.join(directory, 'source-receipt.json'), JSON.stringify({ scriptSha256: createHash('sha256').update(fs.readFileSync(import.meta.filename)).digest('hex'), helperSha256: createHash('sha256').update(fs.readFileSync(path.join(root, 'src/main/security/attachmentThumbnail.ts'))).digest('hex'), bundleSha256: createHash('sha256').update(code).digest('hex'), exitCode: result.status, scope: 'Uncommitted working-tree code; synthetic isolated Electron app only, not product-package acceptance' }, null, 2));
 assert.equal(result.status, 0, result.error?.message); assert.equal(report.status, 'passed');
 console.log(JSON.stringify(report));
+});

@@ -2,6 +2,13 @@ import type { DesktopBridge } from '../shared/desktopBridge';
 
 declare global {
   interface Window {
+    asteriumDelegation?: {
+      list(conversationId: string): Promise<import('../main/runtime/PartnerDelegation').DelegationBatchView[]>;
+      interruptWait(conversationId: string): Promise<boolean>;
+      control(conversationId: string, taskId: string, action: 'cancel' | 'retry'): Promise<void>;
+    };
+    asteriumStorage?: DesktopBridge['asteriumStorage'];
+    asteriumEnvironment?: DesktopBridge['asteriumEnvironment'];
     asteriumUpdates?: DesktopBridge['asteriumUpdates'];
     asteriumDesktopNavigation?: DesktopBridge['asteriumDesktopNavigation'];
     asteriumGeneralSettings?: DesktopBridge['asteriumGeneralSettings'];
@@ -19,6 +26,7 @@ declare global {
     asteriumStudio?: DesktopBridge['asteriumStudio'];
     asteriumStudioNotes?: DesktopBridge['asteriumStudioNotes'];
     asteriumProjectNotebooks?: DesktopBridge['asteriumProjectNotebooks'];
+    asteriumContextHandoff?: import('../shared/contextHandoff').ContextHandoffApi;
     asteriumMemory?: DesktopBridge['asteriumMemory'];
     asteriumNativeBindings?: DesktopBridge['asteriumNativeBindings'];
     asteriumConversations?: DesktopBridge['asteriumConversations'];

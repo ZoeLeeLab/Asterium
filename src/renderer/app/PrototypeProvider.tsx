@@ -1,8 +1,11 @@
+import type { ContextHandoff } from '../../shared/contextHandoff';
 import { useAppearance } from './useAppearance';
 import type { AppearanceSettings, AppearanceUpdate } from './appearance';
 /* eslint-disable react-refresh/only-export-components -- reducer and hook are intentionally colocated with this small prototype provider. */
 import type { SessionCommandName, SessionStatus } from '../../shared/sessionCommands';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Modal } from '../components/ui/Modal';
 import { useLocation } from 'react-router-dom';
 
 import type { ApiPartner, Conversation, ConversationArtifact, ExistingThreadPartner, GroupChat, LocalCliPartner, Message, MessageQuote, Partner, Project, ProjectFile, PrototypeAction, PrototypeState, TaskItem, ThemeMode, TurnOperationCategory, TurnTimelineItem, UserProfile } from '../types/domain';
@@ -909,6 +912,8 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
       return updateConversation(state, action.conversationId, (conversation) => ({ ...conversation, messages: conversation.messages.filter((message) => message.clientMessageId !== action.clientMessageId || message.guidanceState === 'applied') }));
     case 'setConversationPermissionMode':
       return updateConversation(state, action.conversationId, (conversation) => ({ ...conversation, permissionMode: action.mode, updatedAt: new Date().toISOString() }));
+    case 'setConversationCodexModel':
+      return updateConversation(state, action.conversationId, (conversation) => ({ ...conversation, codexModel: action.selection }));
     case 'setConversationPlanMode':
       return updateConversation(state, action.conversationId, (conversation) => ({ ...conversation, planMode: action.mode, planStatus: action.mode === 'plan' ? 'planning' : undefined, updatedAt: new Date().toISOString() }));
     case 'switchConversationWorkspace':
@@ -1055,6 +1060,23 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
       }));
     case 'agentEvent': {
       const event = action.event;
+      if (event.type === 'existing_thread.reply') {
+        const partner = state.partners.find((item) => item.id === event.partnerId);
+        if (partner?.sourceMode !== 'existing_thread' || partner.isRemoved || partner.threadId !== event.threadId) return state;
+        return updateConversation(state, event.conversationId, (conversation) => {
+          const id = `cyberboss-reply:${event.threadId}:${event.eventId}`;
+          if (conversation.partnerId !== event.partnerId || conversation.sessionId !== event.threadId
+            || conversation.messages.some((message) => message.id === id)) return conversation;
+          const message: Message = {
+            id,
+            authorId: event.partnerId,
+            content: event.text,
+            occurredAt: event.occurredAt,
+            createdAt: new Date(event.occurredAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+          };
+          return { ...conversation, messages: [...conversation.messages, message], updatedAt: new Date().toISOString() };
+        });
+      }
       if (event.type === 'existing_thread.changed') {
         const partner = state.partners.find((item): item is ExistingThreadPartner => item.id === event.partnerId && item.sourceMode === 'existing_thread');
         const conversationsCurrent = state.conversations
@@ -1169,6 +1191,7 @@ interface PrototypeContextValue {
   toggleConversationPin: (conversationId: string) => void;
   setConversationPermissionMode: (conversationId: string, mode: PermissionMode) => void;
   setConversationPlanMode: (conversationId: string, mode: PlanMode) => void;
+  setConversationCodexModel: (conversationId: string, selection: import('../../shared/codexModels').CodexModelSelection) => void;
   createProject: (name: string, options?: { description?: string; locationSelectionId?: string }) => Promise<string>;
   updateProject: (project: Project) => Promise<void>;
   createProjectTask: (request: ProjectTaskCreateRequest) => Promise<TaskItem>;
@@ -1187,7 +1210,9 @@ interface PrototypeContextValue {
   removeGroupChat: (groupChatId: string) => Promise<void>;
   toggleGroupMember: (groupChatId: string, partnerId: string) => void;
   prepareConversationWorkspace: (conversationId: string, decision: WorkspaceSwitchDecision) => Promise<boolean>;
-  sendChatMessage: (conversationId: string, content: string, attachments?: MessageAttachment[], messageId?: string, workspaceDecision?: WorkspaceSwitchDecision, quote?: MessageQuote) => Promise<boolean>;
+  contextHandoffDraft?: ContextHandoff;
+  setContextHandoffDraft: (draft?: ContextHandoff) => void;
+  sendChatMessage: (conversationId: string, content: string, attachments?: MessageAttachment[], messageId?: string, workspaceDecision?: WorkspaceSwitchDecision, quote?: MessageQuote, contextHandoff?: ContextHandoff) => Promise<boolean>;
   sendChatGuidance: (conversationId: string, content: string, expectedRunId: RunId, quote?: MessageQuote, clientMessageId?: string) => Promise<'accepted' | 'deferred' | false>;
   addConversationArtifact: (conversationId: string, artifact: ConversationArtifact) => void;
   removeConversationArtifact: (conversationId: string, artifactId: string) => void;
@@ -1199,7 +1224,7 @@ interface PrototypeContextValue {
   rebindPartnerRoot: (partner: Extract<Partner, { sourceMode: 'local_cli' }>) => void;
   studioRooms: Record<string, StudioRoomSnapshot>;
   studioInteractions: Record<string, StudioInteraction>;
-  sendStudioMessage: (groupChatId: string, content: string, mentions?: StudioMention[], attachmentSelectionIds?: string[]) => Promise<boolean>;
+  sendStudioMessage: (groupChatId: string, content: string, mentions?: StudioMention[], attachmentSelectionIds?: string[], contextHandoff?: ContextHandoff) => Promise<boolean>;
   setStudioMuted: (groupChatId: string, partnerIds: string[]) => Promise<void>;
   setStudioSettings: (groupChatId: string, settings: StudioRoomSettings) => Promise<void>;
   resolveStudioDiscussion: (groupChatId: string, decision: 'continue' | 'end') => Promise<void>;
@@ -1791,6 +1816,28 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     const next = { ...current }; delete next[conversationId]; return next;
   }), []);
 
+  const [projectConfirmation, setProjectConfirmation] = useState<{ name: string; path: string }>();
+  const projectConfirmationResolver = useRef<((confirmed: boolean) => void) | undefined>(undefined);
+  const projectConfirmationCancel = useRef<HTMLButtonElement>(null);
+  const finishProjectConfirmation = (confirmed: boolean) => {
+    const resolve = projectConfirmationResolver.current;
+    projectConfirmationResolver.current = undefined;
+    setProjectConfirmation(undefined);
+    resolve?.(confirmed);
+  };
+  const confirmProjectLocation = useCallback((name: string, path: string) => {
+    if (projectConfirmationResolver.current) throw new Error('PROJECT_CREATE_CONFIRMATION_BUSY');
+    return new Promise<boolean>(resolve => {
+      projectConfirmationResolver.current = resolve;
+      setProjectConfirmation({ name, path });
+    });
+  }, []);
+
+  const [contextHandoffDraft, setContextHandoffDraft] = useState<ContextHandoff>();
+  useEffect(() => window.asteriumContextHandoff?.onDelivered(id => {
+    setContextHandoffDraft(current => current?.id === id ? undefined : current);
+  }), []);
+
   const value = useMemo<PrototypeContextValue>(() => ({
     state,
     refreshProfiles,
@@ -1918,6 +1965,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     toggleConversationPin: (conversationId) => dispatch({ type: 'toggleConversationPin', conversationId }),
     setConversationPermissionMode: (conversationId, mode) => dispatch({ type: 'setConversationPermissionMode', conversationId, mode }),
     setConversationPlanMode: (conversationId, mode) => dispatch({ type: 'setConversationPlanMode', conversationId, mode }),
+    setConversationCodexModel: (conversationId, selection) => dispatch({ type: 'setConversationCodexModel', conversationId, selection }),
     prepareConversationWorkspace: async (conversationId, decision) => {
       const conversation = state.conversations.find((item) => item.id === conversationId);
       const partner = state.partners.find((item) => item.id === conversation?.partnerId);
@@ -1944,14 +1992,22 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       const projectId = makeId('project');
       const projectName = name.trim();
       const description = options?.description?.trim() || '项目刚刚建立，目标、范围与人员安排可在项目方案中继续补充。';
-      const created = window.asteriumProjects ? await window.asteriumProjects.create({
+      const projects = window.asteriumProjects;
+      const request = {
         projectId,
         name: projectName,
         description,
         tags: ['新项目'],
         memberIds: [],
         ...(options?.locationSelectionId ? { locationSelectionId: options.locationSelectionId } : {}),
-      }) : undefined;
+      };
+      let created: Awaited<ReturnType<NonNullable<typeof projects>['create']>> | undefined;
+      if (projects) {
+        if (!projects.previewCreateLocation) throw new Error('PROJECT_CREATE_PREVIEW_UNAVAILABLE');
+        const confirmedRoot = await projects.previewCreateLocation(request);
+        if (!await confirmProjectLocation(projectName, confirmedRoot)) throw new Error('PROJECT_CREATE_CANCELLED');
+        created = await projects.create({ ...request, confirmedRoot });
+      }
       const now = new Date().toISOString();
       const workspace = created?.workspace;
       const project: Project = {
@@ -2155,7 +2211,9 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'removeGroupChat', groupChatId });
     },
     toggleGroupMember: (groupChatId, partnerId) => dispatch({ type: 'toggleGroupMember', groupChatId, partnerId }),
-    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote) => compactingRef.current.has(conversationId) ? Promise.resolve(false) : sendSingleChatMessage({
+    contextHandoffDraft,
+    setContextHandoffDraft,
+    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff) => compactingRef.current.has(conversationId) ? Promise.resolve(false) : sendSingleChatMessage({
       state,
       dispatch,
       bridge: { agents: window.asteriumAgents, attachments: window.asteriumAttachments },
@@ -2165,6 +2223,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       messageId,
       workspaceDecision,
       quote,
+      contextHandoff,
     }),
     sendChatGuidance: async (conversationId, content, expectedRunId, quote, guidanceClientMessageId) => {
       const conversation = state.conversations.find((item) => item.id === conversationId);
@@ -2280,7 +2339,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     rebindPartnerRoot: (partner) => {
       dispatch({ type: 'rebindPartnerRoot', partnerId: partner.id, conversation: newConversation(partner) });
     },
-    sendStudioMessage: async (groupChatId, content, mentions = [], attachmentSelectionIds = []) => {
+    sendStudioMessage: async (groupChatId, content, mentions = [], attachmentSelectionIds = [], contextHandoff) => {
       const text = content.trim();
       const groupChat = state.groupChats.find((item) => item.id === groupChatId);
       if ((!text && !attachmentSelectionIds.length) || !groupChat || groupChat.archivedAt || !window.asteriumStudio) return false;
@@ -2299,6 +2358,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
           // compatibility candidate list for the unchanged IPC contract.
           speakerQueue: [...groupChat.memberIds],
           ...(mentions.length ? { mentions } : {}),
+          ...(contextHandoff ? { contextHandoff } : {}),
         });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
@@ -2396,9 +2456,19 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       });
     },
     addProjectMember: (projectId, partnerId) => dispatch({ type: 'addProjectMember', projectId, partnerId }),
-  }), [changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
+  }), [confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
-  return <PrototypeContext.Provider value={value}>{conversationAuthorityReady ? children : null}</PrototypeContext.Provider>;
+  return <PrototypeContext.Provider value={value}>
+    {conversationAuthorityReady ? children : null}
+    {projectConfirmation && createPortal(<Modal title="确认项目保存位置" description={`「${projectConfirmation.name}」的项目文件将保存在以下目录。`}
+      onClose={() => finishProjectConfirmation(false)} initialFocusRef={projectConfirmationCancel}>
+      <div className="modal-body"><div className="project-location-confirmation">{projectConfirmation.path}</div></div>
+      <footer className="modal-footer">
+        <button ref={projectConfirmationCancel} type="button" className="secondary-button" onClick={() => finishProjectConfirmation(false)}>取消</button>
+        <button type="button" className="primary-button" onClick={() => finishProjectConfirmation(true)}>创建项目</button>
+      </footer>
+    </Modal>, document.body)}
+  </PrototypeContext.Provider>;
 }
 
 export function usePrototype() {

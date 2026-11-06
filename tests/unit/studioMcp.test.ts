@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import os from 'node:os';
@@ -18,12 +19,12 @@ const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const dispose of disposers.splice(0).reverse()) await dispose(); });
 const room = { roomId: 'public-room', projectId: 'project-one', name: '公开讨论', memberIds: ['chuan', 'other'] };
 
-async function setup() {
+async function setup(automaticPort = false) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'asterium-mcp-'));
   disposers.push(() => rm(directory, { recursive: true, force: true }));
   const accessFile = path.join(directory, 'access.json');
   const roomsFile = path.join(directory, 'rooms.json');
-  const access = new StudioMcpAccessStore(accessFile);
+  const access = automaticPort ? new StudioMcpAccessStore(accessFile, 0, true) : new StudioMcpAccessStore(accessFile);
   const rooms = new StudioRoomStore(roomsFile);
   await rooms.syncRoom(room);
   await rooms.syncRoom({ ...room, roomId: 'private-room', name: '另一个群', memberIds: ['other'] });
@@ -33,11 +34,11 @@ async function setup() {
   const host = new StudioMcpHost(access, service);
   disposers.push(() => host.dispose());
   const issued = await access.issue('chuan');
-  const port = await freePort();
+  const port = automaticPort ? 0 : await freePort();
   const configuration = { enabled: true, port, publicOrigin: 'https://computer.tail-test.ts.net' };
-  await host.configure(configuration);
+  const status = await host.configure(configuration);
   return { accessFile, roomsFile, directory, access, rooms, coordinator, service, host, issued, configuration, partners,
-    endpoint: `http://127.0.0.1:${port}/mcp`, scope: { roomId: room.roomId, membershipGeneration: 1 } };
+    endpoint: `http://127.0.0.1:${status.configuration.port}/mcp`, scope: { roomId: room.roomId, membershipGeneration: 1 } };
 }
 
 async function connect(endpoint: string, token: string, mode: 'legacy' | 'auto' = 'legacy') {
@@ -58,6 +59,15 @@ async function freePort() {
 }
 
 describe('Studio MCP HTTP and authority', () => {
+  it('allocates distinct OS ports for automatic-test hosts and authenticates at the actual port', async () => {
+    const first = await setup(true), second = await setup(true);
+    expect(first.endpoint).not.toBe(second.endpoint);
+    expect((await first.host.status()).configuration.port).toBeGreaterThan(1023);
+    expect((await first.access.snapshot()).configuration.port).toBe(0);
+    await connect(first.endpoint, first.issued.token);
+    const regular = new StudioMcpAccessStore(path.join(first.directory, 'regular.json'));
+    expect(() => regular.configure({ enabled: true, port: 0, publicOrigin: '' })).toThrow('STUDIO_MCP_CONFIGURATION_INVALID');
+  });
   it('publishes attachment metadata without exposing local paths or binary content', async () => {
     const s = await setup();
     const attachment = { id: 'attachment-generic', name: 'requirements.txt', mediaType: 'text/plain', sizeBytes: 40, sourcePath: 'X:/synthetic-private/input.txt' };
@@ -197,7 +207,7 @@ describe('Studio MCP HTTP and authority', () => {
 
   it('never permits a public bare HTTP origin or arbitrary HTTPS host', async () => {
     const s = await setup();
-    for (const publicOrigin of ['http://0.0.0.0', 'https://public.example', 'https://computer.ts.net/path', 'https://user:pass@computer.ts.net']) {
+    for (const publicOrigin of ['http://0.0.0.0', 'https://public.example', 'https://computer.example.invalid/path', 'https://user:pass@computer.example.invalid']) {
       await expect(async () => s.host.configure({ ...s.configuration, publicOrigin })).rejects.toThrow('STUDIO_MCP_PRIVATE_ORIGIN_REQUIRED');
     }
     expect((await s.host.status()).running).toBe(true);

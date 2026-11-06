@@ -35,6 +35,18 @@ export class PartnerMemoryService {
     return this.changed(partnerId, this.withArchive(partnerId, (store) => store.applyFallback(operationId, expectedVersion, after, receipt)));
   }
 
+  importReceipt(partnerId: string, batchId: string) {
+    return this.withArchive(partnerId, store => store.importReceipt(batchId));
+  }
+
+  confirmImport(partnerId: string, batchId: string, records: MemoryRecord[]) {
+    return this.changed(partnerId, this.withArchive(partnerId, store => store.confirmImport(batchId, records)));
+  }
+
+  undoImport(partnerId: string, batchId: string) {
+    return this.changed(partnerId, this.withArchive(partnerId, store => store.undoImport(batchId)));
+  }
+
   async create(partnerId: string, record: MemoryRecord) {
     return this.changed(partnerId, this.withArchive(partnerId, (store) => store.create(record)));
   }

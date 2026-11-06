@@ -785,14 +785,14 @@ describe('prototypeReducer', () => {
       id: 'existing-dynamic', publicIdentity: { displayName: '外部伙伴', introduction: '', expertise: '', mentionName: '外部伙伴' },
       status: 'online', isPrototype: false, createdAt: '2026-09-12T00:00:00.000Z', accent: '#67b5a4',
       sourceMode: 'existing_thread', serviceType: 'cyberboss_server', serviceUrl: 'https://cyberboss.example.invalid',
-      threadId: 'thread-before-123', workspaceRoot: '/home/ubuntu/codex-workspace', connectionLabel: 'CyberBoss', connectionStatus: 'connected', configured: true,
+      threadId: 'thread-before-123', workspaceRoot: '/workspace/example-project', connectionLabel: 'CyberBoss', connectionStatus: 'connected', configured: true,
     });
     state.conversations.push({ id: 'existing-window', partnerId: 'existing-dynamic', title: '外部伙伴', messages: [], updatedAt: '2026-09-12T00:00:00.000Z', sessionId: 'thread-before-123' });
     const next = prototypeReducer(state, { type: 'agentEvent', event: {
       protocolVersion: AGENT_PROTOCOL_VERSION, type: 'existing_thread.changed', eventId: 'thread-event-1', partnerId: 'existing-dynamic',
-      connectionSource: 'existing_thread', threadId: 'thread-after-456', previousThreadId: 'thread-before-123', workspaceRoot: '/home/ubuntu/codex-workspace', reason: 'new', occurredAt: '2026-09-12T02:00:00.000Z',
+      connectionSource: 'existing_thread', threadId: 'thread-after-456', previousThreadId: 'thread-before-123', workspaceRoot: '/workspace/example-project', reason: 'new', occurredAt: '2026-09-12T02:00:00.000Z',
     } });
-    expect(next.partners.find((partner) => partner.id === 'existing-dynamic')).toMatchObject({ threadId: 'thread-after-456', workspaceRoot: '/home/ubuntu/codex-workspace' });
+    expect(next.partners.find((partner) => partner.id === 'existing-dynamic')).toMatchObject({ threadId: 'thread-after-456', workspaceRoot: '/workspace/example-project' });
     expect(next.conversations.find((conversation) => conversation.id === 'existing-window')).toMatchObject({ sessionId: 'thread-after-456', title: '外部伙伴' });
     expect(next.conversations.filter((conversation) => conversation.partnerId === 'existing-dynamic')).toHaveLength(1);
   });

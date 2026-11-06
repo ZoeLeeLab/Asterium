@@ -1,16 +1,27 @@
-// Packaged Electron/Main + real MCP client, isolated data, no model or server deployment.
+import { runAutoTest, testRm as rm, autoTestEvidence, launchTestElectron, createTestNetServer } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { _electron as electron } from 'playwright-core';
 
+await runAutoTest(async () => {
+// Packaged Electron/Main + real MCP client, isolated data, no model or server deployment.
+
+
+
+
+
+
+
+
+
 const root = path.resolve(import.meta.dirname, '..');
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'asterium-mcp-smoke-'));
-const evidence = path.join(root, '.qa', 'studio-mcp');
+const evidence = autoTestEvidence('studio-mcp');
 await mkdir(evidence, { recursive: true });
 const result = { status: 'running', isolatedUserData: true, realMcp: true, modelCalled: false, cases: [] };
 const projectId = 'mcp-project', partnerId = 'mcp-partner', roomId = 'mcp-room';
@@ -26,7 +37,7 @@ let wakeBuffer = '';
 const wakeDecoder = new TextDecoder();
 
 async function launch() {
-  application = await electron.launch({ executablePath: executable, args: [`--user-data-dir=${temporary}`] });
+  application = await launchTestElectron(electron, { executablePath: executable, args: [`--user-data-dir=${temporary}`] });
   page = await application.firstWindow();
   await page.locator('.app-grid, .settings-shell').first().waitFor();
   page.on('pageerror', (error) => { (result.rendererErrors ??= []).push(error.message); });
@@ -229,9 +240,10 @@ async function nextWakeEvent(type, predicate = () => true) {
 }
 
 async function freePort() {
-  const server = net.createServer();
+  const server = createTestNetServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
+});

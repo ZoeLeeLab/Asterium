@@ -4,6 +4,8 @@
 
 ## 开发环境与首次运行
 
+2026-11-02 当前源码：`npm start` 默认使用独立开发资料，安装版默认日常资料；已加入默认项目位置设置、验收启动器和自动测试隔离。见 [数据隔离](data-isolation.md)、[五阶段记录](development-data-isolation-progress.md) 与 [S5 审计](development-data-isolation-s5.md)。本轮已完成源码及离线检查，但未执行下方产品打包、候选安装或真实服务验收流程。
+
 - Windows x64、Node.js 24.x、npm。
 - Windows PowerShell，以及系统中的 `Microsoft.NET/Framework64/v4.0.30319/csc.exe`。脚本通过 `SystemRoot` 定位编译器，启动和打包时会编译 Windows helper。
 - 可访问 npm、Electron 下载源和锁文件中 SheetJS 的官方下载地址；保持 TLS 校验。
@@ -20,12 +22,17 @@ Node.js 开发环境与 Electron 内嵌的 Node.js 是两个环境。项目没�
 
 ## 源码与离线检查
 
+S4 自动测试入口的独立目录、成功清理、失败留存与 watch 行为见 [自动测试隔离](automatic-test-isolation.md)。单脚本也建立新运行目录，旧产品包不因测试脚本迁移而获得新 profile，未包含隔离的包将被拒绝作为托管产品检查目标。
+
+最小真实 Electron 检查为 `npm run test:profile-isolation`，只构建合成入口，不生成产品包或安装器。其余产品 smoke 已接入托管 profile，但本轮没有可供其验收的新产品包；仍须按固定候选和检查范围逐项选择，不自动遍历或使用旧 Beta 代替。
+
 以下命令只在开发机的目标源码仓库中执行。为临时目录、缓存和产物预留空间，并记录实际配置；这些内容应保持在 Git 忽略范围内。
 
 ```powershell
 npm run typecheck
 npm run lint
 npm run check:capabilities
+npm run check:privacy
 npm ls --all
 npm test -- --pool=threads --maxWorkers=1 --testTimeout=30000 --teardownTimeout=30000
 npm run test:empty-start
@@ -41,6 +48,8 @@ npm run test:automation-adapter
 `test:empty-start` 需要 Edge，或通过 `ASTERIUM_BROWSER_EXE` 指定浏览器。单元与 Renderer 测试使用合成夹具，两个 Adapter 脚本默认使用 mock，不需要私人模型凭据。单 worker 和测试时限是运行参数，不可通过跳过失败断言、伪造旧记录或放宽能力词典检查换取通过。
 
 保留各命令退出码、完整测试报告和失败尝试，确认全部测试文件有报告，分别列出失败、跳过和 TODO。检查源码隐私、凭据、忽略规则、文档链接和待上传文件清单。新增或修改能力时同步维护能力记录；文档重组且能力范围未变时，可记录无需修改条目的理由。
+
+提交与发布前都需要执行 [隐私扫描与人工复核](privacy-checks.md)。候选的源码检查收据需记录通过的 privacy 项。
 
 ## 构建应用与安装器
 

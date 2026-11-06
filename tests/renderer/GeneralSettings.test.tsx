@@ -30,6 +30,12 @@ it('applies committed changes, handles push updates and retains the old value on
   expect(screen.getByLabelText('发送快捷键')).toHaveValue('ctrl_enter');
   await act(async () => { changed({ ...snapshot, revision: 1, settings: DEFAULT_GENERAL_SETTINGS }); });
   expect(screen.getByLabelText('发送快捷键')).toHaveValue('ctrl_enter');
+  const screenshotShortcut = screen.getByLabelText('截图快捷键');
+  expect(screenshotShortcut).toHaveValue('system');
+  fireEvent.change(screenshotShortcut, { target: { value: 'Ctrl+Shift+S' } });
+  await waitFor(() => expect(update).toHaveBeenLastCalledWith({ screenshotShortcut: 'Ctrl+Shift+S' }));
+  await screen.findByRole('alert');
+  expect(screenshotShortcut).toHaveValue('system');
   expect(screen.getByRole('checkbox', { name: /开启自启动/ })).toBeDisabled();
   expect(screen.getByRole('link', { name: '前往关于页查看更新与设置' })).toHaveAttribute('href', '#/settings?section=about');
 });

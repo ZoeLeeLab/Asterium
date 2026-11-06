@@ -1,8 +1,14 @@
-// Isolated renderer-only fixtures: no real user data, IPC, model calls or diary generation.
-import { createServer } from 'vite';
+import { runAutoTest, createTestViteServer as createServer, launchTestBrowser } from './helpers/autoTest.mjs';
 import { chromium } from 'playwright-core';
 import os from 'node:os';
 import path from 'node:path';
+
+await runAutoTest(async () => {
+// Isolated renderer-only fixtures: no real user data, IPC, model calls or diary generation.
+
+
+
+
 
 const server = await createServer({ configFile: 'vite.renderer.config.ts', server: { host: '127.0.0.1', port: 0 } });
 await server.listen();
@@ -11,7 +17,7 @@ try {
   const { createTestState } = await server.ssrLoadModule(path.resolve('tests/fixtures/applicationState.ts'));
   const state = createTestState();
   const entries = [21, 20, 19].map((day) => ({ partnerId: 'fixture-local-a', date: `2026-10-${day}`, generationId: `fixture-${day}`, conversationId: 'conversation-a-1', state: 'completed', attemptedAt: `2026-10-${day}T13:00:00.000Z`, finishedAt: `2026-10-${day}T13:00:05.000Z` }));
-  browser = await chromium.launch({ executablePath: process.env.ASTERIUM_BROWSER_EXE ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
+  browser = await launchTestBrowser(chromium, { executablePath: process.env.ASTERIUM_BROWSER_EXE ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   await page.addInitScript(({ state, entries }) => {
     globalThis.localStorage.setItem('asterium.prototype.v7', JSON.stringify(state));
@@ -56,3 +62,4 @@ try {
   if (!await opener.evaluate((button) => globalThis.document.activeElement === button)) throw new Error('Opener focus was not restored');
   console.log('Diary fixture layout passed: paper cards, on-demand reads, light/dark, narrow viewport, focus trap and Escape.');
 } finally { await browser?.close(); await server.close(); }
+});

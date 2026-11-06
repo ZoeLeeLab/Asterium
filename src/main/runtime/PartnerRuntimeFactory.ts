@@ -111,7 +111,7 @@ export class PartnerRuntimeFactory {
     });
   }
 
-  async getExisting(request: ExistingThreadRuntimeRequest) {
+  async getExisting(request: ExistingThreadRuntimeRequest, onReply?: ConstructorParameters<typeof ExistingThreadAdapter>[2]) {
     const adapterKey = `existing_thread:${request.partnerId}:${request.credentialRef}:${request.threadId}`;
     let adapter = this.options.host.get(adapterKey);
     if (adapter) return adapter;
@@ -124,7 +124,15 @@ export class PartnerRuntimeFactory {
       initialLastEventId: await this.options.bridgeCursors.get(cursorKey),
       onLastEventId: (eventId) => { void this.options.bridgeCursors.set(cursorKey, eventId); },
     });
-    adapter = new ExistingThreadAdapter(client, request.threadId);
+    adapter = new ExistingThreadAdapter(client, request.threadId, onReply, async (id, conversationId, messageId) => {
+      try {
+        const attachment = await this.options.attachments.inspect(id, conversationId);
+        if (!attachment.sends.some(send => send.messageId === messageId)) throw new Error('ATTACHMENT_MESSAGE_MISMATCH');
+        return await this.options.attachments.read(id, conversationId);
+      } catch {
+        throw new Error('CYBERBOSS_CHAT_ATTACHMENT_UNAVAILABLE');
+      }
+    });
     return this.options.host.set(adapterKey, adapter);
   }
 

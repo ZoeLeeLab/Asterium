@@ -1,4 +1,5 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { mkdirSync } from 'node:fs';
@@ -17,6 +18,21 @@ it('uses defaults, merges independent edits serially and reloads saved settings'
   expect(reloaded.revision).toBe(2); expect(reloaded.settings).toMatchObject({ closeAction: 'quit', notifications: { approval: false, completed: true, automationFailed: true } });
   expect(listener).toHaveBeenCalledTimes(2);
 });
+
+it('persists a custom project root per profile, preserves it on invalid edits, and resets without moving files', async () => {
+  const first = await setup(), second = await setup();
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'asterium-custom-projects-')); directories.push(directory);
+  const canonical = await import('node:fs/promises').then(({ realpath }) => realpath(directory));
+  await first.store.update({ defaultProjectRoot: directory });
+  expect((await new GeneralSettingsStore(first.file).get()).settings.defaultProjectRoot).toBe(canonical);
+  expect((await second.store.get()).settings.defaultProjectRoot).toBeUndefined();
+  await expect(first.store.update({ defaultProjectRoot: path.join(directory, 'missing') })).rejects.toThrow();
+  expect((await first.store.get()).settings.defaultProjectRoot).toBe(canonical);
+  await writeFile(path.join(directory, 'keep.txt'), 'preserve project files');
+  await first.store.update({ defaultProjectRoot: null });
+  expect((await new GeneralSettingsStore(first.file).get()).settings.defaultProjectRoot).toBeUndefined();
+  expect(await import('node:fs/promises').then(({ readFile }) => readFile(path.join(directory, 'keep.txt'), 'utf8'))).toBe('preserve project files');
+});
 it('rejects unknown settings and unavailable startup without changing stored state', async () => {
   const { store } = await setup();
   await expect(store.update({ shell: 'anything' })).rejects.toThrow();
@@ -33,6 +49,17 @@ it('adds update preferences to old settings and persists explicit opt-out', asyn
   await store.update({ checkUpdatesAtStartup: false, includePrereleaseUpdates: false });
   expect((await new GeneralSettingsStore(file).get()).settings).toMatchObject({ checkUpdatesAtStartup: false, includePrereleaseUpdates: false });
 });
+it('uses the Windows screenshot shortcut for older profiles and saves an optional window shortcut', async () => {
+  const { store, file } = await setup();
+  const legacy = { ...(await store.get()).settings, screenshotShortcut: undefined };
+  await writeFile(file, JSON.stringify({ version: 1, revision: 1, settings: legacy }));
+  expect((await store.get()).settings.screenshotShortcut).toBe('system');
+  await store.update({ screenshotShortcut: 'Ctrl+Shift+S' });
+  await store.update({ sendShortcut: 'ctrl_enter' });
+  await expect(store.update({ screenshotShortcut: 'Ctrl+V' })).rejects.toThrow();
+  expect((await new GeneralSettingsStore(file).get()).settings.screenshotShortcut).toBe('Ctrl+Shift+S');
+});
+
 it('does not silently replace damaged storage with defaults', async () => {
   const { store, file } = await setup(); await writeFile(file, '{bad');
   await expect(store.get()).rejects.toThrow(); await expect(store.update({ closeAction: 'quit' })).rejects.toThrow();
@@ -71,9 +98,11 @@ it('rejects unconfirmed OS writes and restores registration if persistence fails
   const broken = new GeneralSettingsStore(file, { get: () => enabled, set: value => { enabled = value; if (value) mkdirSync(file); } });
   await expect(broken.update({ launchAtLogin: true })).rejects.toThrow(); expect(enabled).toBe(false);
 });
-it('does not report a Windows-disabled startup entry as enabled', () => {
+it('quotes the Windows startup lookup path and respects Windows-disabled entries', () => {
   const getLoginItemSettings = vi.fn(() => ({ openAtLogin: true, executableWillLaunchAtLogin: false })), setLoginItemSettings = vi.fn();
-  const port = windowsStartupRegistration({ getLoginItemSettings, setLoginItemSettings } as unknown as Parameters<typeof windowsStartupRegistration>[0], 'C:\\test\\Asterium.exe');
+  const executable = 'C:\\test\\Asterium Beta\\Asterium.exe';
+  const port = windowsStartupRegistration({ getLoginItemSettings, setLoginItemSettings } as unknown as Parameters<typeof windowsStartupRegistration>[0], executable);
   expect(port.get()).toBe(false); getLoginItemSettings.mockReturnValue({ openAtLogin: true, executableWillLaunchAtLogin: true }); expect(port.get()).toBe(true);
-  port.set(true); expect(setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true, enabled: true, path: 'C:\\test\\Asterium.exe', args: [] });
+  expect(getLoginItemSettings).toHaveBeenCalledWith({ path: `"${executable}"`, args: [] });
+  port.set(true); expect(setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true, enabled: true, path: executable, args: [] });
 });

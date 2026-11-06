@@ -1,17 +1,18 @@
+import { runAutoTest, createTestViteServer as createServer, autoTestEvidence, launchTestBrowser } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 
-const evidence = path.resolve(process.env.ASTERIUM_UI_EVIDENCE_DIR ?? '.qa/empty-start');
+await runAutoTest(async () => {
+const evidence = autoTestEvidence('empty-start-browser-smoke', process.env.ASTERIUM_UI_EVIDENCE_DIR);
 await mkdir(evidence, { recursive: true });
 const server = await createServer({ configFile: 'vite.renderer.config.ts', server: { host: '127.0.0.1', port: 0 } });
 let browser;
 const errors = [];
 try {
   await server.listen();
-  browser = await chromium.launch({ executablePath: process.env.ASTERIUM_BROWSER_EXE ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
+  browser = await launchTestBrowser(chromium, { executablePath: process.env.ASTERIUM_BROWSER_EXE ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   page.on('pageerror', error => errors.push(error.message));
   const address = server.httpServer.address();
@@ -56,3 +57,4 @@ try {
   await browser?.close();
   await server.close();
 }
+});

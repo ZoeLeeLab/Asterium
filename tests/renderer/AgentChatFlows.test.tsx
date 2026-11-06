@@ -55,6 +55,7 @@ describe('local Codex renderer flow', () => {
         runtimes: [{ runtimeId: 'runtime-global', executablePath: 'C:\\npm\\codex.exe', executableLabel: 'codex.exe', environment: 'global_cli' as const, environmentLabel: '全局 npm CLI', codexHome: 'C:\\Users\\fixture-user\\.codex', installed: true, loggedIn: true, version: '0.144.5', authMethod: 'using ChatGPT' }],
       })),
       listCodexThreads: vi.fn(async () => []),
+      listCodexModels: vi.fn(async () => [{ model: 'codex-fixture-model', displayName: '测试模型', defaultEffort: 'medium', efforts: ['medium', 'high'] }]),
       selectWorkspace: vi.fn(async () => ({ grantId: 'grant-codex', displayPath: 'K:\\qa\\codex-smoke-renderer' })),
       sendClaudeMessage: vi.fn(),
       sendLocalCliMessage,
@@ -173,7 +174,7 @@ describe('local Codex renderer flow', () => {
     act(() => listener?.({ ...base, eventId: 'event-5', type: 'authorization.requested', sequence: 5, authorizationId: 'auth-1', toolCallId: 'file-1', action: 'write_file', risk: 'medium', summary: 'Codex 请求修改文件。', targets: ['K:\\qa\\result.md'] }));
 
     expect(await screen.findByText('需要你的确认')).toBeInTheDocument();
-    expect(screen.getByText('Codex 请求修改文件。')).toBeInTheDocument();
+    expect(screen.getByText('测试助手请求修改文件。')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '允许一次' }));
     await waitFor(() => expect(resolveAuthorization).toHaveBeenCalledWith(expect.objectContaining({ authorizationId: 'auth-1', decision: 'allow_once', runId: 'turn-1' })));
 
@@ -201,10 +202,21 @@ describe('local Codex renderer flow', () => {
     expect(screen.getByText('已允许 · 写入文件')).toBeInTheDocument();
     expect(screen.getByText(/把 result\.md 写好了$/)).toBeInTheDocument();
     expect(screen.queryByText('授权记录')).not.toBeInTheDocument();
-    expect(screen.getByText('Codex 请求修改文件。')).toBeInTheDocument();
+    expect(screen.getByText('测试助手请求修改文件。')).toBeInTheDocument();
     expect(screen.queryByText('授权已确认，Codex 继续工作…')).not.toBeInTheDocument();
     expect(screen.getAllByTitle('预览 result.md')).toHaveLength(2);
     expect(screen.queryByText('需要你的确认')).not.toBeInTheDocument();
+
+    const modelSelect = screen.getByRole('combobox', { name: '选择 Codex 模型' });
+    expect(modelSelect.closest('.partner-quick-card')).toBeInTheDocument();
+    fireEvent.focus(modelSelect);
+    await within(modelSelect).findByRole('option', { name: '测试模型' });
+    expect(window.asteriumAgents?.listCodexModels).toHaveBeenCalledWith({
+      partnerRootGrantId: 'grant-codex', codexRuntimeId: 'runtime-global', codexRuntimeEnvironment: 'global_cli',
+    });
+    fireEvent.change(modelSelect, { target: { value: 'codex-fixture-model' } });
+    fireEvent.change(screen.getByRole('combobox', { name: '思考强度' }), { target: { value: 'high' } });
+    expect(sendLocalCliMessage.mock.calls[0][4].execution?.codexModel).toBeUndefined();
 
     fireEvent.click(screen.getByRole('button', { name: '引用' }));
     const quoteCard = screen.getByLabelText('引用 测试助手 的完整回复');
@@ -213,6 +225,11 @@ describe('local Codex renderer flow', () => {
     fireEvent.change(input, { target: { value: '请补充一句' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(sendLocalCliMessage).toHaveBeenCalledTimes(2));
+    expect(sendLocalCliMessage.mock.calls[1][4]).toMatchObject({
+      conversationId: sendLocalCliMessage.mock.calls[0][4].conversationId,
+      sessionId: 'thread-1',
+      execution: { codexModel: { model: 'codex-fixture-model', effort: 'high' } },
+    });
     expect(sendLocalCliMessage.mock.calls[1][4].content).toEqual({
       type: 'text',
       text: '[引用内容 · 测试助手 · 完整回复]\n文件已经准备好。\n[引用结束]\n\n[用户本轮消息]\n请补充一句',
@@ -273,21 +290,41 @@ describe('local Codex renderer flow', () => {
     await waitFor(() => expect(sentCommand).toMatchObject({ sessionId: 'thread-imported', content: { text: '继续之前的话题' } }));
   });
 
-  it('connects an existing partner through CyberBoss and renders the bridged reply', async () => {
+  it('connects an existing partner through CyberBoss, sends mixed attachments, and renders the bridged reply', async () => {
+    const imageData = { name: '样图.png', mediaType: 'image/png', sizeBytes: 128 };
+    const image = { id: 'attachment-cyberboss-image', ...imageData };
+    const fileData = { name: '方案.md', mediaType: 'text/markdown', sizeBytes: 40 };
+    const file = { id: 'attachment-cyberboss-file', ...fileData };
+    const choose = vi.fn(async () => [{ selectionId: 'pending-image', ...imageData }, { selectionId: 'pending-file', ...fileData }]);
+    const commit = vi.fn(async () => [image, file]);
+    window.asteriumAttachments = {
+      choose, commit, discard: vi.fn(), list: vi.fn(async () => []),
+      thumbnail: vi.fn(async () => 'data:image/png;base64,aW1hZ2U='),
+      inspect: vi.fn(async (id: string) => ({
+        ...(id === image.id ? image : file), createdAt: '', sentAt: '', sourceId: 'source-attachment', sends: [],
+        sourceAvailability: 'available' as const, availability: 'available' as const,
+      })),
+      read: vi.fn(), open: vi.fn(), reveal: vi.fn(), copyPath: vi.fn(), exportAs: vi.fn(), saveToProject: vi.fn(), deleteConversation: vi.fn(),
+    };
     let listener: ((event: RendererAgentEvent) => void) | undefined;
     let sentCommand: SendMessageCommand | undefined;
+    let runCount = 0;
     const sendExistingThreadMessage = vi.fn(async (_connection, command: SendMessageCommand) => {
       sentCommand = command;
-      return { runId: 'bridge-run-1', sessionId: '01a08723-bee6-7640-8917-28257cf5d1ab' };
+      return { runId: `bridge-run-${++runCount}`, sessionId: '00000000-0000-7000-8000-000000000001' };
     });
     window.asteriumAgents = {
       detectClaude: vi.fn(), selectWorkspace: vi.fn(), sendClaudeMessage: vi.fn(), cancelRun: vi.fn(), resumeSession: vi.fn(),
       saveBridgeCredential: vi.fn(async () => ({ credentialRef: 'credential-cyberboss', configured: true, masked: '••••••••' })),
       testExistingThread: vi.fn(async () => ({
         credentialRef: 'credential-cyberboss', configured: true, masked: '••••••••', authenticated: true,
-        threadId: '01a08723-bee6-7640-8917-28257cf5d1ab',
-        workspaceRoot: '/home/ubuntu/codex-workspace',
+        threadId: '00000000-0000-7000-8000-000000000001',
+        workspaceRoot: '/workspace/example-project',
         capabilities: { streamingText: true, cancellation: false, toolEvents: false, fileEvents: false, reconnect: true },
+      })),
+      getExistingThreadFileCapabilities: vi.fn(async () => ({
+        fileTypes: { md: 'text/markdown' }, maxFileBytes: 20_971_520, maxAttachments: 10, maxImages: 4,
+        maxImageBytes: 10_485_760, maxTotalBytes: 52_428_800, mixedWithImages: true,
       })),
       sendExistingThreadMessage,
       onEvent: vi.fn((next) => { listener = next; return () => { listener = undefined; }; }),
@@ -297,12 +334,12 @@ describe('local Codex renderer flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '新增伙伴' }));
     fireEvent.change(screen.getByLabelText('服务地址'), { target: { value: 'https://cyberboss.example.invalid' } });
     fireEvent.change(screen.getByLabelText(/认证信息/), { target: { value: 'renderer-bridge-secret' } });
-    fireEvent.change(screen.getByLabelText(/显示名称/), { target: { value: '外部伙伴' } });
-    fireEvent.change(screen.getByLabelText('称呼或 @ 名称'), { target: { value: '外部伙伴' } });
+    fireEvent.change(screen.getByLabelText(/显示名称/), { target: { value: '示例伙伴甲' } });
+    fireEvent.change(screen.getByLabelText('称呼或 @ 名称'), { target: { value: '示例伙伴甲' } });
     fireEvent.click(screen.getByRole('button', { name: '测试真实连接' }));
     expect(await screen.findByText(/星丛会动态跟随 CyberBoss 当前活跃线程/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '接回伙伴' }));
-    expect(await screen.findByText('外部伙伴 已加入星丛')).toBeInTheDocument();
+    expect(await screen.findByText('示例伙伴甲 已加入星丛')).toBeInTheDocument();
     expect(localStorage.getItem('asterium.prototype.v7')).not.toContain('renderer-bridge-secret');
     expect(localStorage.getItem('asterium.prototype.v7')).toContain('credential-cyberboss');
     await waitFor(() => {
@@ -310,44 +347,81 @@ describe('local Codex renderer flow', () => {
         partners?: Array<{ id: string; publicIdentity?: { displayName?: string } }>;
         conversations?: Array<{ partnerId: string; sessionId?: string; isPrimaryThread?: boolean }>;
       };
-      const storedPartner = stored.partners?.find((partner) => partner.publicIdentity?.displayName === '外部伙伴');
+      const storedPartner = stored.partners?.find((partner) => partner.publicIdentity?.displayName === '示例伙伴甲');
       const primaryConversations = stored.conversations?.filter((conversation) => conversation.partnerId === storedPartner?.id) ?? [];
       expect(primaryConversations).toHaveLength(1);
-      expect(primaryConversations[0]).toMatchObject({ sessionId: '01a08723-bee6-7640-8917-28257cf5d1ab', isPrimaryThread: true });
+      expect(primaryConversations[0]).toMatchObject({ sessionId: '00000000-0000-7000-8000-000000000001', isPrimaryThread: true });
     });
     fireEvent.click(screen.getByRole('button', { name: '去和 TA 聊聊' }));
 
-    const input = await screen.findByRole('textbox', { name: /给 外部伙伴 发送消息/ });
+    const input = await screen.findByRole('textbox', { name: /给 示例伙伴甲 发送消息/ });
+    fireEvent.click(await screen.findByRole('button', { name: '添加图片或文件' }));
+    expect(await screen.findByAltText('样图.png')).toBeInTheDocument();
+    expect(screen.getByText('方案.md')).toBeInTheDocument();
+    expect(choose).toHaveBeenCalledWith(10);
+    expect(screen.queryByText(/伙伴无法查看其中的图片/)).not.toBeInTheDocument();
     fireEvent.change(input, { target: { value: '星丛桥接测试' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(sendExistingThreadMessage).toHaveBeenCalledTimes(1));
-    expect(screen.getByText('外部伙伴 正在整理思路')).toBeInTheDocument();
+    expect(screen.getByText('示例伙伴甲 正在整理思路')).toBeInTheDocument();
     expect(sendExistingThreadMessage.mock.calls[0][0]).toEqual({
       serviceUrl: 'https://cyberboss.example.invalid',
-      threadId: '01a08723-bee6-7640-8917-28257cf5d1ab',
-      workspaceRoot: '/home/ubuntu/codex-workspace',
+      threadId: '00000000-0000-7000-8000-000000000001',
+      workspaceRoot: '/workspace/example-project',
       credentialRef: 'credential-cyberboss',
     });
     expect(sentCommand).toMatchObject({
       connectionSource: 'existing_thread',
-      sessionId: '01a08723-bee6-7640-8917-28257cf5d1ab',
+      sessionId: '00000000-0000-7000-8000-000000000001',
       content: { type: 'text', text: '星丛桥接测试' },
+      attachments: [image, file],
     });
+    expect(commit).toHaveBeenCalledWith(sentCommand?.conversationId, ['pending-image', 'pending-file'], sentCommand?.messageId);
 
     const base = {
       protocolVersion: AGENT_PROTOCOL_VERSION, partnerId: sentCommand!.partnerId, conversationId: sentCommand!.conversationId,
       connectionSource: 'existing_thread' as const, clientMessageId: sentCommand!.clientMessageId,
-      sessionId: '01a08723-bee6-7640-8917-28257cf5d1ab', runId: 'bridge-run-1', occurredAt: new Date(0).toISOString(),
+      sessionId: '00000000-0000-7000-8000-000000000001', runId: 'bridge-run-1', occurredAt: new Date(0).toISOString(),
     };
     act(() => listener?.({ ...base, eventId: 'bridge-event-1', type: 'session.bound', isNew: false, sequence: 1 }));
     act(() => listener?.({ ...base, eventId: 'bridge-event-2', type: 'message.accepted', sequence: 2 }));
     act(() => listener?.({ ...base, eventId: 'bridge-event-3', type: 'work.status', state: 'thinking', summary: '外部伙伴正在输入…', sequence: 3 }));
-    expect(screen.getByText('外部伙伴正在输入…')).toBeInTheDocument();
+    expect(screen.getByText('示例伙伴甲正在输入…')).toBeInTheDocument();
     expect(screen.getByTitle('当前桥接暂不支持远程取消')).toBeDisabled();
-    act(() => listener?.({ ...base, eventId: 'bridge-event-4', type: 'text.delta', text: '宝宝，我从原线程收到啦。', sequence: 4 }));
+    act(() => listener?.({ ...base, eventId: 'bridge-event-4', type: 'text.delta', text: '示例用户，我从原线程收到啦。', sequence: 4 }));
+    expect(await screen.findByText('示例用户，我从原线程收到啦。')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: '示例伙伴甲仍在工作' })).toBeInTheDocument();
     act(() => listener?.({ ...base, eventId: 'bridge-event-5', type: 'run.completed', finishReason: 'end_turn', sequence: 5 }));
-    expect(await screen.findByText('宝宝，我从原线程收到啦。')).toBeInTheDocument();
-    expect(screen.queryByText('外部伙伴 正在整理思路')).not.toBeInTheDocument();
+    const lateReply = {
+      type: 'existing_thread.reply' as const, partnerId: base.partnerId, conversationId: base.conversationId,
+      threadId: base.sessionId, eventId: '2148', occurredAt: base.occurredAt, text: '这是查到的结论。',
+    };
+    act(() => {
+      listener?.(lateReply);
+      listener?.(lateReply);
+      listener?.({ ...lateReply, threadId: 'another-thread', text: '其他线程的消息' });
+    });
+    expect(await screen.findByText('这是查到的结论。')).toBeInTheDocument();
+    expect(screen.getByText('示例用户，我从原线程收到啦。')).toBeInTheDocument();
+    expect(screen.getAllByText('这是查到的结论。')).toHaveLength(1);
+    expect(screen.queryByText('其他线程的消息')).not.toBeInTheDocument();
+    expect(screen.queryByText('示例伙伴甲 正在整理思路')).not.toBeInTheDocument();
+    const streamStatus = { name: '示例伙伴甲仍在工作' };
+    expect(screen.queryByRole('status', streamStatus)).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: '合成的下一轮问题' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(sendExistingThreadMessage).toHaveBeenCalledTimes(2));
+    const nextRun = { ...base, clientMessageId: sentCommand!.clientMessageId, runId: 'bridge-run-2' };
+    act(() => {
+      listener?.({ ...nextRun, eventId: 'bridge-next-bound', type: 'session.bound', isNew: false, sequence: 1 });
+      listener?.({ ...nextRun, eventId: 'bridge-next-text', type: 'text.delta', text: '合成的下一轮回复。', sequence: 2 });
+    });
+    const nextReply = screen.getByText('合成的下一轮回复。').closest('article')!;
+    expect(screen.getByRole('status', streamStatus)).toBe(within(nextReply).getByRole('status', streamStatus));
+    act(() => listener?.({ ...nextRun, eventId: 'bridge-next-done', type: 'run.completed', finishReason: 'end_turn', sequence: 3 }));
+    expect(screen.queryByRole('status', streamStatus)).not.toBeInTheDocument();
+    expect(screen.getByText('这是查到的结论。')).toBeInTheDocument();
   });
 
   it('stores a DeepSeek credential by reference and renders a real streamed reply', async () => {

@@ -25,6 +25,9 @@
   font-weight: 400;
   line-height: 1.5;
 }
+.general-settings-card .modal-field input.storage-settings__app-data {
+  background: var(--surface-soft);
+}
 :is(.form-section, .mcp-editor, .memory-editor, .api-site-fields, .automation-form) textarea,
 .modal-card .modal-field textarea {
   min-width: 0;

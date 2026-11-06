@@ -118,6 +118,7 @@ export interface ProjectCreateRequest {
   tags?: string[];
   memberIds?: string[];
   locationSelectionId?: string;
+  confirmedRoot?: string;
 }
 
 export interface ProjectCreateResult {

@@ -3,10 +3,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { studioAttachmentConversationId } from '../../shared/studioRuntime';
-import type { AttachmentSendRecord, ConversationAttachmentInfo, MessageAttachment, PendingMessageAttachment } from '../../shared/agentProtocol';
+import { MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentSendRecord, type ConversationAttachmentInfo, type MessageAttachment, type PendingMessageAttachment } from '../../shared/agentProtocol';
 
 export const MAX_MESSAGE_ATTACHMENTS = 10;
-export const MAX_MESSAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export { MAX_MESSAGE_ATTACHMENT_BYTES };
+const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex');
 
 interface PendingRecord extends PendingMessageAttachment {
   contentPath: string;
@@ -119,6 +120,29 @@ export class ConversationAttachmentStore {
     }
   }
 
+  async stageClipboardImage(bytes: Uint8Array): Promise<PendingMessageAttachment> {
+    if (bytes.byteLength > MAX_MESSAGE_ATTACHMENT_BYTES) throw new Error('ATTACHMENT_TOO_LARGE');
+    if (!PNG_SIGNATURE.equals(bytes.subarray(0, PNG_SIGNATURE.length))) throw new Error('ATTACHMENT_CLIPBOARD_IMAGE_INVALID');
+    await this.initialize();
+
+    const selectionId = `pending-attachment-${randomUUID()}`;
+    const directory = path.join(this.pendingDirectory(), selectionId);
+    const contentPath = path.join(directory, 'preview');
+    try {
+      await mkdir(directory, { recursive: true });
+      await writeFile(contentPath, bytes, { flag: 'wx', mode: 0o600 });
+      const record: PendingRecord = {
+        selectionId, contentPath, name: '截图.png', mediaType: 'image/png',
+        sizeBytes: bytes.byteLength, sourcePath: '', createdAt: Date.now(),
+      };
+      this.pending.set(selectionId, record);
+      return publicPending(record);
+    } catch (error) {
+      await this.removePending(selectionId);
+      throw error;
+    }
+  }
+
   async discard(selectionIds: string[]) {
     await this.initialize();
     await Promise.all(selectionIds.map((selectionId) => this.removePending(selectionId)));
@@ -139,15 +163,16 @@ export class ConversationAttachmentStore {
       const sentAt = new Date().toISOString();
       try {
         for (const record of records as PendingRecord[]) {
-          const before = await stat(record.sourcePath);
+          const source = record.sourcePath || record.contentPath;
+          const before = await stat(source);
           if (!before.isFile()) throw new Error('ATTACHMENT_NOT_FILE');
           if (before.size > MAX_MESSAGE_ATTACHMENT_BYTES) throw new Error('ATTACHMENT_TOO_LARGE');
           const temporary = path.join(path.dirname(record.contentPath), `commit-${randomUUID()}.tmp`);
           temporaryFiles.push(temporary);
-          await copyFile(record.sourcePath, temporary, constants.COPYFILE_EXCL);
+          await copyFile(source, temporary, constants.COPYFILE_EXCL);
           const copied = await stat(temporary);
           if (!copied.isFile() || copied.size > MAX_MESSAGE_ATTACHMENT_BYTES) throw new Error('ATTACHMENT_TOO_LARGE');
-          const after = await stat(record.sourcePath);
+          const after = await stat(source);
           if (!after.isFile() || before.size !== after.size || before.mtimeMs !== after.mtimeMs || copied.size !== after.size) throw new Error('ATTACHMENT_SOURCE_CHANGED_DURING_COPY');
           const sha256 = await hashFile(temporary);
           const existing = await this.findReusable(index, conversationId, record.sourcePath, sha256, copied.size);
@@ -166,8 +191,8 @@ export class ConversationAttachmentStore {
           const sameSource = Object.values(index.attachments).find((item) => sameSourcePath(item.sourcePath, record.sourcePath));
           const stored: StoredAttachment = {
             id,
-            name: path.basename(record.sourcePath),
-            mediaType: normalizeMediaType(mediaTypeFor(record.sourcePath)),
+            name: record.name,
+            mediaType: record.mediaType,
             sizeBytes: copied.size,
             sha256,
             createdAt: sentAt,
@@ -279,7 +304,7 @@ export class ConversationAttachmentStore {
 
   private async removePending(selectionId: string) {
     this.pending.delete(selectionId);
-    if (selectionId.startsWith('pending-attachment-')) await rm(path.join(this.pendingDirectory(), selectionId), { recursive: true, force: true });
+    if (/^pending-attachment-[a-f0-9-]{36}$/.test(selectionId)) await rm(path.join(this.pendingDirectory(), selectionId), { recursive: true, force: true });
   }
 
   private async findReusable(index: AttachmentIndex, conversationId: string, sourcePath: string, sha256: string, sizeBytes: number) {

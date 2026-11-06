@@ -7,10 +7,11 @@ interface ModalProps {
   children: ReactNode;
   onClose: () => void;
   size?: 'sm' | 'md' | 'lg';
+  backdrop?: 'blur' | 'dim';
   initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
-export function Modal({ title, description, children, onClose, size = 'sm', initialFocusRef }: ModalProps) {
+export function Modal({ title, description, children, onClose, size = 'sm', backdrop = 'blur', initialFocusRef }: ModalProps) {
   const titleId = useId(), sectionRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!initialFocusRef) return;
@@ -27,7 +28,7 @@ export function Modal({ title, description, children, onClose, size = 'sm', init
   }, [onClose]);
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className={`modal-backdrop${backdrop === 'dim' ? ' modal-backdrop--dim' : ''}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section ref={sectionRef} className={`modal-card modal-card--${size}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={event => {
         if (!initialFocusRef) return;
         if (event.key === 'Escape') { event.stopPropagation(); onClose(); }

@@ -1,5 +1,6 @@
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';

@@ -9,6 +9,17 @@ import type { MemoryArchiveChange, MemoryArchiveCommentRequest, MemoryArchiveCre
 import type { AsteriumAgentsApi, AsteriumAppearanceApi, AsteriumArtifactsApi, AsteriumAttachmentsApi, AsteriumConversationsApi, AsteriumMemoryApi, AsteriumNativeBindingsApi, AsteriumProjectsApi, AsteriumStudioApi, AsteriumStudioNotesApi } from '../shared/desktopBridge';
 import { DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 
+contextBridge.exposeInMainWorld('asteriumStorage', {
+  get: () => ipcRenderer.invoke(AGENT_IPC.storageGet),
+  chooseProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageChooseProjectRoot),
+  resetProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageResetProjectRoot),
+  openProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageOpenProjectRoot),
+} satisfies import('../shared/generalSettings').AsteriumStorageApi);
+
+contextBridge.exposeInMainWorld('asteriumEnvironment', {
+  get: () => ipcRenderer.invoke(AGENT_IPC.environmentGet),
+} satisfies import('../shared/runtimeEnvironment').AsteriumEnvironmentApi);
+
 contextBridge.exposeInMainWorld('asteriumUpdates', {
   get: () => ipcRenderer.invoke(AGENT_IPC.updatesGet),
   check: () => ipcRenderer.invoke(AGENT_IPC.updatesCheck),
@@ -40,6 +51,7 @@ contextBridge.exposeInMainWorld('asteriumStudioMcp', {
   status: () => ipcRenderer.invoke(AGENT_IPC.studioMcpStatus),
   configure: (configuration) => ipcRenderer.invoke(AGENT_IPC.studioMcpConfigure, configuration),
   issueCredential: (partnerId) => ipcRenderer.invoke(AGENT_IPC.studioMcpIssueCredential, partnerId),
+  copyCredential: (token) => ipcRenderer.invoke(AGENT_IPC.studioMcpCopyCredential, token),
   revokeCredential: (credentialId) => ipcRenderer.invoke(AGENT_IPC.studioMcpRevokeCredential, credentialId),
 } satisfies import('../shared/studioMcp').AsteriumStudioMcpApi);
 
@@ -84,6 +96,7 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
   executeSessionCommand: (request: import('../shared/sessionCommands').SessionCommandRequest) => ipcRenderer.invoke(AGENT_IPC.executeSessionCommand, request),
   detectClaude: (): Promise<ClaudeDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectClaude),
   detectCodex: (): Promise<CodexDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectCodex),
+  listCodexModels: (request: import('../shared/codexModels').CodexModelListRequest): Promise<import('../shared/codexModels').CodexModelOption[]> => ipcRenderer.invoke(AGENT_IPC.listCodexModels, request),
   listCodexThreads: (runtimeId: string, workspaceGrantId: string): Promise<CodexThreadSummary[]> => ipcRenderer.invoke(AGENT_IPC.listCodexThreads, { runtimeId, workspaceGrantId }),
   getLocalThreadLifecycles: (request: LocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult[]> => ipcRenderer.invoke(AGENT_IPC.getLocalThreadLifecycles, request),
   changeLocalThreadLifecycle: (request: ChangeLocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult> => ipcRenderer.invoke(AGENT_IPC.changeLocalThreadLifecycle, request),
@@ -123,6 +136,7 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
   testExistingThread: (connection: ExistingThreadConnection): Promise<ExistingThreadConnectionStatus> => ipcRenderer.invoke(AGENT_IPC.testExistingThread, connection),
   watchExistingThread: (partnerId: string, connection: ExistingThreadConnection): Promise<ExistingThreadConnectionStatus> => ipcRenderer.invoke(AGENT_IPC.watchExistingThread, { partnerId, connection }),
   stopExistingThreadWatch: (partnerId: string): Promise<void> => ipcRenderer.invoke(AGENT_IPC.stopExistingThreadWatch, { partnerId }),
+  getExistingThreadFileCapabilities: (connection: ExistingThreadConnection) => ipcRenderer.invoke(AGENT_IPC.getExistingThreadFileCapabilities, connection),
   sendExistingThreadMessage: (connection: ExistingThreadConnection, command: SendMessageCommand): Promise<SendMessageReceipt> => ipcRenderer.invoke(AGENT_IPC.sendExistingThreadMessage, { connection, command }),
   onEvent: (listener: (event: RendererAgentEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, value: RendererAgentEvent) => listener(value);
@@ -157,7 +171,8 @@ contextBridge.exposeInMainWorld('asteriumArtifacts', {
 } satisfies AsteriumArtifactsApi);
 
 contextBridge.exposeInMainWorld('asteriumAttachments', {
-  choose: (remaining: number): Promise<PendingMessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentChoose, { remaining }),
+  stageClipboardImage: (bytes: Uint8Array): Promise<PendingMessageAttachment> => ipcRenderer.invoke(AGENT_IPC.attachmentStageClipboardImage, bytes),
+  choose: (remaining: number, filter?: 'cyberboss_images'): Promise<PendingMessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentChoose, { remaining, filter }),
   discard: (selectionIds: string[]): Promise<void> => ipcRenderer.invoke(AGENT_IPC.attachmentDiscard, selectionIds),
   commit: (conversationId: string, selectionIds: string[], messageId: string): Promise<MessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentCommit, { conversationId, selectionIds, messageId }),
   list: (conversationId: string): Promise<ConversationAttachmentInfo[]> => ipcRenderer.invoke(AGENT_IPC.attachmentList, conversationId),
@@ -181,6 +196,7 @@ contextBridge.exposeInMainWorld('asteriumConversations', {
 contextBridge.exposeInMainWorld('asteriumProjects', {
   chooseLocation: () => ipcRenderer.invoke(AGENT_IPC.projectChooseLocation),
   initializeDomain: (request: import('../shared/projectDomain').ProjectDomainInitializeRequest) => ipcRenderer.invoke(AGENT_IPC.projectDomainInitialize, request),
+  previewCreateLocation: (request: Pick<import('../shared/projectDomain').ProjectCreateRequest, 'projectId' | 'name' | 'locationSelectionId'>) => ipcRenderer.invoke(AGENT_IPC.projectPreviewCreateLocation, request),
   create: (request: import('../shared/projectDomain').ProjectCreateRequest) => ipcRenderer.invoke(AGENT_IPC.projectCreate, request),
   update: (request: import('../shared/projectDomain').ProjectUpdateRequest) => ipcRenderer.invoke(AGENT_IPC.projectUpdate, request),
   createTask: (request: import('../shared/projectDomain').ProjectTaskCreateRequest) => ipcRenderer.invoke(AGENT_IPC.projectTaskCreate, request),
@@ -295,6 +311,12 @@ contextBridge.exposeInMainWorld('asteriumStudioNotes', {
   delete: (id: string): Promise<void> => ipcRenderer.invoke(AGENT_IPC.studioNoteDelete, id),
 } satisfies AsteriumStudioNotesApi);
 
+contextBridge.exposeInMainWorld('asteriumDelegation', {
+  list: (conversationId: string) => ipcRenderer.invoke(AGENT_IPC.delegationList, conversationId),
+  interruptWait: (conversationId: string) => ipcRenderer.invoke(AGENT_IPC.delegationInterruptWait, conversationId),
+  control: (conversationId: string, taskId: string, action: 'cancel' | 'retry') => ipcRenderer.invoke(AGENT_IPC.delegationControl, conversationId, taskId, action),
+});
+
 contextBridge.exposeInMainWorld('asteriumProjectNotebooks', {
   get: (target: ProjectNotebookTarget): Promise<ProjectNotebook | undefined> => ipcRenderer.invoke(AGENT_IPC.projectNotebookGet, target),
   replace: (request: ProjectNotebookUserReplaceRequest): Promise<ProjectNotebook> => ipcRenderer.invoke(AGENT_IPC.projectNotebookReplace, request),
@@ -317,7 +339,21 @@ contextBridge.exposeInMainWorld('asteriumPartnerDiary', {
   exportMarkdown: (input) => ipcRenderer.invoke(AGENT_IPC.diaryExport, input),
 } satisfies import('../shared/partnerDiary').AsteriumPartnerDiaryApi);
 
+contextBridge.exposeInMainWorld('asteriumContextHandoff', {
+  onDelivered: listener => {
+    const handler = (_event: unknown, id: string) => listener(id);
+    ipcRenderer.on(AGENT_IPC.contextHandoffDelivered, handler);
+    return () => ipcRenderer.removeListener(AGENT_IPC.contextHandoffDelivered, handler);
+  },
+} satisfies import('../shared/contextHandoff').ContextHandoffApi);
+
 contextBridge.exposeInMainWorld('asteriumMemory', {
+  importText: {
+    preview: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportPreview, input),
+    confirm: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportConfirm, input),
+    cancel: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportCancel, input),
+    undo: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportUndo, input),
+  } satisfies import('../shared/memoryImport').MemoryImportApi,
   query: (request: MemoryArchiveQuery) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveQuery, request),
   briefing: (partnerId: string) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveBriefing, partnerId),
   create: (request: MemoryArchiveCreateRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveCreate, request),

@@ -1,3 +1,4 @@
+import type { ResolvedContextHandoff } from '../../shared/contextHandoff';
 import type { AsteriumRuntimeContextInput } from '../../shared/agentProtocol';
 import { DEFAULT_STUDIO_SPEAKING_MODE, STUDIO_PASS_MARKER, type StudioPreparedTurn, type StudioRoomSnapshot, type StudioStartRoundRequest } from '../../shared/studioRuntime';
 import type { StudioRuntimeLifecyclePort } from '../runtime/PartnerRuntimePort';
@@ -13,6 +14,7 @@ interface StudioProjectMutationPort {
 }
 
 export class StudioOrchestrator {
+  private readonly handoffs = new Map<string, { messageId: string; draft: ResolvedContextHandoff }>();
   private readonly startingTurns = new Set<string>();
   private readonly cancelledRounds = new Set<string>();
   private readonly passCorrections = new Set<string>();
@@ -27,6 +29,11 @@ export class StudioOrchestrator {
   ) {}
 
   handleSnapshot(snapshot: StudioRoomSnapshot) {
+    const handoff = this.handoffs.get(snapshot.metadata.roomId);
+    const round = snapshot.activeRound;
+    if (handoff && round?.triggerMessageId === handoff.messageId && ['completed', 'failed', 'cancelled'].includes(round.state)) {
+      this.handoffs.delete(snapshot.metadata.roomId);
+    }
     if (snapshot.activeRound?.state === 'queued') void this.startQueuedTurn(snapshot);
   }
 
@@ -34,16 +41,16 @@ export class StudioOrchestrator {
     this.passCorrections.add(`${roomId}:${roundId}:${partnerId}`);
   }
 
-  startRound(request: StudioStartRoundRequest) {
+  startRound(request: StudioStartRoundRequest, contextHandoff?: ResolvedContextHandoff) {
     return this.projectMutations
       ? this.projectMutations.run(() => {
           this.projectMutations!.assertProjectActive(request.room.projectId);
-          return this.startRoundUnlocked(request);
+          return this.startRoundUnlocked(request, contextHandoff);
         })
-      : this.startRoundUnlocked(request);
+      : this.startRoundUnlocked(request, contextHandoff);
   }
 
-  private async startRoundUnlocked(request: StudioStartRoundRequest) {
+  private async startRoundUnlocked(request: StudioStartRoundRequest, contextHandoff?: ResolvedContextHandoff) {
     const current = await this.rooms.getRoom(request.room.roomId);
     if (current?.metadata.archived) throw new Error('STUDIO_ROOM_ARCHIVED');
     if (current?.activeRound && !['completed', 'failed', 'cancelled'].includes(current.activeRound.state)) throw new Error('STUDIO_ROUND_ALREADY_ACTIVE');
@@ -65,12 +72,24 @@ export class StudioOrchestrator {
     if (!speakerQueue.length) throw new Error('STUDIO_ROUND_HAS_NO_SPEAKERS');
     const externalParticipantIds = speakerQueue.filter((id) => members.some((partner) => partner.partnerId === id && partner.sourceMode === 'existing_thread'));
     const managedQueue = speakerQueue.filter((id) => !externalParticipantIds.includes(id));
+    if (contextHandoff && (!managedQueue.includes(contextHandoff.partnerId)
+      || current?.messages.some(item => item.messageId === request.messageId))) throw new Error('HANDOFF_PARTNER_NOT_QUEUED');
     const policy = this.executionPolicies ? await this.executionPolicies.getOrCreate(room.projectId) : { permissionMode: 'manual' as const };
-    const message = this.attachments ? await this.attachments.prepareMessage(request) : request;
-    const published = externalParticipantIds.length
-      ? await this.rooms.publishUserMessage({ ...message, room, speakerQueue: managedQueue }, policy.permissionMode, externalParticipantIds)
-      : await this.rooms.publishUserMessage({ ...message, room, speakerQueue: managedQueue }, policy.permissionMode);
-    await this.attachments?.published(request);
+    const publicRequest = { ...request };
+    delete publicRequest.contextHandoff;
+    const message = this.attachments ? await this.attachments.prepareMessage(publicRequest) : publicRequest;
+    const pending = contextHandoff ? { messageId: request.messageId, draft: contextHandoff } : undefined;
+    if (pending) this.handoffs.set(room.roomId, pending);
+    let published: StudioRoomSnapshot;
+    try {
+      published = externalParticipantIds.length
+        ? await this.rooms.publishUserMessage({ ...message, room, speakerQueue: managedQueue }, policy.permissionMode, externalParticipantIds)
+        : await this.rooms.publishUserMessage({ ...message, room, speakerQueue: managedQueue }, policy.permissionMode);
+    } catch (error) {
+      if (pending && this.handoffs.get(room.roomId) === pending) this.handoffs.delete(room.roomId);
+      throw error;
+    }
+    await this.attachments?.published(publicRequest);
     return published;
   }
 
@@ -115,7 +134,11 @@ export class StudioOrchestrator {
         ? groupPassCorrectionPrompt(prepared, partner)
         : groupRuntimePrompt(prepared, partner, members, user);
       const context = groupRuntimeContext(prepared, partner, members, user);
-      const receipt = await this.runtime.startStudioTurn({ partner, prepared, content, context });
+      const pending = this.handoffs.get(prepared.room.roomId);
+      const contextHandoff = pending?.messageId === prepared.round.triggerMessageId && pending.draft.partnerId === partnerId
+        && prepared.room.memberIds.includes(partnerId) ? pending.draft : undefined;
+      if (contextHandoff) this.handoffs.delete(prepared.room.roomId);
+      const receipt = await this.runtime.startStudioTurn({ partner, prepared, content, context, ...(contextHandoff ? { contextHandoff } : {}) });
       if (this.cancelledRounds.has(roundKey)) await this.runtime.cancelRun({
         partner,
         conversationId: prepared.conversationId,

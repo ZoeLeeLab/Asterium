@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as realTimeout } from 'node:timers';
@@ -85,6 +86,13 @@ describe('one global bounded fallback scheduler', () => {
     input.busy = false; await jobs.sync([input]); vi.setSystemTime(new Date(Date.now() + 20 * 60_000));
     const scan = scheduler.tick(); await flushIO(async () => work.mock.calls.length === 1);
     config.partners.p.enabled = false; await scheduler.revalidate(); await scan;
+    expect((await jobs.list())[0].dirty).toBe(true); expect(work).toHaveBeenCalledTimes(1);
+  });
+  it('aborts an active job when only its API protocol changes', async () => {
+    const { create, config, jobs, work } = await fixture(async (_, __, ___, signal) => new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }); }));
+    const scheduler = create(); const scan = scheduler.tick();
+    await flushIO(async () => work.mock.calls.length === 1);
+    config.provider = 'openai'; await scheduler.revalidate(); await scan;
     expect((await jobs.list())[0].dirty).toBe(true); expect(work).toHaveBeenCalledTimes(1);
   });
   it('bounds a hung attempt to 120 seconds and cancels cleanly on shutdown', async () => {

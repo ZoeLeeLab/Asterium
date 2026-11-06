@@ -1,14 +1,16 @@
+import { autoTestOutput, runAutoTest } from './helpers/autoTest.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+await runAutoTest(async () => {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const option = key => process.argv[process.argv.indexOf(key) + 1];
-if (process.platform !== 'win32' || !process.argv.includes('--nsis') || !process.argv.includes('--output')) throw new Error('Use --nsis <verified makensis.exe> --output <fresh absolute diagnostic directory>');
-const output = path.resolve(option('--output'));
-if (!path.isAbsolute(option('--output')) || output === path.parse(output).root || output.startsWith(root + path.sep) || fs.existsSync(output)) throw new Error('Use a fresh diagnostic directory outside the repository');
+const option = key => { const index = process.argv.indexOf(key); return index < 0 ? undefined : process.argv[index + 1]; };
+if (process.platform !== 'win32' || !process.argv.includes('--nsis')) throw new Error('Use --nsis <verified makensis.exe> --output <fresh absolute diagnostic directory>');
+const output = autoTestOutput(option('--output'));
+if (!path.isAbsolute(output) || output === path.parse(output).root || output.startsWith(root + path.sep) || fs.existsSync(output)) throw new Error('Use a fresh diagnostic directory outside the repository');
 fs.mkdirSync(output, { recursive: true });
 const nsisValue = value => value.replaceAll('$', '$$').replaceAll('"', '$\\"');
 const appId = 'Asterium.ShellDiagnostic.' + randomUUID();
@@ -68,3 +70,4 @@ try {
 } catch (error) { receipt.error = error.message; process.exitCode = 1; }
 fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify(receipt, null, 2) + '\n');
 console.log(JSON.stringify(receipt));
+});

@@ -100,12 +100,12 @@ describe('local Claude renderer flow', () => {
     window.asteriumAgents = {
       detectClaude: vi.fn(async () => ({ installed: true, loggedIn: true, version: '2.1.198', executableLabel: 'claude.exe' })),
       importClaudeSession: vi.fn(async () => ({
-        sessionId: '417878a2-0066-4471-b81f-67a37418b7c0',
-        sessionFilePath: 'C:\\Users\\fixture-user\\.claude\\projects\\K--qa\\417878a2-0066-4471-b81f-67a37418b7c0.jsonl',
+        sessionId: '00000001-0000-4000-8000-000000000001',
+        sessionFilePath: 'C:\\Users\\fixture-user\\.claude\\projects\\K--qa\\00000001-0000-4000-8000-000000000001.jsonl',
         workspaceGrant: { grantId: 'grant-imported', displayPath: 'K:\\qa' },
       })),
       selectWorkspace: vi.fn(),
-      sendClaudeMessage: vi.fn(async (_partnerId, _partnerRootGrantId, _grants, command) => { sent = command; return { runId: 'run-imported', sessionId: '417878a2-0066-4471-b81f-67a37418b7c0' }; }),
+      sendClaudeMessage: vi.fn(async (_partnerId, _partnerRootGrantId, _grants, command) => { sent = command; return { runId: 'run-imported', sessionId: '00000001-0000-4000-8000-000000000001' }; }),
       cancelRun: vi.fn(), resumeSession: vi.fn(), onEvent: vi.fn(() => () => undefined),
     };
     render(<MemoryRouter initialEntries={['/settings/partners']}><PrototypeProvider><App /></PrototypeProvider></MemoryRouter>);
@@ -116,7 +116,7 @@ describe('local Claude renderer flow', () => {
     await screen.findByText(/Claude Code 2\.1\.198/);
     fireEvent.click(screen.getByRole('button', { name: '导入已有会话' }));
     fireEvent.click(screen.getByRole('button', { name: '选择 Claude session JSONL' }));
-    expect(await screen.findByText(/已选择会话 417878a2/)).toBeInTheDocument();
+    expect(await screen.findByText(/已选择会话 00000001/)).toBeInTheDocument();
     expect(screen.getByText('K:\\qa')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/显示名称/), { target: { value: '导入的本地伙伴' } });
     fireEvent.change(screen.getByLabelText('称呼或 @ 名称'), { target: { value: '导入本地伙伴' } });
@@ -125,7 +125,7 @@ describe('local Claude renderer flow', () => {
     const input = await screen.findByRole('textbox', { name: /给 导入的本地伙伴 发送消息/ });
     fireEvent.change(input, { target: { value: '继续这个会话' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
-    await waitFor(() => expect(sent).toMatchObject({ sessionId: '417878a2-0066-4471-b81f-67a37418b7c0' }));
+    await waitFor(() => expect(sent).toMatchObject({ sessionId: '00000001-0000-4000-8000-000000000001' }));
   });
 
   it('regenerates the latest Claude reply in a fresh session from the preceding visible context', async () => {

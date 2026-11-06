@@ -67,12 +67,12 @@ describe('CyberBossBridgeClient', () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith('/api/auth')) return new Response('{}', { status: 200, headers: { 'Set-Cookie': 'cyberboss_web_session=s; Secure' } });
-      if (url.endsWith('/api/session')) return new Response(JSON.stringify({ threadId: 'thread-current-123', workspaceRoot: '/home/ubuntu/codex-workspace' }), { status: 200 });
-      if (url.includes('/api/events')) return sseResponse('id: 9\nevent: thread_changed\ndata: {"threadId":"thread-new-789","previousThreadId":"thread-current-123","workspaceRoot":"/home/ubuntu/codex-workspace","reason":"new"}\n\n');
+      if (url.endsWith('/api/session')) return new Response(JSON.stringify({ threadId: 'thread-current-123', workspaceRoot: '/workspace/example-project' }), { status: 200 });
+      if (url.includes('/api/events')) return sseResponse('id: 9\nevent: thread_changed\ndata: {"threadId":"thread-new-789","previousThreadId":"thread-current-123","workspaceRoot":"/workspace/example-project","reason":"new"}\n\n');
       throw new Error(`unexpected ${url}`);
     });
     const client = new CyberBossBridgeClient({ serviceUrl, secret: 'x', fetcher });
-    await expect(client.checkSession()).resolves.toEqual({ threadId: 'thread-current-123', workspaceRoot: '/home/ubuntu/codex-workspace' });
+    await expect(client.checkSession()).resolves.toEqual({ threadId: 'thread-current-123', workspaceRoot: '/workspace/example-project' });
     const controller = new AbortController();
     const iterator = client.events(controller.signal)[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toMatchObject({ value: { event: 'thread_changed', threadId: 'thread-new-789', previousThreadId: 'thread-current-123', reason: 'new' } });

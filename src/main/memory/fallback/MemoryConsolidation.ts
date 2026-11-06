@@ -6,6 +6,19 @@ import type { MemorySourceService } from '../MemorySourceService';
 import { searchMemoryRecords } from '../PartnerMemoryToolService';
 import type { ApiProviderAdapter, ApiProviderMessage, ApiToolDefinition } from '../../api/ApiProviderAdapter';
 import { fallbackHash, type FallbackJob, type FallbackMessage } from './MemoryFallbackJobStore';
+import { createDefaultApiProviderRegistry } from '../../api/ApiProviderRegistry';
+import { API_ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS } from '../../../shared/apiConnections';
+import type { MemoryFallbackSettings } from '../../../shared/memoryFallback';
+
+// Native provider items stay in this invocation's messages, never in shared or persisted history.
+const nativeBinding = 'asterium-memory-fallback';
+export function createMemoryFallbackAdapter(config: MemoryFallbackSettings, apiKey: string, fetcher?: typeof fetch) {
+  const definition = createDefaultApiProviderRegistry().require(config.provider);
+  return definition.createAdapter({ endpoint: definition.normalizeEndpoint(config.endpoint), model: config.model, apiKey, fetcher,
+    bindingKey: nativeBinding, thinkingMode: 'disabled',
+    ...(config.provider === 'anthropic' ? { modelSettings: { maxOutputTokens: API_ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS, autoCompact: false } } : {}),
+  });
+}
 
 const text = z.string().trim().min(1).max(8000);
 const tags = z.array(z.string().trim().min(1).max(100)).max(20).refine((items) => new Set(items).size === items.length);
@@ -59,11 +72,13 @@ export class MemoryConsolidation {
       if (!await stillAllowed()) throw new Error('MEMORY_FALLBACK_CANCELLED');
       const calls = new Map<number, { id: string; name: string; arguments: string }>();
       let content = ''; let reasoningContent = ''; let finish = '';
+      let nativeItems: unknown[] | undefined;
       for await (const event of adapter.stream({ messages, tools, signal })) {
         signal.throwIfAborted();
         if (event.type === 'text.delta') content += event.text;
         if (event.type === 'reasoning.delta') reasoningContent += event.text;
         if (event.type === 'finish') finish = event.reason;
+        if (event.type === 'native.state') nativeItems = event.items;
         if (event.type === 'tool.delta') {
           if (!calls.has(event.index)) calls.set(event.index, { id: '', name: '', arguments: '' });
           const call = calls.get(event.index)!;
@@ -73,10 +88,10 @@ export class MemoryConsolidation {
         }
         if (content.length + reasoningContent.length + [...calls.values()].reduce((sum, call) => sum + call.arguments.length, 0) > 100_000 || calls.size > 8) throw new Error('MEMORY_FALLBACK_OUTPUT_LIMIT');
       }
-      if (!calls.size || finish !== 'tool_calls') throw new Error('MEMORY_FALLBACK_PROPOSAL_REQUIRED');
+      if (!calls.size || (finish !== 'tool_calls' && !(adapter.provider === 'anthropic' && finish === 'tool_use'))) throw new Error('MEMORY_FALLBACK_PROPOSAL_REQUIRED');
       const toolCalls = [...calls.values()];
       if (new Set(toolCalls.map((call) => call.id)).size !== toolCalls.length || toolCalls.some((call) => !call.id)) throw new Error('MEMORY_FALLBACK_TOOL_CALL_INVALID');
-      messages.push({ role: 'assistant', content, reasoningContent, toolCalls });
+      messages.push({ role: 'assistant', content, reasoningContent, toolCalls, ...(nativeItems ? { native: { binding: nativeBinding, items: nativeItems } } : {}) });
       let proposal: unknown;
       for (const call of toolCalls) {
         const input: unknown = JSON.parse(call.arguments);

@@ -1,9 +1,10 @@
+import { CYBERBOSS_CHAT_IMAGE_HINT, CYBERBOSS_CHAT_IMAGE_LIMIT, CYBERBOSS_CHAT_IMAGE_MAX_BYTES, cyberBossChatAttachmentError, cyberBossChatAttachmentHint, type CyberBossChatFileCapabilities } from '../../../shared/cyberBossChatAttachments';
 import { parseSessionCommand, type SessionCommandName } from '../../../shared/sessionCommands';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
 import { isMessageSendKey } from '../../app/sendShortcut';
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { Bot, Check, File, Flame, Hand, Image as ImageIcon, ListTodo, LockKeyhole, Mic, Paperclip, Send, Square, X } from 'lucide-react';
-import type { AttachmentCapabilities, PendingMessageAttachment, PermissionMode, PlanMode } from '../../../shared/agentProtocol';
+import { MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentCapabilities, type PendingMessageAttachment, type PermissionMode, type PlanMode } from '../../../shared/agentProtocol';
 import type { MessageQuote } from '../../types/domain';
 import { MessageQuoteCard } from '../chat/MessageQuoteCard';
 
@@ -22,6 +23,8 @@ interface ComposerProps {
   onCancel?: () => void;
   attachmentsEnabled?: boolean;
   attachmentDisabledReason?: string;
+  cyberBossChat?: boolean;
+  cyberBossFileCapabilities?: CyberBossChatFileCapabilities;
   attachmentCapabilities?: AttachmentCapabilities;
   permissionMode?: PermissionMode;
   permissionDisabledReason?: string;
@@ -50,22 +53,33 @@ const permissionOptions: Array<{ mode: PermissionMode; label: string; descriptio
   { mode: 'full', label: '完整权限', description: '使用伙伴可提供的最高权限', icon: Flame },
 ];
 
-export function Composer({ placeholder, onSend, draftKey, compact = false, busy = false, allowBusySend = false, pendingGuidance, onSendPendingGuidance, onDiscardPendingGuidance, pendingGuidanceSendDisabled = false, disabled = false, onCancel, attachmentsEnabled = false, attachmentDisabledReason = '当前伙伴暂不支持附件', attachmentCapabilities, permissionMode = 'manual', permissionDisabledReason, automaticPermissionAvailable = true, automaticPermissionDisabledReason = '当前伙伴不支持自动审批', onPermissionModeChange, planMode = 'default', planAvailable = false, planDisabledReason = '当前伙伴暂不支持计划模式', onPlanModeChange, onSessionCommand, onCompactSession, compactDisabledReason, reloadDisabledReason, focusRequestKey = 0, pendingQuote, onRemovePendingQuote }: ComposerProps) {
+export function Composer({ placeholder, onSend, draftKey, compact = false, busy = false, allowBusySend = false, pendingGuidance, onSendPendingGuidance, onDiscardPendingGuidance, pendingGuidanceSendDisabled = false, disabled = false, onCancel, attachmentsEnabled = false, cyberBossChat = false, cyberBossFileCapabilities, attachmentDisabledReason = '当前伙伴暂不支持附件', attachmentCapabilities, permissionMode = 'manual', permissionDisabledReason, automaticPermissionAvailable = true, automaticPermissionDisabledReason = '当前伙伴不支持自动审批', onPermissionModeChange, planMode = 'default', planAvailable = false, planDisabledReason = '当前伙伴暂不支持计划模式', onPlanModeChange, onSessionCommand, onCompactSession, compactDisabledReason, reloadDisabledReason, focusRequestKey = 0, pendingQuote, onRemovePendingQuote }: ComposerProps) {
   const { settings: { sendShortcut }, available: sendShortcutReady } = useGeneralSettings();
   const [value, setValue] = useState(() => draftKey ? composerDrafts.get(draftKey) ?? '' : '');
   const [attachments, setAttachments] = useState<PendingMessageAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState('');
   const attachmentsRef = useRef<PendingMessageAttachment[]>([]);
+  const mounted = useRef(true);
+  const addingAttachments = useRef(false);
+  const sending = useRef(false);
+  const [preparingAttachments, setPreparingAttachments] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [openMenu, setOpenMenu] = useState<'permission' | 'commands' | null>(null);
   const PermissionIcon = permissionOptions.find((item) => item.mode === permissionMode)?.icon ?? Hand;
   const permissionLabel = permissionOptions.find((item) => item.mode === permissionMode)?.label ?? '手动审批';
 
-  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
-  useEffect(() => () => {
-    const ids = attachmentsRef.current.map((item) => item.selectionId);
-    if (ids.length) void window.asteriumAttachments?.discard(ids);
+  const updateAttachments = (next: PendingMessageAttachment[]) => {
+    attachmentsRef.current = next;
+    setAttachments(next);
+  };
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const ids = attachmentsRef.current.map(item => item.selectionId);
+      if (ids.length) void window.asteriumAttachments?.discard(ids);
+    };
   }, []);
 
   useEffect(() => {
@@ -85,6 +99,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
   const statusQuery = typedCommand === 'status';
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (addingAttachments.current || sending.current) return;
     const next = value.trim();
     if (typedCommand && onSessionCommand) {
       if (typedCommand !== 'status' && (busy || disabled || (typedCommand === 'compact' ? compactDisabledReason : reloadDisabledReason) || pendingGuidance)) return;
@@ -93,28 +108,87 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
       return;
     }
     if ((!next && (!attachments.length || pendingQuote)) || pendingGuidance || (busy && !allowBusySend) || disabled) return;
-    const sent = await (pendingQuote ? onSend(next, attachments, pendingQuote) : onSend(next, attachments));
-    if (sent === false) return;
+    if (cyberBossChat) {
+      const problem = cyberBossChatAttachmentError(attachments, cyberBossFileCapabilities);
+      if (problem) {
+        setAttachmentError(cyberBossChatAttachmentHint(problem, cyberBossFileCapabilities) ?? '请重新选择附件。');
+        return;
+      }
+    }
+    sending.current = true;
+    try {
+      const sent = await (pendingQuote ? onSend(next, attachments, pendingQuote) : onSend(next, attachments));
+      if (sent === false) return;
+    } finally {
+      sending.current = false;
+    }
     setValue('');
     if (draftKey) composerDrafts.delete(draftKey);
-    setAttachments([]);
+    updateAttachments([]);
     setAttachmentError('');
   };
 
-  const chooseAttachments = async () => {
-    if (!attachmentsEnabled || !window.asteriumAttachments) return;
+  const cyberBossImagesOnly = cyberBossChat && !cyberBossFileCapabilities;
+  const attachmentLimit = cyberBossImagesOnly ? CYBERBOSS_CHAT_IMAGE_LIMIT : cyberBossFileCapabilities?.maxAttachments ?? 10;
+  const attachmentLabel = cyberBossImagesOnly ? '添加图片' : '添加图片或文件';
+  const addAttachments = async (load: (remaining: number) => Promise<PendingMessageAttachment[]>, fallbackError: string) => {
+    const api = window.asteriumAttachments;
+    if (!api || addingAttachments.current || sending.current) return;
+    addingAttachments.current = true;
+    setPreparingAttachments(true);
     setAttachmentError('');
     try {
-      const chosen = await window.asteriumAttachments.choose(10 - attachments.length);
-      setAttachments((current) => [...current, ...chosen]);
+      const remaining = attachmentLimit - attachmentsRef.current.length;
+      if (remaining < 1) throw new Error('ATTACHMENT_COUNT_LIMIT');
+      const chosen = await load(remaining);
+      if (!chosen.length) return;
+      const combined = [...attachmentsRef.current, ...chosen];
+      const problem = cyberBossChat ? cyberBossChatAttachmentError(combined, cyberBossFileCapabilities) : undefined;
+      if (!mounted.current || problem) {
+        await api.discard(chosen.map(item => item.selectionId));
+        if (mounted.current && problem) setAttachmentError(cyberBossChatAttachmentHint(problem, cyberBossFileCapabilities) ?? fallbackError);
+        return;
+      }
+      updateAttachments(combined);
     } catch (error) {
+      if (!mounted.current) return;
       const detail = error instanceof Error ? error.message : '';
-      setAttachmentError(detail.includes('ATTACHMENT_TOO_LARGE') ? '单个附件不能超过 20MB。' : detail.includes('ATTACHMENT_COUNT_LIMIT') ? '一次最多发送 10 个附件。' : '未能添加附件。');
+      const limitError = detail.includes('ATTACHMENT_TOO_LARGE') || detail.includes('ATTACHMENT_COUNT_LIMIT');
+      setAttachmentError(cyberBossImagesOnly && limitError ? CYBERBOSS_CHAT_IMAGE_HINT
+        : detail.includes('ATTACHMENT_TOO_LARGE') ? '单个附件不能超过 20MB。'
+        : detail.includes('ATTACHMENT_COUNT_LIMIT') ? `一次最多发送 ${attachmentLimit} 个附件。` : fallbackError);
+    } finally {
+      addingAttachments.current = false;
+      if (mounted.current) setPreparingAttachments(false);
     }
   };
 
+  const chooseAttachments = () => {
+    const api = window.asteriumAttachments;
+    if (!api || !attachmentsEnabled || disabled || busy) return;
+    return addAttachments(
+      (remaining) => cyberBossImagesOnly ? api.choose(remaining, 'cyberboss_images') : api.choose(remaining),
+      '未能添加附件。',
+    );
+  };
+
+  const pasteImage = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const stage = window.asteriumAttachments?.stageClipboardImage;
+    if (!stage || compact || !attachmentsEnabled || disabled || busy) return;
+    const image = Array.from(event.clipboardData.files ?? []).find(file => file.type === 'image/png');
+    if (!image) return;
+    event.preventDefault();
+    if (addingAttachments.current || sending.current) return;
+    const maxImageBytes = cyberBossChat ? cyberBossFileCapabilities?.maxImageBytes ?? CYBERBOSS_CHAT_IMAGE_MAX_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
+    if (image.size > maxImageBytes) {
+      setAttachmentError(`截图大小不能超过 ${maxImageBytes / (1024 * 1024)} MiB。`);
+      return;
+    }
+    void addAttachments(async () => [await stage(new Uint8Array(await image.arrayBuffer()))], '未能粘贴截图，请重新截图后再试。');
+  };
+
   const removeAttachment = (selectionId: string) => {
-    setAttachments((current) => current.filter((item) => item.selectionId !== selectionId));
+    updateAttachments(attachmentsRef.current.filter((item) => item.selectionId !== selectionId));
     void window.asteriumAttachments?.discard([selectionId]);
   };
 
@@ -125,10 +199,10 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
     event.currentTarget.form?.requestSubmit();
   };
 
-  const editor = <textarea ref={inputRef} rows={compact ? 1 : 2} value={value} onChange={(event) => { const next = event.target.value; setValue(next); if (draftKey) composerDrafts.set(draftKey, next); }} onKeyDown={handleKeyDown} placeholder={placeholder} aria-label={placeholder} disabled={disabled && !onSessionCommand} autoFocus={!disabled} />;
-  const attachmentButton = <button className={compact ? 'round-button' : 'composer-tool-button'} type="button" disabled={disabled || busy || !attachmentsEnabled || attachments.length >= 10} title={attachmentsEnabled ? '添加图片或文件' : attachmentDisabledReason} aria-label="添加图片或文件" onClick={() => void chooseAttachments()}>
+  const editor = <textarea ref={inputRef} rows={compact ? 1 : 2} value={value} onChange={(event) => { const next = event.target.value; setValue(next); if (draftKey) composerDrafts.set(draftKey, next); }} onKeyDown={handleKeyDown} onPaste={pasteImage} placeholder={placeholder} aria-label={placeholder} disabled={disabled && !onSessionCommand} autoFocus={!disabled} />;
+  const attachmentButton = <button className={compact ? 'round-button' : 'composer-tool-button'} type="button" disabled={disabled || busy || preparingAttachments || !attachmentsEnabled || attachments.length >= attachmentLimit} title={attachmentsEnabled ? attachmentLabel : attachmentDisabledReason} aria-label={attachmentLabel} onClick={() => void chooseAttachments()}>
     <Paperclip size={compact ? 19 : 18} />
-    {compact ? <span className="sr-only">添加图片或文件</span> : <span>附件</span>}
+    {compact ? <span className="sr-only">{attachmentLabel}</span> : <span>{cyberBossImagesOnly ? '图片' : '附件'}</span>}
   </button>;
   const stopButton = <button className={compact ? 'round-button round-button--primary' : 'composer-stop'} type="button" disabled={!onCancel} onClick={onCancel} title={onCancel ? '停止当前任务' : '当前桥接暂不支持远程取消'} aria-label={onCancel ? '停止当前任务' : '当前桥接暂不支持远程取消'}>
     <Square size={compact ? 17 : 14} fill="currentColor" />
@@ -151,7 +225,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
       {compact ? <span className="sr-only">停止当前任务</span> : <span>停止</span>}
     </button>
   ) : (
-    <button className={compact ? 'round-button round-button--primary' : 'composer-submit'} type="submit" disabled={disabled || Boolean(pendingGuidance) || (!value.trim() && (!attachments.length || Boolean(pendingQuote)))}>
+    <button className={compact ? 'round-button round-button--primary' : 'composer-submit'} type="submit" disabled={disabled || preparingAttachments || Boolean(pendingGuidance) || (!value.trim() && (!attachments.length || Boolean(pendingQuote)))}>
       <Send size={compact ? 20 : 17} />
       {compact ? <span className="sr-only">发送</span> : <span>发送</span>}
     </button>
@@ -168,7 +242,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
       </section>}
       {!compact && pendingQuote && <MessageQuoteCard quote={pendingQuote} removable onRemove={onRemovePendingQuote} className="message-quote-card--composer" />}
       {attachments.length > 0 && <div className="composer-attachments">{attachments.map((attachment) => <PendingAttachmentCard key={attachment.selectionId} attachment={attachment} onRemove={() => removeAttachment(attachment.selectionId)} />)}</div>}
-      {attachments.some((attachment) => attachment.mediaType.startsWith('image/') && !canViewImage(attachment, attachmentCapabilities)) && <small className="composer-attachment-error">当前伙伴无法查看其中的图片；仍可发送，但伙伴只会收到附件元数据。</small>}
+      {!cyberBossChat && attachments.some((attachment) => attachment.mediaType.startsWith('image/') && !canViewImage(attachment, attachmentCapabilities)) && <small className="composer-attachment-error">当前伙伴无法查看其中的图片；仍可发送，但伙伴只会收到附件元数据。</small>}
       {attachmentError && <small className="composer-attachment-error">{attachmentError}</small>}
       {compact ? <>
         {attachmentButton}

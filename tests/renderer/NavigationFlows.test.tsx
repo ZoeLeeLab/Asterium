@@ -78,6 +78,52 @@ function AttachmentProbeHarness({ conversationId, attachmentId }: { conversation
 }
 
 describe('navigation shell interactions', () => {
+  it('searches visible bodies in the current chat, highlights matches and clears the query when switching chats', async () => {
+    const state = createTestState();
+    state.conversations[0].messages[0].content = '第一条含 **Al**pha 和 alpha。';
+    state.conversations[0].messages[0].toolNote = '仅工具标记';
+    state.conversations[0].messages[1].content = '第二条也有 ALPHA。';
+    state.conversations[1].messages[0].content = '另一条单聊含 alpha。';
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    const registry = new Map<string, Set<Range>>();
+    vi.stubGlobal('CSS', { highlights: registry });
+    vi.stubGlobal('Highlight', class extends Set<Range> {});
+    try {
+      withProvider(<ChatPage />, '/chat');
+      const trigger = screen.getByRole('button', { name: '搜索当前对话' });
+      fireEvent.click(trigger);
+      const bar = screen.getByRole('search', { name: '当前对话搜索' });
+      const input = within(bar).getByRole('searchbox');
+      const count = within(bar).getByRole('status');
+      expect(input).toHaveFocus();
+      fireEvent.change(input, { target: { value: 'alpha' } });
+      await waitFor(() => expect(count).toHaveTextContent('1 / 2'));
+      const current = () => [...(registry.get('asterium-conversation-search-current') ?? [])].map(range => range.toString());
+      expect(current()).toEqual(['Alpha', 'alpha']);
+      fireEvent.click(within(bar).getByRole('button', { name: '下一条匹配' }));
+      expect(count).toHaveTextContent('2 / 2');
+      expect(current()).toEqual(['ALPHA']);
+      fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+      expect(count).toHaveTextContent('1 / 2');
+
+      fireEvent.change(input, { target: { value: '仅工具标记' } });
+      await waitFor(() => expect(count).toHaveTextContent('无匹配'));
+      expect(registry.size).toBe(0);
+      fireEvent.change(input, { target: { value: 'alpha' } });
+      await waitFor(() => expect(count).toHaveTextContent('1 / 2'));
+      fireEvent.click(screen.getByRole('button', { name: '视觉细节' }));
+      const nextInput = screen.getByRole('searchbox', { name: '搜索当前对话正文' });
+      expect(nextInput).toHaveValue('');
+      fireEvent.change(nextInput, { target: { value: 'alpha' } });
+      await waitFor(() => expect(within(screen.getByRole('search')).getByRole('status')).toHaveTextContent('1 / 1'));
+      fireEvent.keyDown(nextInput, { key: 'Escape' });
+      expect(screen.queryByRole('searchbox', { name: '搜索当前对话正文' })).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+      expect(registry.size).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('requires a partner and groups a newly created chat under that partner', () => {
     withProvider(<ChatPage />, '/chat');
     fireEvent.click(screen.getByRole('button', { name: '创建对话' }));

@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { STUDIO_MCP_DEFAULT_PORT, type StudioMcpConfiguration, type StudioMcpCredential } from '../../shared/studioMcp';
+import { isStudioMcpCredentialToken, STUDIO_MCP_DEFAULT_PORT, type StudioMcpConfiguration, type StudioMcpCredential } from '../../shared/studioMcp';
 import { AtomicJsonStore, type AtomicJsonStorePath } from '../storage/AtomicJsonStore';
 
 interface AccessFile {
@@ -12,13 +12,13 @@ export class StudioMcpAccessStore {
   private readonly storage: AtomicJsonStore<AccessFile>;
   private readonly listeners = new Set<() => void>();
 
-  constructor(filePath: AtomicJsonStorePath) {
+  constructor(filePath: AtomicJsonStorePath, defaultPort = STUDIO_MCP_DEFAULT_PORT, private readonly allowEphemeralPort = false) {
     this.storage = new AtomicJsonStore<AccessFile>({
       filePath,
-      empty: () => ({ version: 1, configuration: { enabled: false, port: STUDIO_MCP_DEFAULT_PORT, publicOrigin: '' }, credentials: [] }),
+      empty: () => ({ version: 1, configuration: { enabled: false, port: defaultPort, publicOrigin: '' }, credentials: [] }),
       decode(value) {
         if (!record(value) || value.version !== 1 || !record(value.configuration) || !Array.isArray(value.credentials)) throw new Error('STUDIO_MCP_ACCESS_INVALID');
-        validateConfiguration(value.configuration as unknown as StudioMcpConfiguration);
+        validateConfiguration(value.configuration as unknown as StudioMcpConfiguration, allowEphemeralPort);
         if (!value.credentials.every((item) => record(item) && typeof item.credentialId === 'string' && typeof item.partnerId === 'string'
           && typeof item.createdAt === 'string' && (item.revokedAt === undefined || typeof item.revokedAt === 'string')
           && typeof item.tokenHash === 'string' && /^[a-f0-9]{64}$/.test(item.tokenHash))) throw new Error('STUDIO_MCP_ACCESS_INVALID');
@@ -35,13 +35,15 @@ export class StudioMcpAccessStore {
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
 
   configure(configuration: StudioMcpConfiguration) {
-    validateConfiguration(configuration);
+    this.validate(configuration);
     return this.storage.runExclusive(async () => {
       const state = await this.storage.readNow();
       state.configuration = { enabled: configuration.enabled, port: configuration.port, publicOrigin: configuration.publicOrigin, ...(configuration.automationManagementEnabled === undefined ? {} : { automationManagementEnabled: configuration.automationManagementEnabled }) };
       await this.storage.writeNow(state);
     }).then(() => { for (const listener of this.listeners) listener(); });
   }
+
+  validate(configuration: StudioMcpConfiguration) { validateConfiguration(configuration, this.allowEphemeralPort); }
 
   issue(partnerId: string) {
     if (!partnerId.trim()) throw new Error('STUDIO_MCP_PARTNER_REQUIRED');
@@ -66,7 +68,7 @@ export class StudioMcpAccessStore {
   }
 
   async authenticate(token: string) {
-    if (!/^asterium_[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('STUDIO_MCP_UNAUTHORIZED');
+    if (!isStudioMcpCredentialToken(token)) throw new Error('STUDIO_MCP_UNAUTHORIZED');
     const state = await this.storage.read();
     if (!state.configuration.enabled) throw new Error('STUDIO_MCP_DISABLED');
     const candidate = Buffer.from(hash(token), 'hex');
@@ -76,9 +78,9 @@ export class StudioMcpAccessStore {
   }
 }
 
-export function validateConfiguration(value: StudioMcpConfiguration) {
+export function validateConfiguration(value: StudioMcpConfiguration, allowEphemeralPort = false) {
   if (value.automationManagementEnabled !== undefined && typeof value.automationManagementEnabled !== 'boolean') throw new Error('STUDIO_MCP_CONFIGURATION_INVALID');
-  if (typeof value.enabled !== 'boolean' || !Number.isSafeInteger(value.port) || value.port < 1024 || value.port > 65535 || typeof value.publicOrigin !== 'string') throw new Error('STUDIO_MCP_CONFIGURATION_INVALID');
+  if (typeof value.enabled !== 'boolean' || !Number.isSafeInteger(value.port) || (!(allowEphemeralPort && value.port === 0) && value.port < 1024) || value.port > 65535 || typeof value.publicOrigin !== 'string') throw new Error('STUDIO_MCP_CONFIGURATION_INVALID');
   if (!value.publicOrigin) return;
   let origin: URL;
   try { origin = new URL(value.publicOrigin); } catch { throw new Error('STUDIO_MCP_PRIVATE_ORIGIN_REQUIRED'); }

@@ -29,7 +29,7 @@
   "protocolVersion": 2,
   "source": "asterium",
   "action": "connect_once",
-  "requestId": "9777d36c-895c-4a63-ac11-abff41292f14",
+  "requestId": "00000002-0000-4000-8000-000000000001",
   "connectionBindingId": "server-configured-binding"
 }
 ```

@@ -51,7 +51,17 @@ export interface StudioMemorySource extends MemorySourceEvidence {
   messageId: string;
 }
 
-export type MemorySourceAnchor = SingleChatMemorySource | StudioMemorySource;
+export interface ImportedTextMemorySource {
+  contentHash?: never;
+  frozenExcerpt?: never;
+  kind: 'imported_text';
+  messageId: string;
+  label: string;
+  documentHash: string;
+  excerpt: string;
+}
+
+export type MemorySourceAnchor = SingleChatMemorySource | StudioMemorySource | ImportedTextMemorySource;
 
 export interface MemoryComment {
   commentId: string;
@@ -165,6 +175,7 @@ export function memoryWeightOrDefault(value?: number): MemoryWeight {
 }
 
 export function memorySourceKey(source: MemorySourceAnchor) {
+  if (source.kind === 'imported_text') return JSON.stringify([source.kind, source.documentHash, source.messageId]);
   return JSON.stringify(source.kind === 'single_chat'
     ? [source.kind, source.conversationId, source.messageId]
     : [source.kind, source.roomId, source.messageId]);
@@ -241,6 +252,9 @@ export function assertMemoryArchiveRecords(value: unknown, partnerId: string): a
 
 function isMemorySourceAnchor(value: unknown): value is MemorySourceAnchor {
   if (!isRecord(value) || !hasText(value.messageId)) return false;
+  if (value.kind === 'imported_text') return /^[1-9]\d{0,5}$/.test(String(value.messageId))
+    && typeof value.label === 'string' && value.label.trim().length > 0 && value.label.length <= 255
+    && isSha256(value.documentHash) && typeof value.excerpt === 'string' && value.excerpt.length > 0 && value.excerpt.length <= 480;
   if (!isMemorySourceEvidence(value)) return false;
   if (value.kind === 'single_chat') return hasText(value.conversationId);
   return value.kind === 'studio' && hasText(value.roomId);

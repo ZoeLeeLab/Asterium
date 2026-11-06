@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StudioMcpSettings } from '../../src/renderer/components/settings/StudioMcpSettings';
 import type { ExistingThreadPartner } from '../../src/renderer/types/domain';
@@ -18,6 +18,7 @@ function setup() {
     status: vi.fn(async () => structuredClone(status)),
     configure: vi.fn(async (configuration) => { status = { ...status, configuration, running: configuration.enabled }; return structuredClone(status); }),
     issueCredential: vi.fn(async () => { status.credentials.push(credential); return { credential, token: 'one-time-secret' }; }),
+    copyCredential: vi.fn<(token: string) => Promise<void>>(async () => {}),
     revokeCredential: vi.fn(async () => { status.credentials = [{ ...credential, revokedAt: new Date().toISOString() }]; return structuredClone(status); }),
   } satisfies NonNullable<Window['asteriumStudioMcp']>;
   window.asteriumStudioMcp = api;
@@ -53,10 +54,43 @@ describe('group MCP connection settings', () => {
     await waitFor(() => expect(api.configure).toHaveBeenLastCalledWith(expect.objectContaining({ automationManagementEnabled: true })));
   });
 
+  it('copies a newly issued credential immediately and keeps it available after a copy failure', async () => {
+    const { api } = setup();
+    fireEvent.click(screen.getByText('群聊 MCP 接入 · 服务已关闭'));
+    const generate = screen.getByRole('button', { name: '生成伙伴接入凭据' });
+    await waitFor(() => expect(generate).toBeEnabled());
+    let finishCopy!: () => void;
+    api.copyCredential.mockRejectedValueOnce(new Error('clipboard unavailable'))
+      .mockImplementationOnce(() => new Promise<void>(resolve => { finishCopy = resolve; }));
+    fireEvent.click(generate);
+
+    const copy = await screen.findByRole('button', { name: '复制接入凭据' });
+    expect(copy).toBeEnabled();
+    fireEvent.click(copy);
+    expect(await screen.findByRole('alert')).toHaveTextContent('复制失败，请重试');
+    expect(screen.getByLabelText('新接入凭据（仅显示一次）')).toHaveValue('one-time-secret');
+
+    fireEvent.click(copy);
+    const hide = screen.getByRole('button', { name: '隐藏接入凭据' });
+    expect(hide).toBeDisabled();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await act(async () => finishCopy());
+    expect(screen.getByRole('status')).toHaveTextContent('已复制');
+    expect(hide).toBeEnabled();
+    expect(api.copyCredential.mock.calls).toEqual([['one-time-secret'], ['one-time-secret']]);
+    expect(api.issueCredential).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('新接入凭据（仅显示一次）')).toHaveValue('one-time-secret');
+    fireEvent.click(hide);
+    expect(screen.queryByLabelText('新接入凭据（仅显示一次）')).not.toBeInTheDocument();
+    expect(api.copyCredential).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the issued credential only in component state and supports revocation', async () => {
     const { api, view } = setup();
     fireEvent.click(screen.getByText('群聊 MCP 接入 · 服务已关闭'));
-    fireEvent.click(screen.getByRole('button', { name: '生成伙伴接入凭据' }));
+    const generate = screen.getByRole('button', { name: '生成伙伴接入凭据' });
+    await waitFor(() => expect(generate).toBeEnabled());
+    fireEvent.click(generate);
     const input = await screen.findByLabelText('新接入凭据（仅显示一次）');
     expect(input).toHaveValue('one-time-secret');
     expect(input).toHaveAttribute('type', 'password');

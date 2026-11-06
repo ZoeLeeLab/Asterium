@@ -42,6 +42,7 @@ export interface AsteriumRuntimeToolController {
   workflowDraft?(input: ProjectWorkflowDraftProposal): Promise<string>;
   memory?: AsteriumMemoryToolController;
   projectNotebook?: (input: ProjectNotebookToolInput) => Promise<string>;
+  delegation?: (tool: string, input: Record<string, unknown>, signal: AbortSignal, toolCallId?: string) => Promise<string>;
   update(input: Pick<RuntimeToolsOptions, 'permissionMode' | 'planMode' | 'context' | 'route'>): void;
 }
 
@@ -59,6 +60,7 @@ interface RuntimeToolsOptions {
   workflowDraft?: (input: ProjectWorkflowDraftProposal) => Promise<string>;
   memory?: AsteriumMemoryToolController;
   projectNotebook?: (input: ProjectNotebookToolInput) => Promise<string>;
+  delegation?: AsteriumRuntimeToolController['delegation'];
   workspaceBoundary?: { projectId: string; projectRoot: string };
   workspaces: PartnerWorkspaceStore;
   artifacts: ArtifactRegistry;
@@ -126,6 +128,10 @@ export function createAsteriumRuntimeTools(options: RuntimeToolsOptions): Asteri
   if (options.workflowDraft) controller.workflowDraft = options.workflowDraft;
   if (options.memory) controller.memory = options.memory;
   if (options.projectNotebook) controller.projectNotebook = options.projectNotebook;
+  if (options.delegation) controller.delegation = (tool, input, signal, toolCallId) => {
+    if (current.planMode === 'plan' && tool === 'delegate_tasks') throw new Error('DELEGATION_PLAN_MODE');
+    return options.delegation!(tool, input, signal, toolCallId);
+  };
   if (options.mentionPartner) controller.mentionPartner = async (targetPartnerId) => {
     if (current.route?.scope !== 'group') throw new Error('STUDIO_MENTION_GROUP_ONLY');
     const studio = current.context?.conversation?.studio;

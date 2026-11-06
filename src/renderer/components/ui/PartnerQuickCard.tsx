@@ -1,5 +1,5 @@
 import { Check, ChevronDown, ChevronRight, FolderPlus, LoaderCircle, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceGrant } from '../../../shared/agentProtocol';
 import { defaultApiModelImages } from '../../../shared/apiConnections';
 import type { Conversation, Partner, Project } from '../../types/domain';
@@ -9,11 +9,12 @@ interface PartnerQuickCardProps {
   partner?: Partner;
   conversation?: Conversation;
   projects?: Project[];
+  codexModelPicker?: ReactNode;
   onUpdatePartner: (partner: Partner) => void | Promise<void>;
   onUpdateWorkspaceGrants: (partnerId: string, grants: WorkspaceGrant[], preferredGrantId?: string) => void;
 }
 
-export function PartnerQuickCard({ partner, conversation, projects = [], onUpdatePartner, onUpdateWorkspaceGrants }: PartnerQuickCardProps) {
+export function PartnerQuickCard({ partner, conversation, projects = [], codexModelPicker, onUpdatePartner, onUpdateWorkspaceGrants }: PartnerQuickCardProps) {
   const [open, setOpen] = useState(true);
   const [models, setModels] = useState<string[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
@@ -181,7 +182,7 @@ export function PartnerQuickCard({ partner, conversation, projects = [], onUpdat
             <strong>{observedModel?.model ?? '尚未报告'}</strong>
             {observedModel && <small>{currentModel ? '绑定当前对话与原生线程' : '来自最近一次 Runtime 观测'}</small>}
           </div>
-          {partner.sourceMode === 'api_partner' && <label className="quick-detail quick-detail--model">
+          {partner.sourceMode === 'api_partner' ? <label className="quick-detail quick-detail--model">
             <span>选择模型</span>
             <span className="quick-model-select">
               <select aria-label="选择 API 模型" value={partner.model} disabled={modelSaving} onFocus={() => void loadModels()} onChange={(event) => void saveModel(event.target.value)}>
@@ -190,7 +191,7 @@ export function PartnerQuickCard({ partner, conversation, projects = [], onUpdat
               {modelsBusy && <LoaderCircle className="spin" size={14} />}
             </span>
             <small>选择会用于下一轮；上方继续显示当前对话实际报告的模型。</small>
-          </label>}
+          </label> : codexModelPicker}
           {notice && <small className="quick-card-notice">{notice}</small>}
         </div>
       )}

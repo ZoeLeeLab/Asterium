@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';

@@ -1,8 +1,9 @@
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClaudeCodeAdapter } from '../../src/main/adapters/ClaudeCodeAdapter';
 import { AGENT_PROTOCOL_VERSION, type SendMessageCommand, type ResolveAuthorizationCommand } from '../../src/shared/agentProtocol';
 import type { Options, PermissionResult } from '../../src/main/adapters/ClaudeCliTransport';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { AsteriumRuntimeToolController } from '../../src/main/runtime/AsteriumRuntimeTools';

@@ -230,8 +230,8 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
     </div>
     <div className="studio-composer__toolbar">
       <button className="composer-tool-button" type="button" disabled={disabled || busy || sending || choosing || !window.asteriumAttachments || attachments.length >= 10} aria-label="添加图片或文件" title="添加图片或文件（每次最多 10 个，单个 20MB）" onClick={() => void chooseAttachments()}><Paperclip size={18} /><span>{choosing ? '正在添加…' : '附件'}</span></button>
-      {busy ? <button className="round-button round-button--primary" type="button" disabled={!onCancel} onClick={onCancel} aria-label="停止本轮" title="停止当前伙伴并取消本轮剩余发言"><Square size={17} fill="currentColor" /></button>
-        : <button className="round-button round-button--primary" type="submit" disabled={disabled || sending || choosing || (!value.trim() && !attachments.length)} aria-label="发送"><Send size={20} /></button>}
+      {busy ? <button className="composer-submit" type="button" disabled={!onCancel} onClick={onCancel} aria-label="停止本轮" title="停止当前伙伴并取消本轮剩余发言"><Square size={17} fill="currentColor" /><span>停止</span></button>
+        : <button className="composer-submit" type="submit" disabled={disabled || sending || choosing || (!value.trim() && !attachments.length)} aria-label="发送"><Send size={17} /><span>发送</span></button>}
     </div>
   </form>;
 }

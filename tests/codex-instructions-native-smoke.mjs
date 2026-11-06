@@ -1,10 +1,18 @@
-// Optional native protocol/storage test. Never starts a model turn or uses real credentials.
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
+
+await runAutoTest(async () => {
+// Optional native protocol/storage test. Never starts a model turn or uses real credentials.
+
+
+
+
+
+
 
 const executable = process.env.ASTERIUM_CODEX_EXE;
 if (!executable) throw new Error('Set ASTERIUM_CODEX_EXE to the native Codex executable under test.');
@@ -68,3 +76,4 @@ try {
   // Remove only the exact, mkdtemp-created fixture directory, never a user profile.
   await rm(temporary, { recursive: true, force: true });
 }
+});

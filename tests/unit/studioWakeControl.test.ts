@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,6 +33,15 @@ async function fixture() {
 }
 
 describe('one startup intent, with explicit manual control', () => {
+  it('does not restore Wake in an isolated profile while explicit manual control remains available', async () => {
+    const f = await fixture(); f.ready(true);
+    const isolated = new StudioWakeControlService(f.file, { ...f.options, autoConnect: false });
+    await isolated.configure(binding); await isolated.changed(); await isolated.changed();
+    expect(f.wakeControl).not.toHaveBeenCalled();
+    await isolated.control('chuan', 'connect_once');
+    expect(f.wakeControl).toHaveBeenCalledTimes(1);
+    await isolated.dispose(); await f.service.dispose();
+  });
   it('defers startup until ready, never restarts on repeated readiness changes, and stores only binding settings', async () => {
     const f = await fixture(); await f.service.configure(binding); await f.service.changed();
     expect(f.wakeControl).not.toHaveBeenCalled();

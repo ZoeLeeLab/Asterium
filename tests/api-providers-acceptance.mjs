@@ -1,16 +1,26 @@
-// Packaged Electron/Main/HTTP acceptance. Only synthetic data and loopback fixtures; no real model.
+import { runAutoTest, createTestHttpServer as createServer, testRm as rm, autoTestEvidence, launchTestElectron } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from 'playwright-core';
 import { AGENT_PROTOCOL_VERSION } from '../src/shared/contracts/core.ts';
 
+await runAutoTest(async () => {
+// Packaged Electron/Main/HTTP acceptance. Only synthetic data and loopback fixtures; no real model.
+
+
+
+
+
+
+
+
+
 const root = path.resolve(import.meta.dirname, '..');
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'asterium-api-providers-'));
-const workspace = path.join(temporary, 'workspace'), evidence = path.join(root, '.qa', 'api-providers');
+const workspace = path.join(temporary, 'workspace'), evidence = autoTestEvidence('api-providers');
 await mkdir(workspace); await mkdir(evidence, { recursive: true }); await writeFile(path.join(workspace, 'fixture.txt'), 'fixture-content');
 await writeFile(path.join(temporary, 'workspace-grants.v1.json'), JSON.stringify({ version: 1, grants: { 'fixture-root': workspace } }));
 const protocols = ['chat_completions', 'responses', 'anthropic_messages', 'gemini'];
@@ -48,7 +58,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 let application, page;
 async function launch() {
-  application = await electron.launch({ executablePath: executable, args: [`--user-data-dir=${temporary}`] });
+  application = await launchTestElectron(electron, { executablePath: executable, args: [`--user-data-dir=${temporary}`] });
   page = await application.firstWindow(); await page.locator('.app-grid, .settings-shell').first().waitFor();
   page.setDefaultTimeout(15000);
   page.on('pageerror', error => { (result.rendererErrors ??= []).push(error.message); });
@@ -209,3 +219,4 @@ finally {
   const resolved = await realpath(temporary), tempRoot = await realpath(os.tmpdir());
   if (path.dirname(resolved).toLowerCase() === tempRoot.toLowerCase()) await rm(resolved, { recursive: true, force: true });
 }
+});

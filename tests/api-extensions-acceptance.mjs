@@ -1,17 +1,25 @@
-// Serial packaged acceptance. Default never uses a model; live mode requires an explicit environment opt-in.
+import { runAutoTest, spawnTestProcess as spawn, autoTestEvidence } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+await runAutoTest(async () => {
+// Serial packaged acceptance. Default never uses a model; live mode requires an explicit environment opt-in.
+
+
+
+
+
+
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const executable = process.env.ASTERIUM_PACKAGED_EXE ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe');
 const resources = path.join(path.dirname(executable), 'resources');
 const live = process.argv.includes('--live');
 if (live && process.env.ASTERIUM_API_LIVE_SMOKE !== '1') throw new Error('Set ASTERIUM_API_LIVE_SMOKE=1 before running live acceptance.');
-const evidence = path.join(root, '.qa', 's8-acceptance');
+const evidence = autoTestEvidence('s8-acceptance');
 await mkdir(evidence, { recursive: true });
 const result = { live, executableHash: createHash('sha256').update(await readFile(executable)).digest('hex'),
   appArchiveHash: createHash('sha256').update(await readFile(path.join(resources, 'app.asar'))).digest('hex'), packagedLicenses: false, status: 'running', cases: [] };
@@ -40,3 +48,4 @@ for (const script of scripts) {
 result.status = 'passed'; await save();
 console.log(`EXTENSIONS_ACCEPTANCE_PASSED ${result.cases.length}`);
 } catch (error) { result.status = 'failed'; await save(); throw error; }
+});

@@ -319,8 +319,8 @@ describe('SettingsPage partner workflows', () => {
       saveBridgeCredential: vi.fn(async () => ({ credentialRef: 'bridge-credential-test', configured: true, masked: '••••••••' })),
       testExistingThread: vi.fn(async () => ({
         credentialRef: 'bridge-credential-test', configured: true, masked: '••••••••', authenticated: true,
-        threadId: '01a08723-bee6-7640-8917-28257cf5d1ab',
-        workspaceRoot: '/home/ubuntu/codex-workspace',
+        threadId: '00000000-0000-7000-8000-000000000001',
+        workspaceRoot: '/workspace/example-project',
         capabilities: { streamingText: true, cancellation: false, toolEvents: false, fileEvents: false, reconnect: true },
       })),
       deleteBridgeCredential: vi.fn(async () => undefined),

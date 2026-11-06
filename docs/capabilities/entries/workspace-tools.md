@@ -26,7 +26,9 @@
     "src/main/security/attachmentThumbnail.ts",
     "src/main/agentIpc.ts",
     "src/renderer/components/chat/MessageAttachmentCards.tsx",
-    "src/main/studio/StudioAttachments.ts"
+    "src/main/studio/StudioAttachments.ts",
+    "src/main/project/ProjectWorkspaceStore.ts",
+    "src/main/settings/projectDirectory.ts"
   ],
   "tests": [
     "tests/unit/apiAgentTools.test.ts",
@@ -43,19 +45,36 @@
     "tests/unit/attachmentThumbnail.test.ts",
     "tests/renderer/MessageAttachmentCards.test.tsx",
     "tests/attachment-thumbnail-electron-smoke.mjs",
-    "tests/unit/studioAttachments.test.ts"
+    "tests/unit/studioAttachments.test.ts",
+    "tests/unit/projectWorkspaceStore.test.ts",
+    "tests/unit/generalSettings.test.ts",
+    "tests/renderer/StorageSettings.test.tsx"
   ],
   "docs": [
     "docs/release-status.md",
     "docs/capabilities/schema.md",
     "docs/native-command-approval.md",
-    "docs/studio-attachments.md"
+    "docs/studio-attachments.md",
+    "docs/data-isolation.md",
+    "docs/automatic-test-isolation.md",
+    "docs/development-data-isolation-progress.md",
+    "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "a2c23abe4e2462e5a32660c56c875026f2164e45"
+  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
 }
 ---
 
+## 当前源码核验：2026-11-02 S5
+
+本条绑定已存在的代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；本次为纯文档核验，不使用自身或未来提交号。新项目默认根按当前环境的设置解析；创建前显示并确认最终完整路径，取消不创建文件。单项目选址继续保留，修改默认根只影响未来项目；无效自定义根报错、不自动回退。既有文件工具、授权、Full Native、沙箱与审批边界不变。
+
+本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
+
+## 历史阶段记录
+
 文件、命令与交付的当前代码入口、测试和权限边界见以上元数据。
+
+2026-11-02 S2 源码增量：默认项目根按当前环境设置解析，已有项目仍保留原位置；新建项目在星丛内弹窗显示最终完整位置并由用户确认，取消不写入项目文件。确认后由主进程重算位置，路径变化时要求重新确认。无效自定义目录报错，不自动回退或搬迁。权限和沙箱边界不变。验收与源码绑定见 [五阶段记录](../../development-data-isolation-progress.md)，S5 统一绑定此前已存在的代码提交；本段不将旧候选或旧 lastVerifiedCommit 记作本轮核验。
 
 ## 缩略图修复
 

@@ -1,3 +1,4 @@
+import { withHandoffContext } from '../../shared/contextHandoff';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { access, realpath, stat, unlink, writeFile } from 'node:fs/promises';
@@ -260,7 +261,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
     this.active.set(runId, { kind: 'legacy', child, cancelled: false });
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-2000); });
-    child.stdin.end(`${command.content.text}${attachmentPrompt(resolvedAttachments)}\n\n${DELIVERY_INSTRUCTION}`, 'utf8');
+    child.stdin.end(`${withHandoffContext(command.content.text, command.contextHandoff)}${attachmentPrompt(resolvedAttachments)}\n\n${DELIVERY_INSTRUCTION}`, 'utf8');
     yield remember(wrap({ type: 'session.bound', isNew: !command.sessionId }));
 
     const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -394,6 +395,11 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
         }
       }), ...memoryReadTools] : [
         ...(runtimeTools.automation ? [tool('asterium_automation', AUTOMATION_TOOL_DESCRIPTION, automationToolSchema.shape, async input => runtimeMemoryResult(() => runtimeTools.automation!(input, abortController.signal)))] : []),
+        ...(runtimeTools.delegation ? [
+          tool(delegationTools[0].name, delegationTools[0].description, {}, input => runtimeMemoryResult(() => runtimeTools.delegation!(delegationTools[0].name, input, abortController.signal))),
+          tool(delegationTools[1].name, delegationTools[1].description, delegationInput.shape, input => runtimeMemoryResult(() => runtimeTools.delegation!(delegationTools[1].name, input, abortController.signal))),
+          tool(delegationTools[2].name, delegationTools[2].description, delegationWaitInput.shape, input => runtimeMemoryResult(() => runtimeTools.delegation!(delegationTools[2].name, input, abortController.signal))),
+        ] : []),
         tool('asterium_status', 'Read authoritative Asterium state by key. In group chat, conversation reports the speaking mode, whether PASS is allowed, the queue, and whether partner mentions are available. Use workspace to confirm the current cwd and workspaceFolders instead of guessing from earlier messages. This tool never changes state.', {
           key: z.enum(['time', 'partner', 'partners', 'user', 'runtime', 'permissions', 'conversation', 'conversation_files', 'workspace']),
         }, async ({ key }) => ({ content: [{ type: 'text', text: await runtimeTools.status(key as AsteriumStatusKey) }] })),
@@ -479,7 +485,7 @@ export class ClaudeCodeAdapter implements PartnerAdapter {
       alwaysLoad: true,
     }) : undefined;
     const cliQuery = query({
-      prompt: `${command.content.text}${attachmentPrompt(resolvedAttachments)}`,
+      prompt: `${withHandoffContext(command.content.text, command.contextHandoff)}${attachmentPrompt(resolvedAttachments)}`,
       options: {
         abortController,
         cwd: this.workingDirectory,
@@ -931,6 +937,7 @@ export function claudeAsteriumAllowedTools(runtimeTools: AsteriumRuntimeToolCont
     ...memoryRead,
     ...memoryWrite,
     ...(runtimeTools.projectNotebook ? ['mcp__asterium__project_notebook'] : []),
+    ...(runtimeTools.delegation ? delegationTools.map(tool => `mcp__asterium__${tool.name}`) : []),
     'mcp__asterium__deliver_file',
   ];
 }
@@ -995,3 +1002,4 @@ class ClaudeEventQueue<T> implements AsyncIterable<T> {
     } };
   }
 }
+import { delegationTools, delegationInput, delegationWaitInput } from '../runtime/PartnerDelegation';

@@ -1,13 +1,23 @@
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm, autoTestEvidence, createTestNetServer } from './helpers/autoTest.mjs';
 import { requireLiveTestSource } from './helpers/liveTestConfiguration.mjs';
-// Opt-in live model test. Only synthetic messages and a temporary Electron profile are used.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
+
+await runAutoTest(async () => {
+// Opt-in live model test. Only synthetic messages and a temporary Electron profile are used.
+
+
+
+
+
+
+
+
 
 if (process.env.ASTERIUM_API_LIVE_SMOKE !== '1') throw new Error('Set ASTERIUM_API_LIVE_SMOKE=1 to run the real API guidance test.');
 const root = path.resolve(import.meta.dirname, '..');
@@ -20,7 +30,7 @@ assert.equal(settings.provider, 'deepseek'); assert.ok(settings.model && cipher 
 assert.equal(settings.endpoint, 'https://api.deepseek.com/chat/completions');
 const userData = await mkdtemp(path.join(os.tmpdir(), 'asterium-guidance-live-'));
 const pipeline = process.env.ASTERIUM_USE_LEGACY_RUN_PATH === '1' ? 'legacy' : 'coordinator';
-const evidence = path.join(root, '.qa', 'chat-guidance-s1', pipeline); await mkdir(evidence, { recursive: true });
+const evidence = autoTestEvidence('api-guidance-live-smoke'); await mkdir(evidence, { recursive: true });
 const partnerId = 'guidance-live', conversationId = 'guidance-live-chat', credentialRef = 'guidance-live-credential';
 const result = { status: 'running', pipeline, isolatedUserData: true, realModel: settings.model, cases: {} };
 await writeFile(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
@@ -118,5 +128,6 @@ try {
 }
 console.log(JSON.stringify(result, null, 2));
 function hash(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
-async function reservePort() { const server = net.createServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve)); const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port; }
+async function reservePort() { const server = createTestNetServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve)); const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port; }
 async function until(probe, timeout, label) { const deadline = Date.now() + timeout; while (Date.now() < deadline) { if (await probe()) return; await new Promise((resolve) => setTimeout(resolve, 150)); } throw new Error(`Timed out: ${label}`); }
+});

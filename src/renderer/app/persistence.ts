@@ -5,6 +5,8 @@ import { isProjectStatus, isProjectTaskStatus } from '../../shared/projectDomain
 import { sanitizePngDataUrl } from './pngDataUrl';
 import { ASTERIUM_USER_ID, normalizeAsteriumUserAuthorId, normalizeAsteriumUserId } from '../../shared/identity';
 
+import { isCodexModelSelection } from '../../shared/codexModels';
+
 export const STATE_KEY = 'asterium.prototype.v7';
 export const THEME_KEY = 'asterium.theme.v1';
 
@@ -344,6 +346,7 @@ function normalizeState(value: unknown): PrototypeState | null {
         ...(storedConversation.disabledReason === 'partner_root_changed' ? { isDisabled: undefined, disabledReason: undefined } : {}),
         permissionMode: permissionMode(storedConversation.permissionMode, partners.find((item) => item.id === storedConversation.partnerId)?.defaultPermissionMode ?? 'manual'),
         planMode: storedConversation.planMode === 'plan' ? 'plan' as const : 'default' as const,
+        codexModel: isCodexModelSelection(storedConversation.codexModel) ? storedConversation.codexModel : undefined,
         messages: storedConversation.messages.map((message, index) => {
           const normalized = { ...message, authorId: normalizeAsteriumUserAuthorId(message.authorId), ...(message.attachments ? { attachments: message.attachments.map(normalizeMessageAttachment).filter((item): item is MessageAttachment => item !== null) } : {}) };
           if (seenMessageIds.has(normalized.id)) {

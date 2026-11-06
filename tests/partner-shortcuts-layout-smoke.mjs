@@ -1,15 +1,21 @@
-// Renderer-only fixtures; no real IPC, user data or model/API requests.
-import { createServer } from 'vite';
+import { runAutoTest, createTestViteServer as createServer, launchTestBrowser } from './helpers/autoTest.mjs';
 import { chromium } from 'playwright-core';
 import os from 'node:os';
 import path from 'node:path';
+
+await runAutoTest(async () => {
+// Renderer-only fixtures; no real IPC, user data or model/API requests.
+
+
+
+
 
 const server = await createServer({ configFile: 'vite.renderer.config.ts', server: { host: '127.0.0.1', port: 0 } });
 await server.listen(); let browser;
 try {
   const { createTestState } = await server.ssrLoadModule(path.resolve('tests/fixtures/applicationState.ts')); const state = createTestState();
   state.partners[1].profileManagement = { userProfile: false, personality: false, memoryMode: 'asterium' };
-  browser = await chromium.launch({ executablePath: process.env.ASTERIUM_BROWSER_EXE ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
+  browser = await launchTestBrowser(chromium, { executablePath: process.env.ASTERIUM_BROWSER_EXE ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   await page.addInitScript((state) => {
     localStorage.setItem('asterium.prototype.v7', JSON.stringify(state)); localStorage.setItem('asterium.theme.v1', 'light');
@@ -44,3 +50,4 @@ try {
   await page.getByRole('button', { name: '讨论区', exact: true }).click(); await page.locator('.studio-composer').waitFor();
   console.log(JSON.stringify({ alignment: dimensions, partnerShortcuts: true, workspaceComposerHidden: true, discussionComposerRetained: true, screenshots: [light, dark] }, null, 2));
 } finally { await browser?.close(); await server.close(); }
+});

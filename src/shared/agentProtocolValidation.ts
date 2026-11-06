@@ -1,3 +1,4 @@
+import { isCodexModelSelection } from './codexModels';
 import { AGENT_PROTOCOL_VERSION, type AgentCommand, type JsonValue, type PartnerEvent } from './agentProtocol';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -120,7 +121,8 @@ function isExecution(value: unknown) {
   if (value === undefined) return true;
   return isRecord(value)
     && ['read_only', 'manual', 'automatic', 'full'].includes(String(value.permissionMode))
-    && (value.planMode === 'default' || value.planMode === 'plan');
+    && (value.planMode === 'default' || value.planMode === 'plan')
+    && (value.codexModel === undefined || isCodexModelSelection(value.codexModel));
 }
 
 function isMessageAttachments(value: unknown) {

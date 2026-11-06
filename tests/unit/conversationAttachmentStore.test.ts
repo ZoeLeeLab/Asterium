@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -44,6 +45,27 @@ describe('ConversationAttachmentStore', () => {
     expect(privateIndex.attachments[attachment.id].sourcePath).toBe(source);
     expect(privateIndex.attachments[attachment.id].snapshotPath).toBe(savedPath);
     expect(indexText).not.toContain('attachmentRef');
+  });
+
+  it('stages pasted PNG bytes, saves a snapshot without an original file, and discards unused drafts', async () => {
+    const { options, store } = await fixture();
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFZsAAAAASUVORK5CYII=', 'base64');
+    const pending = await store.stageClipboardImage(png);
+    expect(pending).toMatchObject({ name: '截图.png', mediaType: 'image/png', sizeBytes: png.length });
+    const preview = await store.pendingPath(pending.selectionId);
+    expect(await readFile(preview)).toEqual(png);
+    const [saved] = await store.commit('conversation-a', [pending.selectionId], 'message-one');
+    await expect(stat(preview)).rejects.toThrow();
+    const restarted = new ConversationAttachmentStore(options);
+    expect(await restarted.read(saved.id, 'conversation-a')).toEqual(png);
+    expect(await restarted.inspect(saved.id, 'conversation-a')).toMatchObject({ availability: 'available', sourceAvailability: 'unknown' });
+
+    const unused = await restarted.stageClipboardImage(png);
+    const unusedPath = await restarted.pendingPath(unused.selectionId);
+    await restarted.discard([unused.selectionId]);
+    await expect(stat(unusedPath)).rejects.toThrow();
+    await expect(restarted.stageClipboardImage(Buffer.from('not a png'))).rejects.toThrow('ATTACHMENT_CLIPBOARD_IMAGE_INVALID');
+    await expect(restarted.stageClipboardImage(new Uint8Array(MAX_MESSAGE_ATTACHMENT_BYTES + 1))).rejects.toThrow('ATTACHMENT_TOO_LARGE');
   });
 
   it('canonicalizes renderer metadata and isolates attachment ids by conversation', async () => {

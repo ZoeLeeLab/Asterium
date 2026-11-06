@@ -1,11 +1,33 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import { codexDiaryArgs, generateApiDiary, generateClaudeDiary, generateCodexDiary, generateExistingDiary } from '../../src/main/diary/DiaryGenerators';
+import { codexDiaryArgs, generateApiDiary, generateClaudeDiary, generateClaudeOneShot, generateCodexDiary, generateExistingDiary } from '../../src/main/diary/DiaryGenerators';
 import { DeepSeekProviderAdapter } from '../../src/main/adapters/DeepSeekProviderAdapter';
 import type { ApiProviderAdapter } from '../../src/main/api/ApiProviderAdapter';
 
 describe('isolated one-shot diary runtimes', () => {
+  it('waits for Claude to finish its stream before releasing the task directory', async () => {
+    let exited = false;
+    const stream = Object.assign((async function* () {
+      yield { type: 'result', subtype: 'success', result: '完成' };
+      exited = true;
+    })(), { close: vi.fn() });
+    const input = { executablePath: 'claude.exe', cwd: 'isolated', source: 'test', bootstrap: '', signal: new AbortController().signal };
+    const query = vi.fn(() => stream);
+    expect(await generateClaudeOneShot(input, query as never, 'Reply', 20_000)).toBe('完成');
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({
+      settingSources: ['user'], tools: [], mcpServers: {}, strictMcpConfig: true, persistSession: false,
+    }) }));
+    expect(exited).toBe(true);
+  });
+
+  it('returns a safe Claude error code instead of the raw service response', async () => {
+    const stream = Object.assign((async function* () {
+      yield { type: 'result', subtype: 'success', is_error: true, result: 'API Error: 401 synthetic private detail' };
+    })(), { close: vi.fn() });
+    const input = { executablePath: 'claude.exe', cwd: 'isolated', source: 'test', bootstrap: '', signal: new AbortController().signal };
+    await expect(generateClaudeOneShot(input, (() => stream) as never, 'Reply', 20_000)).rejects.toThrow(/^DELEGATION_CLAUDE_AUTH_FAILED$/);
+  });
   it('uses exactly one API request without any tools, history, or follow-up calls', async () => {
     let count = 0;
     const adapter: ApiProviderAdapter = { provider: 'fake', capabilities: new DeepSeekProviderAdapter({ endpoint: '', model: '', apiKey: '' }).capabilities,
@@ -45,6 +67,20 @@ describe('isolated one-shot diary runtimes', () => {
     await expect(result).rejects.toThrow('DIARY_GENERATION_FAILED');
     expect(launch).toHaveBeenCalledTimes(1); expect(child.kill).toHaveBeenCalledTimes(1);
   });
+  it('passes staged images and task instructions to an ephemeral Codex execution', async () => {
+    const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() });
+    const launch = vi.fn(() => child);
+    let prompt = '';
+    child.stdin.on('data', chunk => { prompt += String(chunk); });
+    const image = 'C:/task folder/image-1.png';
+    const result = generateCodexDelegation({ executablePath: 'codex.exe', cwd: 'isolated', source: 'Inspect the screenshot', bootstrap: '', signal: new AbortController().signal, model: 'reviewer' }, 'Return observations', [image], launch as never);
+    child.stdout.write('{"type":"item.completed","item":{"type":"agent_message","text":"Observation"}}\n{"type":"turn.completed"}\n');
+    child.emit('close', 0);
+    expect(await result).toBe('Observation');
+    expect(launch).toHaveBeenCalledWith('codex.exe', expect.arrayContaining(['--ephemeral', '--sandbox', 'read-only', '--ask-for-approval', 'never', '--model', 'reviewer', `--image=${image}`]), expect.objectContaining({ cwd: 'isolated', shell: false }));
+    expect(prompt).toContain('Return observations');
+    expect(prompt).toContain('Inspect the screenshot');
+  });
   it('checks the real upstream thread before sending and does not post when it changed', async () => {
     const fetcher = vi.fn(async (url: URL | RequestInfo) => String(url).endsWith('/api/auth') ? new Response('', { status: 200, headers: { 'set-cookie': 'cyberboss_web_session=test' } }) : Response.json({ threadId: 'different' }));
     await expect(generateExistingDiary({ serviceUrl: 'https://diary-test.example', credentialRef: 'ref', threadId: 'expected' }, 'fake', 'expected', 'generation', 'today', new AbortController().signal, fetcher as typeof fetch)).rejects.toThrow('THREAD_MISMATCH');
@@ -72,3 +108,4 @@ describe('isolated one-shot diary runtimes', () => {
     expect(clientMessageId).toBe('asterium-diary-generation');
   });
 });
+import { generateCodexDelegation } from '../../src/main/diary/DiaryGenerators';

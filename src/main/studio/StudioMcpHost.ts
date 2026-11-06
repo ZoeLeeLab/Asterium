@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import type { StudioMcpConfiguration, StudioMcpStatus } from '../../shared/studioMcp';
-import { StudioMcpAccessStore, validateConfiguration } from './StudioMcpAccessStore';
+import { StudioMcpAccessStore } from './StudioMcpAccessStore';
 import type { StudioMcpService } from './StudioMcpService';
 import { createStudioMcpServer } from './StudioMcpTools';
 import type { StudioWakeEvents } from './StudioWakeEvents';
@@ -30,12 +30,15 @@ export class StudioMcpHost {
   }
 
   async status(): Promise<StudioMcpStatus> {
-    return { ...await this.access.snapshot(), running: Boolean(this.server?.listening),
+    const snapshot = await this.access.snapshot();
+    const address = this.server?.address();
+    if (address && typeof address !== 'string') snapshot.configuration.port = address.port;
+    return { ...snapshot, running: Boolean(this.server?.listening),
       ...(this.lastAuthenticatedAt ? { lastAuthenticatedAt: this.lastAuthenticatedAt } : {}), ...(this.error ? { error: this.error } : {}) };
   }
 
   configure(configuration: StudioMcpConfiguration) {
-    validateConfiguration(configuration);
+    this.access.validate(configuration);
     return this.mutate(() => this.apply(configuration));
   }
 
@@ -48,6 +51,7 @@ export class StudioMcpHost {
   }
 
   private async apply(configuration: StudioMcpConfiguration) {
+    configuration = { ...configuration };
     // This is the saved preference, independent from whether the socket can bind this time.
     await this.access.configure(configuration);
     await this.stop();
@@ -65,6 +69,8 @@ export class StudioMcpHost {
         server.once('error', reject);
         server.listen(configuration.port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
       });
+      const address = server.address();
+      if (address && typeof address !== 'string') configuration.port = address.port;
     } catch {
       await this.stop();
       this.error = 'STUDIO_MCP_LISTEN_FAILED';

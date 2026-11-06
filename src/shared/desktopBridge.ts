@@ -130,6 +130,7 @@ export interface AsteriumAgentsApi {
   compactSession?: (request: import('./sessionCompaction').SessionCompactRequest) => Promise<import('./sessionCompaction').SessionCompactResult>;
   detectClaude: () => Promise<ClaudeDetectionResult>;
   detectCodex?: () => Promise<CodexDetectionResult>;
+  listCodexModels?: (request: import('./codexModels').CodexModelListRequest) => Promise<import('./codexModels').CodexModelOption[]>;
   listCodexThreads?: (runtimeId: string, workspaceGrantId: string) => Promise<CodexThreadSummary[]>;
   getLocalThreadLifecycles?: (request: LocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult[]>;
   changeLocalThreadLifecycle?: (request: ChangeLocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult>;
@@ -172,6 +173,7 @@ export interface AsteriumAgentsApi {
   testExistingThread?: (connection: ExistingThreadConnection) => Promise<ExistingThreadConnectionStatus>;
   watchExistingThread?: (partnerId: string, connection: ExistingThreadConnection) => Promise<ExistingThreadConnectionStatus>;
   stopExistingThreadWatch?: (partnerId: string) => Promise<void>;
+  getExistingThreadFileCapabilities?: (connection: ExistingThreadConnection) => Promise<import('./cyberBossChatAttachments').CyberBossChatFileCapabilities | undefined>;
   sendExistingThreadMessage?: (connection: ExistingThreadConnection, command: SendMessageCommand) => Promise<SendMessageReceipt>;
   onEvent: (listener: (event: RendererAgentEvent) => void) => () => void;
 }
@@ -214,7 +216,8 @@ export interface AsteriumArtifactsApi {
 }
 
 export interface AsteriumAttachmentsApi {
-  choose: (remaining: number) => Promise<PendingMessageAttachment[]>;
+  stageClipboardImage?: (bytes: Uint8Array) => Promise<PendingMessageAttachment>;
+  choose: (remaining: number, filter?: 'cyberboss_images') => Promise<PendingMessageAttachment[]>;
   discard: (selectionIds: string[]) => Promise<void>;
   commit: (conversationId: string, selectionIds: string[], messageId: string) => Promise<MessageAttachment[]>;
   list: (conversationId: string) => Promise<ConversationAttachmentInfo[]>;
@@ -236,6 +239,7 @@ export interface AsteriumProjectsApi {
   browse?: (request: ProjectBrowseRequest) => Promise<ProjectBrowseResult>;
   chooseLocation: () => Promise<ProjectLocationSelection | null>;
   initializeDomain: (request: ProjectDomainInitializeRequest) => Promise<ProjectDomainSnapshot>;
+  previewCreateLocation?: (request: Pick<ProjectCreateRequest, 'projectId' | 'name' | 'locationSelectionId'>) => Promise<string>;
   create: (request: ProjectCreateRequest) => Promise<ProjectCreateResult>;
   update: (request: ProjectUpdateRequest) => Promise<ProjectRecord>;
   createTask: (request: ProjectTaskCreateRequest) => Promise<ProjectTask>;
@@ -319,6 +323,7 @@ export interface AsteriumProjectNotebooksApi {
 }
 
 export interface AsteriumMemoryApi {
+  importText?: import('./memoryImport').MemoryImportApi;
   query: (request: MemoryArchiveQuery) => Promise<MemoryArchiveQueryResult>;
   briefing: (partnerId: string) => Promise<MemoryArchiveBriefing>;
   create: (request: MemoryArchiveCreateRequest) => Promise<MemoryRecord>;
@@ -342,6 +347,8 @@ export interface AsteriumConversationsApi {
 }
 
 export interface DesktopBridge {
+  asteriumStorage?: import('./generalSettings').AsteriumStorageApi;
+  asteriumEnvironment?: import('./runtimeEnvironment').AsteriumEnvironmentApi;
   asteriumUpdates?: import('./appUpdates').AsteriumUpdatesApi;
   asteriumDesktopNavigation?: import('./desktopNotifications').AsteriumDesktopNavigationApi;
   asteriumGeneralSettings?: import('./generalSettings').AsteriumGeneralSettingsApi;

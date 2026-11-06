@@ -1,3 +1,4 @@
+import { partnerStatusLabel } from './partnerStatusLabel';
 import {
   Check,
   ChevronDown,
@@ -16,7 +17,7 @@ import {
   TerminalSquare,
   Wrench,
 } from 'lucide-react';
-import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Fragment, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import type { Conversation, Message, TurnOperationCategory, TurnTimelineItem } from '../../types/domain';
 import { visibleAssistantText } from '../../app/messageQuote';
 import { friendlyRuntimeErrorMessage } from '../../app/runtimeErrorPresentation';
@@ -24,8 +25,15 @@ import { MarkdownContent } from './MarkdownContent';
 import { toolPresentation, type ToolSemantic } from './toolPresentation';
 import { UserInputRow } from './UserInputCard';
 
+interface DelegationReceipt {
+  id: string;
+  requestId: string;
+  card: ReactNode;
+}
+
 interface TurnTimelineProps {
   message: Message;
+  delegationReceipts?: DelegationReceipt[];
   partnerName: string;
   pendingAuthorization?: Conversation['pendingAuthorization'];
   pendingUserInput?: Conversation['pendingUserInput'];
@@ -47,17 +55,19 @@ type TimelineBlock =
   | { kind: 'text'; id: string; text: string }
   | { kind: 'reasoning'; id: string; row: ReasoningItem }
   | { kind: 'actions'; id: string; rows: ActionClusterRow[] }
+  | { kind: 'delegation'; receipt: DelegationReceipt }
   | { kind: 'entry'; id: string; row: Exclude<ProcessItem, ActionItem | ReasoningItem | FileItem> };
 
-export function TurnTimeline({ message, partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onQuoteSelection }: TurnTimelineProps) {
+export function TurnTimeline({ message, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onQuoteSelection }: TurnTimelineProps) {
   const timeline = message.timeline ?? [];
   if (!timeline.length) return <div className="turn-timeline">
+    {delegationReceipts.map(receipt => <Fragment key={receipt.id}>{receipt.card}</Fragment>)}
     {visibleAssistantText(message.content) && <QuoteableText onQuoteSelection={onQuoteSelection}><MarkdownContent>{visibleAssistantText(message.content)}</MarkdownContent></QuoteableText>}
     {message.toolNote && <details className="timeline-entry state-success"><summary><Check size={15} /><span>{message.toolNote}</span></summary></details>}
     {message.error && <div className="timeline-entry timeline-entry--error state-failure"><CircleAlert size={15} /><span>{friendlyErrorLabel(message.error.message, partnerName)}</span></div>}
   </div>;
 
-  const blocks = buildTimelineBlocks(timeline);
+  const blocks = buildTimelineBlocks(timeline, delegationReceipts, message.runState === 'completed');
 
   return <div className="turn-timeline">
     {blocks.map((block) => {
@@ -65,7 +75,8 @@ export function TurnTimeline({ message, partnerName, pendingAuthorization, pendi
         const text = visibleAssistantText(block.text);
         return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection}><MarkdownContent>{text}</MarkdownContent></QuoteableText> : null;
       }
-      if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} />;
+      if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} partnerName={partnerName} />;
+      if (block.kind === 'delegation') return <Fragment key={block.receipt.id}>{block.receipt.card}</Fragment>;
       if (block.kind === 'actions') return <ActionGroup key={block.id} rows={block.rows} partnerName={partnerName} onOpenArtifact={onOpenArtifact} />;
       return <TimelineRow key={block.id} row={block.row} partnerName={partnerName} pendingAuthorization={pendingAuthorization} pendingUserInput={pendingUserInput} onResolveAuthorization={onResolveAuthorization} onResolveUserInput={onResolveUserInput} onOpenArtifact={onOpenArtifact} />;
     })}
@@ -155,11 +166,11 @@ function TimelineRow({ row, partnerName = '伙伴', pendingAuthorization, pendin
   if (row.kind === 'file') return <button className="timeline-file" type="button" onClick={() => onOpenArtifact(row.artifactId)}><FileCheck2 size={15} /><span><strong>{row.name}</strong><small>文件送到了</small></span><em>预览</em></button>;
   if (row.kind === 'authorization') {
     const active = pendingAuthorization?.authorizationId === row.authorizationId;
-    return <AuthorizationRow row={row} active={active} interactive={pendingAuthorization?.resolution !== 'display_only'} targets={active ? pendingAuthorization?.targets : undefined} extensionTrust={active ? pendingAuthorization?.extensionTrust : undefined} onResolveAuthorization={onResolveAuthorization} />;
+    return <AuthorizationRow row={{ ...row, summary: partnerStatusLabel(row.summary, partnerName) }} active={active} interactive={pendingAuthorization?.resolution !== 'display_only'} targets={active ? pendingAuthorization?.targets : undefined} extensionTrust={active ? pendingAuthorization?.extensionTrust : undefined} onResolveAuthorization={onResolveAuthorization} />;
   }
   if (row.kind === 'user_input') return <UserInputRow key={row.requestId} row={row} active={pendingUserInput?.requestId === row.requestId} onResolve={(answers, customAnswers) => onResolveUserInput(answers, customAnswers, row.requestId)} />;
   if (row.kind === 'plan') return <details className={`timeline-entry timeline-entry--plan state-${row.state}`} open={row.state === 'running'}><summary><ListTodo size={15} /><span>{row.summary}</span>{row.detail && <ChevronDown size={13} />}</summary>{row.detail && <pre>{row.detail}</pre>}</details>;
-  if (row.kind === 'reasoning') return <ReasoningRow row={row} />;
+  if (row.kind === 'reasoning') return <ReasoningRow row={row} partnerName={partnerName} />;
   if (row.kind === 'tool' || row.kind === 'computer') return <OperationRow row={row} partnerName={partnerName} onOpenArtifact={onOpenArtifact} />;
   if (row.kind === 'error') return <div className="timeline-entry timeline-entry--error state-failure"><CircleAlert size={15} /><span>{friendlyErrorLabel(row.summary, partnerName)}</span></div>;
   return <div className={`timeline-entry timeline-entry--status state-${row.state}`}><OutcomeIcon state={row.state} /><span>{friendlyStatusLabel(row.summary, row.state, partnerName)}</span></div>;
@@ -214,8 +225,8 @@ function authorizationRiskLabel(risk: Extract<ProcessRow, { kind: 'authorization
   return risk === 'high' ? '高风险' : risk === 'low' ? '低风险' : '需留意';
 }
 
-function ReasoningRow({ row }: { row: ReasoningItem }) {
-  const label = row.state === 'running' ? '正在琢磨…' : row.state === 'failure' ? '思考中断' : '想好了';
+function ReasoningRow({ row, partnerName }: { row: ReasoningItem; partnerName: string }) {
+  const label = row.state === 'running' ? partnerName + '正在思考…' : row.state === 'failure' ? '思考中断' : '想好了';
   if (!row.detail) return <div className={`timeline-reasoning timeline-reasoning--plain state-${row.state}`}><span>{label}</span>{row.state !== 'success' && <OutcomeIcon state={row.state} />}</div>;
   return <ReasoningDetails key={row.state} row={row} label={label} detail={row.detail} />;
 }
@@ -267,7 +278,7 @@ function categoryMeta(category: TurnOperationCategory) {
   }[category];
 }
 
-function buildTimelineBlocks(timeline: TurnTimelineItem[]): TimelineBlock[] {
+function buildTimelineBlocks(timeline: TurnTimelineItem[], delegationReceipts: DelegationReceipt[], completed: boolean): TimelineBlock[] {
   const blocks: TimelineBlock[] = [];
   let pendingActions: Array<ActionItem | FileItem> = [];
   const authorizationToolIds = new Set(timeline.flatMap((item) => item.kind === 'authorization' && item.toolCallId ? [item.toolCallId] : []));
@@ -293,6 +304,17 @@ function buildTimelineBlocks(timeline: TurnTimelineItem[]): TimelineBlock[] {
     timeline.flatMap((item) => item.kind === 'authorization' && item.state === 'running' && item.toolCallId ? [item.toolCallId] : []),
   );
 
+  const receiptsByCall = new Map(delegationReceipts.map(receipt => [receipt.requestId, receipt]));
+  if (completed && delegationReceipts.length === 1) {
+    // Some hosts retain a receipt without the tool call ID. Match only a unique dispatch in a finished turn.
+    const dispatches = coalescedTimeline.filter(item => item.kind === 'tool' && actionPresentation(item).semantic === 'delegate_dispatch');
+    const dispatch = dispatches[0];
+    if (dispatches.length === 1 && dispatch.kind === 'tool' && dispatch.state === 'success') {
+      receiptsByCall.set(dispatch.toolCallId, delegationReceipts[0]);
+    }
+  }
+  const placedReceipts = new Set<string>();
+
   const flushActions = () => {
     if (!pendingActions.length) return;
     blocks.push({
@@ -313,7 +335,17 @@ function buildTimelineBlocks(timeline: TurnTimelineItem[]): TimelineBlock[] {
     if ((item.kind === 'tool' || item.kind === 'computer') && suppressedActionIds.has(item.toolCallId)) continue;
     if ((item.kind === 'tool' || item.kind === 'computer') && pendingAuthorizationToolIds.has(item.toolCallId)) continue;
     if (item.kind === 'tool' || item.kind === 'computer' || item.kind === 'file') {
+      const receipt = item.kind === 'tool' && receiptsByCall.has(item.toolCallId)
+        && actionPresentation(item).semantic === 'delegate_dispatch'
+        ? receiptsByCall.get(item.toolCallId)
+        : undefined;
+      if (receipt) flushActions();
       pendingActions.push(item);
+      if (receipt) {
+        flushActions();
+        blocks.push({ kind: 'delegation', receipt });
+        placedReceipts.add(receipt.id);
+      }
       continue;
     }
     flushActions();
@@ -337,7 +369,9 @@ function buildTimelineBlocks(timeline: TurnTimelineItem[]): TimelineBlock[] {
     blocks.push({ kind: 'entry', id: item.id, row: item });
   }
   flushActions();
-  return blocks;
+  const unplaced: TimelineBlock[] = delegationReceipts.filter(receipt => !placedReceipts.has(receipt.id))
+    .map(receipt => ({ kind: 'delegation', receipt }));
+  return [...unplaced, ...blocks];
 }
 
 function coalesceActionEvents(timeline: TurnTimelineItem[]) {
@@ -489,6 +523,8 @@ function runtimeOperationLabel(category: TurnOperationCategory, semantic: ToolSe
   if (semantic === 'delete') return state === 'running' ? `${partnerName}正在删除${files.length ? ` ${subject}` : ''}…` : state === 'failure' ? `${partnerName}没能删除${files.length ? ` ${subject}` : '这项内容'}` : `${partnerName}把${files.length ? ` ${subject} ` : '这项内容'}删掉了`;
   if (semantic === 'image_generation') return state === 'running' ? `${partnerName}正在画图…` : state === 'failure' ? `${partnerName}没能画完图片` : `${partnerName}把图片画好了`;
   if (semantic === 'collaboration') return state === 'running' ? `${partnerName}正在找小弟一起处理…` : state === 'failure' ? `${partnerName}和小弟没能处理完` : `${partnerName}和小弟一起处理好了`;
+  if (semantic === 'delegate_dispatch') return phrase('正在派出小弟…', '派出小弟了', '没能派出小弟');
+  if (semantic === 'delegate_wait') return phrase('正在等小弟汇报…', '结束了前台等待', '没能继续等待汇报');
   if (semantic === 'extension') return state === 'running' ? `${partnerName}正在使用扩展能力…` : state === 'failure' ? '扩展能力没有完成' : `${partnerName}使用扩展能力处理好了`;
   if (semantic === 'message_send') return state === 'running' ? `${partnerName}正在发送消息…` : state === 'failure' ? '消息没有发出去' : `${partnerName}把消息发出去了`;
   if (semantic === 'reminder_create') return state === 'running' ? `${partnerName}正在创建提醒…` : state === 'failure' ? '提醒没有创建成功' : `${partnerName}把提醒创建好了`;
@@ -551,6 +587,8 @@ function friendlyErrorLabel(summary: string, partnerName: string) {
 
 function friendlyStatusLabel(summary: string, state: 'running' | 'success' | 'failure', partnerName: string) {
   if (/用户.*停止|已停止|取消/.test(summary)) return '已由用户停止';
+  const namedSummary = partnerStatusLabel(summary, partnerName);
+  if (state === 'running' && namedSummary !== summary) return namedSummary;
   if (/重试|retry/i.test(summary)) return `${partnerName}换个办法再试试…`;
   if (state === 'failure') return '这一步没弄成';
   return state === 'running' ? `${partnerName}正在忙这一步…` : `${partnerName}这一步搞定了`;

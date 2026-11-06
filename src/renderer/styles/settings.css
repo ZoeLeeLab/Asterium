@@ -14,10 +14,18 @@
 .mcp-settings-view { flex: 1; min-height: 0; overflow: auto; padding: 14px 8px; scrollbar-gutter: stable; }
 .studio-mcp-settings summary, .studio-wake-settings summary { cursor: pointer; color: var(--text-strong); font-weight: 650; }
 .studio-mcp-settings > p, .studio-mcp-issued > p, .studio-wake-settings p { margin: 10px 0; color: var(--muted); line-height: 1.6; }
+.studio-mcp-settings .studio-mcp-automation { flex-direction: row; align-items: flex-start; gap: 8px; cursor: pointer; }
+.studio-mcp-settings .studio-mcp-automation input { flex: 0 0 16px; width: 16px; height: 16px; margin: 2px 0 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.studio-mcp-settings > .studio-mcp-automation-help { margin-top: 4px; padding-left: 24px; }
 .studio-wake-settings .studio-wake-launch { flex-direction: row; align-items: center; margin-bottom: 12px; }
 .studio-wake-settings .studio-wake-launch input { width: 16px; height: 16px; padding: 0; }
 .studio-wake-settings li { margin-block: 8px; overflow-wrap: anywhere; }
 .studio-mcp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.studio-mcp-issued .studio-mcp-actions { margin: 8px 0 12px; }
+.studio-mcp-issued .secondary-button { min-height: 30px; padding-inline: 10px; font-size: calc(12px * var(--ui-font-scale,1)); }
+.studio-mcp-issued .studio-mcp-copy { background: var(--accent-soft); color: var(--accent-strong); }
+.studio-mcp-copy-status { color: var(--muted); font-size: calc(11px * var(--ui-font-scale,1)); }
+.studio-mcp-copy-status--error { color: var(--danger); }
 .studio-mcp-credentials { list-style: none; padding: 0; }
 .studio-mcp-credentials li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
 .mcp-intro, .mcp-editor-note { margin: 0 0 14px; color: var(--muted); font-size: calc(12px * var(--ui-font-scale,1)); line-height: 1.7; }
@@ -434,6 +442,30 @@
 .memory-editor label { display: grid; gap: 6px; color: var(--text); font-size: calc(12px * var(--ui-font-scale,1)); }
 .memory-editor input, .memory-editor select, .memory-editor textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: 10px; color: var(--text); background: var(--surface-strong); }
 .memory-editor-wide { grid-column: 1 / -1; }
+.memory-import-file { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.memory-import-file small { color: var(--muted); overflow-wrap: anywhere; }
+.memory-import-preview {
+  display: grid;
+  gap: 12px;
+  max-height: clamp(120px, calc(100vh - 480px), 560px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.memory-import-preview,
+.memory-record-list {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.memory-scrollbar-visible,
+.memory-import-preview:focus-visible,
+.memory-record-list:focus-visible {
+  scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
+}
+.memory-import-editor fieldset { min-inline-size: 0; display: grid; gap: 10px; border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px; }
+.memory-import-editor .memory-import-selection { display: flex; align-items: center; }
+.memory-import-selection input[type="checkbox"] { width: auto; }
+.memory-import-editor blockquote { margin: 0; overflow-wrap: anywhere; }
 .memory-editor footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .memory-confirm { display: grid; gap: 14px; }
 .memory-confirm p { margin: 0; line-height: 1.6; }
@@ -632,7 +664,6 @@
   max-height: none;
   gap: 7px;
   padding: 2px 14px 14px;
-  scrollbar-width: thin;
 }
 .memory-record-list article {
   min-height: 50px;
@@ -907,3 +938,4 @@
 @keyframes diary-page-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes diary-spin { to { transform: rotate(360deg); } }
 @media (max-width:600px) { .diary-modal-host .modal-backdrop { padding: 12px; } .diary-modal-host .modal-card > header { padding: 16px; } .diary-modal-toolbar { padding: 10px 16px; gap: 7px; } .diary-modal-scroll { padding: 14px; } .diary-paper-heading { padding: 16px; } .diary-paper-content { padding-inline: 16px; } .diary-modal-toolbar > span { font-size: calc(10px * var(--ui-font-scale,1)); } }
+.storage-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

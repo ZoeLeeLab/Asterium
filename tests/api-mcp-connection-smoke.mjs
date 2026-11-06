@@ -1,13 +1,24 @@
-// Packaged S3 transport smoke: local fixtures, isolated user data, no model calls or tools/call.
+import { runAutoTest, spawnTestProcess as spawn, createTestHttpServer as createServer, testRm as rm, autoTestEvidence, createTestNetServer } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createServer } from 'node:http';
-import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
+
+await runAutoTest(async () => {
+// Packaged S3 transport smoke: local fixtures, isolated user data, no model calls or tools/call.
+
+
+
+
+
+
+
+
+
 
 const root = path.resolve(import.meta.dirname, '..');
 const executable = process.env.ASTERIUM_PACKAGED_EXE ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe');
@@ -15,7 +26,7 @@ const userData = await mkdtemp(path.join(os.tmpdir(), 'asterium-s3-mcp-'));
 const workspace = await mkdtemp(path.join(os.tmpdir(), 'asterium-s2-mcp-workspace-'));
 const workspaceGrantId = 'workspace-33333333-3333-3333-3333-333333333333';
 const log = path.join(userData, 'stdio-lifecycle.jsonl'); const control = path.join(userData, 'tools.json');
-const evidence = path.join(root, '.qa', 's3-mcp');
+const evidence = autoTestEvidence('s3-mcp');
 const tools = [{ name: 'fixture_inspect', description: 'Local fixture', inputSchema: { type: 'object', properties: {} } }];
 const requests = []; let child; let browser; let page; let launchFailure; let diagnostics = '';
 const result = { isolatedUserData: true, modelRequests: false, toolExecution: false, cases: {} };
@@ -132,7 +143,7 @@ result.temporaryDataRemoved = true;
 await writeFile(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result, null, 2));
 
 async function launch() {
-  const server = net.createServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const server = createTestNetServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise((resolve) => server.close(resolve)); launchFailure = undefined;
   child = spawn(executable, [`--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], { cwd: path.dirname(executable), windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   child.once('error', (error) => { launchFailure = error; }); child.stderr.on('data', (bytes) => { diagnostics = `${diagnostics}${bytes}`.slice(-12_000); });
@@ -164,3 +175,4 @@ async function until(probe, label, timeout = 30_000) {
   while (Date.now() < deadline) { if (await probe()) return; await new Promise((resolve) => setTimeout(resolve, 100)); }
   throw new Error(`Timed out waiting for ${label}`);
 }
+});

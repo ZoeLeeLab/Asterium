@@ -1,12 +1,13 @@
-import { createServer } from 'vite';
-import { execFileSync, spawn } from 'node:child_process';
+import { runAutoTest, createTestViteServer as createServer, spawnTestProcess as spawn, testRm as rm, createTestNetServer } from './helpers/autoTest.mjs';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 
+await runAutoTest(async () => {
 const root = path.resolve(import.meta.dirname, '..');
 const executable = process.env.ASTERIUM_PACKAGED_EXE
   ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe');
@@ -428,7 +429,7 @@ function launchApp(debugPort) {
 }
 
 async function reservePort() {
-  const server = net.createServer();
+  const server = createTestNetServer();
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -557,3 +558,4 @@ async function waitForProcessExit(processHandle, timeoutMs) {
     new Promise((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
 }
+});

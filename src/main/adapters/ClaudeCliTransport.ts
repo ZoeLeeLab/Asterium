@@ -142,6 +142,7 @@ async function* run(prompt: string, options: Options, controller: AbortControlle
     // Explicit asks override native auto-allow rules. The Electron callback retains
     // the existing per-mode decisions. Hooks are not the primary permission gate.
     settings.permissions = { ask: ['*'] };
+    if (options.settings?.disableAllHooks) settings.disableAllHooks = true;
     const settingsFile = path.join(temporary, 'settings.json'), mcpFile = path.join(temporary, 'mcp.json'), promptFile = path.join(temporary, 'system-prompt.txt');
     await writeFile(settingsFile, JSON.stringify(settings), { mode: 0o600 });
     await writeFile(mcpFile, JSON.stringify({ mcpServers }), { mode: 0o600 });

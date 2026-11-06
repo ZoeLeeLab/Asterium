@@ -1,16 +1,28 @@
-// Explicit local fixture acceptance: real official Windows CLI, synthetic model only.
+import { autoTestOutput, runAutoTest, spawnTestProcess, createTestHttpServer } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import http from 'node:http';
+
 import cp from 'node:child_process';
 import crypto from 'node:crypto';
 import Module from 'node:module';
 import { build } from 'vite';
 
+await runAutoTest(async () => {
+// Explicit local fixture acceptance: real official Windows CLI, synthetic model only.
+
+
+
+
+
+
+
+
+
+
 const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };
-const cli = argument('--cli'), output = argument('--output');
+const cli = argument('--cli'), output = autoTestOutput(argument('--output'));
 if (process.platform !== 'win32' || !cli || !output || !path.isAbsolute(cli) || !path.isAbsolute(output)) throw new Error('Usage on Windows: node tests/claude-cli-acceptance.mjs --cli <official exe> --output <evidence directory>');
 const root = path.resolve(import.meta.dirname, '..');
 fs.mkdirSync(output, { recursive: true });
@@ -34,7 +46,7 @@ loaded.require = name => name === 'electron' ? { app: { isPackaged: false } } : 
     settings.hooks = { PreToolUse: [{ hooks: [{ type: 'command', onFailure: 'block', ...hook }] }] };
     fs.writeFileSync(file, JSON.stringify(settings));
   }
-  const child = cp.spawn(...args), instance = { child, executable: args[0], arguments: args[1], autoUpdaterDisabled: args[2]?.env?.DISABLE_AUTOUPDATER === '1', diagnostics: '' };
+  const child = spawnTestProcess(...args), instance = { child, executable: args[0], arguments: args[1], autoUpdaterDisabled: args[2]?.env?.DISABLE_AUTOUPDATER === '1', diagnostics: '' };
   if (String(args[0]).endsWith('AsteriumClaudePipeHost.exe')) child.stdout.on('data', bytes => { instance.diagnostics += bytes; });
   activeChildren.push(instance); return child;
 } } : requireOriginal(name);
@@ -64,7 +76,7 @@ async function testCase(spec) {
   const sessionId = crypto.randomUUID();
   const toolName = spec.tool ?? 'Write';
   const toolInput = toolName === 'Read' ? { file_path: canary } : toolName === 'ExitPlanMode' ? { plan: 'Synthetic plan. No file changes.' } : toolName === 'Bash' ? { command: `echo ASTERIUM_SYNTHETIC > '${target.replaceAll('\\', '/')}'` } : toolName === 'PowerShell' ? { command: `[IO.File]::WriteAllText('${target.replaceAll("'", "''")}','ASTERIUM_SYNTHETIC')` } : toolName === 'AskUserQuestion' ? { questions: [{ question: 'Choose fixture', header: 'Fixture', options: [{ label: 'A', description: 'Synthetic A' }, { label: 'B', description: 'Synthetic B' }], multiSelect: false }] } : toolName.startsWith('mcp__') ? { key: 'time' } : { file_path: target, content: 'ASTERIUM_SYNTHETIC_WRITE' };
-  const server = http.createServer(async (req, res) => {
+  const server = createTestHttpServer(async (req, res) => {
     try {
       let raw = ''; for await (const bytes of req) { raw += bytes; if (raw.length > 4_000_000) throw new Error('Fixture input too large'); }
       const data = raw ? JSON.parse(raw) : {};
@@ -183,3 +195,4 @@ report.failed = report.cases.filter(c => !c.passed).length;
 fs.writeFileSync(path.join(run, 'result.json'), JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ evidence: path.join(run, 'result.json'), cases: report.cases.length, failed: report.failed }));
 if (report.failed) process.exitCode = 1;
+});

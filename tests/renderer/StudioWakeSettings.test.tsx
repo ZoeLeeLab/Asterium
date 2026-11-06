@@ -35,9 +35,9 @@ describe('minimal wake controls', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('服务器尚未安装');
   });
   it('sends manual retry / ignore for the original trigger ID without automatically acting on reviews', async () => {
-    const triggerId = 'c8d190f7-c564-4a32-811b-9a68eabec5cd';
+    const triggerId = '00000002-0000-4000-8000-000000000002';
     const { api } = setup({ entries: [{ partnerId: 'chuan', connectionBindingId: 'binding', connectOnLaunch: true, ready: true, state: 'connected',
-      remote: { protocolVersion: 2, requestId: 'ef97ab55-e71c-4f05-81ee-f16f95b7ed9b', connectionBindingId: 'binding', connection: { phase: 'connected' }, duplicate: false,
+      remote: { protocolVersion: 2, requestId: '00000002-0000-4000-8000-000000000003', connectionBindingId: 'binding', connection: { phase: 'connected' }, duplicate: false,
         reviews: [{ roomId: 'A', membershipGeneration: 1, eventId: 7, triggerId, reason: 'uncertain' }] } }] });
     await screen.findByRole('button', { name: '重试' }); expect(api.control).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '重试' }));

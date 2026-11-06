@@ -2,17 +2,21 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from '../../src/renderer/components/ui/Composer';
 
+function mockAttachmentApi(overrides: Partial<NonNullable<Window['asteriumAttachments']>>) {
+  window.asteriumAttachments = {
+    choose: vi.fn(), discard: vi.fn(), commit: vi.fn(), list: vi.fn(), inspect: vi.fn(), read: vi.fn(), open: vi.fn(),
+    reveal: vi.fn(), copyPath: vi.fn(), exportAs: vi.fn(), saveToProject: vi.fn(), deleteConversation: vi.fn(),
+    thumbnail: vi.fn(async () => 'data:image/png;base64,aW1hZ2U='),
+    ...overrides,
+  };
+}
+
 describe('Composer attachments', () => {
   afterEach(() => { window.asteriumAttachments = undefined; });
 
   it('previews a selected image and warns while still allowing a metadata-only partner to send it', async () => {
     const pending = { selectionId: 'pending-image', name: '无法识别.png', mediaType: 'image/png', sizeBytes: 512 };
-    window.asteriumAttachments = {
-      choose: vi.fn(async () => [pending]),
-      discard: vi.fn(async () => undefined),
-      commit: vi.fn(), list: vi.fn(), inspect: vi.fn(), read: vi.fn(), open: vi.fn(), reveal: vi.fn(), copyPath: vi.fn(), exportAs: vi.fn(), saveToProject: vi.fn(), deleteConversation: vi.fn(),
-      thumbnail: vi.fn(async () => 'data:image/png;base64,aW1hZ2U='),
-    };
+    mockAttachmentApi({ choose: vi.fn(async () => [pending]), discard: vi.fn(async () => undefined) });
     const onSend = vi.fn(async () => true);
     render(<Composer placeholder="发送消息" onSend={onSend} attachmentsEnabled attachmentCapabilities={{ supportsImageInput: false, acceptedMimeTypes: [], maxImageBytes: 0, attachmentTransport: 'metadata_only' }} />);
 
@@ -21,6 +25,44 @@ describe('Composer attachments', () => {
     expect(screen.getByText('当前伙伴无法查看其中的图片；仍可发送，但伙伴只会收到附件元数据。')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(onSend).toHaveBeenCalledWith('', [pending]));
+  });
+
+  it('stages a pasted screenshot as an image-only draft and leaves text paste alone', async () => {
+    const pending = { selectionId: 'pasted-image', name: '截图.png', mediaType: 'image/png', sizeBytes: 3 };
+    const stageClipboardImage = vi.fn(async () => pending);
+    const discard = vi.fn(async () => undefined);
+    mockAttachmentApi({ stageClipboardImage, discard });
+    const onSend = vi.fn(async () => true);
+    render(<Composer placeholder="发送消息" onSend={onSend} attachmentsEnabled cyberBossChat />);
+
+    const input = screen.getByRole('textbox', { name: '发送消息' });
+    expect(fireEvent.paste(input, { clipboardData: { files: [], types: ['text/plain'] } })).toBe(true);
+    expect(stageClipboardImage).not.toHaveBeenCalled();
+    const bytes = Uint8Array.of(1, 2, 3);
+    const image = { type: 'image/png', size: bytes.length, arrayBuffer: async () => bytes.buffer };
+    expect(fireEvent.paste(input, { clipboardData: { files: [image] } })).toBe(false);
+    expect(await screen.findByAltText('截图.png')).toBeInTheDocument();
+    expect(stageClipboardImage).toHaveBeenCalledWith(bytes);
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('', [pending]));
+    expect(discard).not.toHaveBeenCalled();
+  });
+
+  it('discards a pasted screenshot if the conversation changes while staging', async () => {
+    const pending = { selectionId: 'pasted-image', name: '截图.png', mediaType: 'image/png', sizeBytes: 1 };
+    let finish!: (value: typeof pending) => void;
+    const stageClipboardImage = vi.fn(() => new Promise<typeof pending>(resolve => { finish = resolve; }));
+    const discard = vi.fn(async () => undefined);
+    mockAttachmentApi({ stageClipboardImage, discard });
+    const view = render(<Composer key="first" placeholder="第一段对话" onSend={vi.fn()} attachmentsEnabled />);
+    const image = { type: 'image/png', size: 1, arrayBuffer: async () => new ArrayBuffer(1) };
+    fireEvent.paste(screen.getByRole('textbox', { name: '第一段对话' }), { clipboardData: { files: [image] } });
+    await waitFor(() => expect(stageClipboardImage).toHaveBeenCalledOnce());
+    view.rerender(<Composer key="second" placeholder="第二段对话" onSend={vi.fn()} attachmentsEnabled />);
+    finish(pending);
+    await waitFor(() => expect(discard).toHaveBeenCalledWith([pending.selectionId]));
+    expect(screen.queryByText('截图.png')).not.toBeInTheDocument();
   });
 
   it('uses a two-line input and exposes source-neutral permission modes plus Plan in the command menu', () => {

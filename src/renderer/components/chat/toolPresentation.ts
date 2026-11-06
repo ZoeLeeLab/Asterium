@@ -14,6 +14,8 @@ export type ToolSemantic =
   | 'computer'
   | 'image_generation'
   | 'collaboration'
+  | 'delegate_dispatch'
+  | 'delegate_wait'
   | 'extension'
   | 'message_send'
   | 'reminder_create'
@@ -41,6 +43,9 @@ const hidden = (category: TurnOperationCategory = 'tool'): ToolPresentation => (
 
 // Shared by direct API/Codex calls and the Claude/MCP wrappers.
 const ASTERIUM_PRESENTATIONS: Record<string, ToolPresentation> = {
+  list_delegate_partners: hidden(),
+  delegate_tasks: semantic('tool', 'delegate_dispatch'),
+  wait_delegate_tasks: semantic('tool', 'delegate_wait'),
   project_notebook: semantic('tool', 'notebook', true),
   asterium_task: semantic('tool', 'task_contract', true),
   asterium_automation: semantic('tool', 'automation', true),

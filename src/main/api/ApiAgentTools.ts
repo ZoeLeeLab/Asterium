@@ -156,6 +156,7 @@ export class ApiAgentTools {
       ? [SUBMIT_WORKFLOW_DRAFT_TOOL, ...memoryDefinitions]
       : [...(primaryDirectory ? API_AGENT_TOOL_DEFINITIONS : []), ...(attachmentReader ? [READ_ATTACHMENT_TOOL] : []), ...(runtimeTools ? [ASTERIUM_STATUS_TOOL, ASTERIUM_WORKSPACE_TOOL] : []), ...(runtimeTools?.mentionPartner ? [MENTION_PARTNER_TOOL] : []), ...(runtimeTools?.task ? [ASTERIUM_TASK_TOOL] : []), ...memoryDefinitions, ...(runtimeTools?.projectNotebook ? [PROJECT_NOTEBOOK_TOOL] : []), ...(webTools?.definitions ?? [])];
     if (runtimeTools?.automation && !runtimeTools.workflowDraft) definitions.push({ name: 'asterium_automation', description: AUTOMATION_TOOL_DESCRIPTION, parameters: automationToolJsonSchema });
+    if (runtimeTools?.delegation && !runtimeTools.workflowDraft) definitions.push(...delegationTools);
     const handlers = this.toolHandlers();
     for (const definition of definitions) {
       if (!Object.hasOwn(handlers, definition.name)) throw new Error('API_TOOL_HANDLER_NOT_REGISTERED');
@@ -206,6 +207,11 @@ export class ApiAgentTools {
     const fileReadDescriptor = (name: string, args: Record<string, unknown>) => ({ ...readDescriptor(`API 伙伴请求调用 ${name}。`, [this.fileTarget(args)]), capabilities: fileCapability('read', args, name === 'deliver_file' ? 'exact_file' : 'workspace') });
     const memoryWriteDescriptor = (name: string): ToolAuthorizationDescriptor => ({ mutates: false, action: 'external_side_effect', risk: 'low', summary: `API 伙伴调用 ${name} 更新自己的星丛记忆。`, targets: [] });
     return {
+      ...Object.fromEntries(delegationTools.map(({ name }) => [name, {
+        source: 'asterium' as const,
+        describe: () => readDescriptor('伙伴委派任务'),
+        execute: async (args: Record<string, unknown>, signal: AbortSignal, authorization: ApiToolExecutionAuthorization) => ({ content: await this.runtimeTools!.delegation!(name, args, signal, authorization.toolCallId) }),
+      }])),
       asterium_automation: { source: 'asterium', validate: args => { automationToolSchema.parse(args); }, describe: () => readDescriptor('按当前会话权限管理自己的自动化。'), execute: async (args, signal) => ({ content: await this.runtimeTools!.automation!(args, signal) }) },
       list_directory: { source: 'workspace', allowInPlan: true, describe: (args) => fileReadDescriptor('list_directory', args), execute: async (args) => ({ content: await this.listDirectory(stringArg(args, 'path', '.')) }) },
       search_files: { source: 'workspace', allowInPlan: true, validate: (args) => { stringArg(args, 'query'); }, describe: (args) => fileReadDescriptor('search_files', args), execute: async (args) => ({ content: await this.searchFiles(stringArg(args, 'query'), stringArg(args, 'path', '.')) }) },
@@ -544,3 +550,4 @@ function abortError() {
 function isNodeError(value: unknown): value is NodeJS.ErrnoException {
   return value instanceof Error && 'code' in value;
 }
+import { delegationTools } from '../runtime/PartnerDelegation';

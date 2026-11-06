@@ -7,6 +7,7 @@ import type { MemorySourceNavigationState } from '../../app/memorySourceNavigati
 import { Avatar } from '../ui/Avatar';
 import { Modal } from '../ui/Modal';
 import { memoryStatusLabels, memoryTypeLabels } from './memoryLabels';
+import { MemoryImportPanel } from './MemoryImportPanel';
 import { MemoryFallbackSettings } from './MemoryFallbackSettings';
 
 interface MemorySettingsViewProps {
@@ -32,6 +33,7 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
   const navigate = useNavigate();
   const managedPartners = useMemo(() => partners.filter((partner) => partner.profileManagement?.memoryMode === 'asterium' && !partner.managedDataDeletedAt), [partners]);
   const [selectedPartnerId, setSelectedPartnerId] = useState(initialPartnerId);
+  const [archiveScrollbarVisible, setArchiveScrollbarVisible] = useState(false);
   const [records, setRecords] = useState<MemoryRecord[]>([]);
   const [fallbackMemoryIds, setFallbackMemoryIds] = useState<string[]>([]);
   const [briefing, setBriefing] = useState<MemoryArchiveBriefing>();
@@ -181,6 +183,7 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
   const visibleRecords = showTrash ? records.filter((record) => record.deletedAt) : records.filter((record) => !record.deletedAt);
   const openLiveSource = sourceResult?.state === 'live' ? (() => {
     const source = sourceResult.source;
+    if (source.kind === 'imported_text') return undefined;
     if (source.kind === 'single_chat') {
       const conversation = conversations.find((item) => item.id === source.conversationId && !item.isArchived);
       if (!conversation) return undefined;
@@ -197,13 +200,21 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
         <aside className="memory-partner-panel"><header><strong>伙伴</strong><small>{managedPartners.length}</small></header><div className="memory-partner-list" aria-label="选择记忆伙伴">{managedPartners.map((item) => <div className={`memory-partner-item${item.id === partnerId ? ' active' : ''}${item.isRemoved ? ' is-removed' : ''}`} key={item.id}><button type="button" onClick={() => { setSelectedPartnerId(item.id); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><Avatar partnerId={item.id} name={item.publicIdentity.displayName} src={item.publicIdentity.avatarDataUrl} accent={item.accent} size="sm" source={item.sourceMode} /><span><strong>{item.publicIdentity.displayName}</strong><small>{item.isRemoved ? '已移除 · 档案保留' : '星丛托管'}</small></span></button>{item.isRemoved && <button className="memory-partner-trash" type="button" aria-label={`删除已移除伙伴 ${item.publicIdentity.displayName}`} title="移入 Windows 回收站" onClick={() => { setPartnerTrashTarget(item); setPartnerTrashError(''); }}><Trash2 size={14} /></button>}</div>)}</div></aside>
         <main className="memory-content-panel">
           <MemoryFallbackSettings partnerId={partnerId} eligible={Boolean(partner && !partner.isRemoved && partner.sourceMode !== 'existing_thread')} />
+          {partner && !partner.isRemoved && <MemoryImportPanel key={partnerId} partnerId={partnerId} />}
           <details className="memory-briefing-card" open={briefingOpen} onToggle={(event) => setBriefingOpen(event.currentTarget.open)}><summary><span><Sparkles size={17} /><strong>会话记忆简报</strong></span><small>{briefing?.logicalDate ?? '确定性生成'}</small></summary>{briefing ? <pre>{briefing.content}</pre> : <p>{busy ? '正在生成简报…' : '暂无简报。'}</p>}</details>
           <section className="memory-archive-panel">
             <header><div><Archive size={18} /><span><strong>{partner?.publicIdentity.displayName ?? '伙伴'}的{showTrash ? '归档库' : '记忆档案'}</strong><small>{visibleRecords.length} 条当前结果</small></span></div></header>
             <nav className="memory-type-tabs" aria-label="按记忆类型分类"><button className={type === '' ? 'active' : ''} type="button" aria-pressed={type === ''} onClick={() => { setType(''); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><Grid2X2 size={15} /><span>全部</span></button>{Object.entries(memoryTypeLabels).map(([value, label]) => { const Icon = memoryTypeIcons[value as MemoryType]; return <button className={type === value ? 'active' : ''} type="button" aria-pressed={type === value} key={value} onClick={() => { setType(value as MemoryType); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><Icon size={15} /><span>{label}</span></button>; })}</nav>
             <div className="memory-filter-row"><label><Search size={15} /><input aria-label="搜索记忆" value={text} placeholder="搜索正文、标签或补充记录" onChange={(event) => { setText(event.target.value); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }} /></label><select aria-label="筛选记忆状态" value={status} onChange={(event) => { setStatus(event.target.value as MemoryStatus | ''); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><option value="">全部状态</option>{Object.entries(memoryStatusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>{!showTrash && <div className="memory-bulk-actions"><button className={bulkSelectMode ? 'secondary-button active' : 'secondary-button'} type="button" onClick={() => { setBulkSelectMode((current) => !current); setSelectedMemoryIds(new Set()); }}><Trash2 size={14} />{bulkSelectMode ? '取消删除' : '批量删除'}</button>{bulkSelectMode && selectedMemoryIds.size > 0 && <button className="danger-button" type="button" onClick={() => { setBulkDeleteOpen(true); setMutationError(''); }}><Trash2 size={14} />删除所选（{selectedMemoryIds.size}）</button>}</div>}</div>
             {error && <p className="form-error">{error}</p>}
-            {busy ? <div className="memory-loading">正在读取结构化记忆档案…</div> : visibleRecords.length ? <div className="memory-record-list">{visibleRecords.map((record) => { const TypeIcon = memoryTypeIcons[record.type]; return <article className={bulkSelectMode ? 'is-selecting' : undefined} key={record.memoryId}>
+            {busy ? <div className="memory-loading">正在读取结构化记忆档案…</div> : visibleRecords.length ? <div
+              className={`memory-record-list${archiveScrollbarVisible ? ' memory-scrollbar-visible' : ''}`}
+              role="region"
+              aria-label="记忆档案列表"
+              tabIndex={0}
+              onPointerMove={event => setArchiveScrollbarVisible(event.currentTarget.getBoundingClientRect().right - event.clientX <= 20)}
+              onPointerLeave={() => setArchiveScrollbarVisible(false)}
+            >{visibleRecords.map((record) => { const TypeIcon = memoryTypeIcons[record.type]; return <article className={bulkSelectMode ? 'is-selecting' : undefined} key={record.memoryId}>
               {!showTrash && bulkSelectMode && <label className="memory-record-check"><input type="checkbox" aria-label={`选择记忆：${record.body}`} checked={selectedMemoryIds.has(record.memoryId)} onChange={(event) => setSelectedMemoryIds((current) => { const next = new Set(current); if (event.target.checked) next.add(record.memoryId); else next.delete(record.memoryId); return next; })} /></label>}
               <button type="button" aria-label={`查看记忆：${record.body}`} onClick={() => { setDetail(record); setSourceResult(undefined); setSourceError(''); setMutationError(''); }}><span className="memory-record-type" aria-label={memoryTypeLabels[record.type]} title={memoryTypeLabels[record.type]}><TypeIcon size={16} /></span><strong className="memory-record-weight" aria-label={`权重 ${record.weight}`}>W{record.weight}</strong><span className="memory-record-body">{fallbackMemoryIds.includes(record.memoryId) && <small className="memory-fallback-badge">星丛兜底</small>}{record.body}</span><time title={new Date(record.occurredAt ?? record.updatedAt).toLocaleString('zh-CN')}>{formatRelativeMemoryTime(record.occurredAt ?? record.updatedAt)}</time></button>
             </article>; })}</div> : <div className="friendly-empty friendly-empty--compact"><Search size={30} /><h2>{showTrash ? '归档库为空' : '没有匹配的记忆'}</h2><p>{showTrash ? '软删除的记忆会保留在这里，等待恢复或永久删除。' : '调整分类、搜索文字或状态后再试。'}</p></div>}
@@ -221,8 +232,10 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
         </section>
         <div className="memory-detail-secondary">
           <section><h3>补充记录</h3>{detail.comments.length ? <ul>{detail.comments.map((item) => <li key={item.commentId}><p>{item.content}</p><time>{new Date(item.createdAt).toLocaleString('zh-CN')}</time></li>)}</ul> : <p className="memory-muted">还没有补充记录。</p>}{!detail.deletedAt && <form className="memory-comment-form" onSubmit={(event) => { event.preventDefault(); void appendComment(detail); }}><label><span className="sr-only">添加补充</span><textarea aria-label="添加补充" value={comment} placeholder="补充新证据、新感受或后续变化" rows={3} onChange={(event) => setComment(event.target.value)} /></label><button className="secondary-button" disabled={mutationBusy || !comment.trim()}><MessageSquarePlus size={14} />添加补充</button></form>}{mutationError && <p className="form-error">{mutationError}</p>}</section>
-          <section><h3>来源锚点</h3>{detail.sources.length ? <div className="memory-source-list">{detail.sources.map((source, index) => <button type="button" key={`${source.kind}-${source.messageId}`} onClick={() => void readSource(detail, index)}><Link2 size={15} /><span><strong>{source.kind === 'single_chat' ? '单聊消息' : 'Studio 消息'}</strong><small>{source.messageId}</small></span></button>)}</div> : <p className="memory-muted">这条记忆没有来源锚点。</p>}
-            {sourceBusy && <p className="memory-muted">正在读取来源上下文…</p>}{sourceError && <p className="form-error">{sourceError}</p>}{sourceResult && <MemorySourceEvidence result={sourceResult} onOpen={openLiveSource} />}
+          <section><h3>来源锚点</h3>{detail.sources.length ? <div className="memory-source-list">{detail.sources.map((source, index) => <button type="button" key={`${source.kind}-${source.messageId}`} onClick={() => void readSource(detail, index)}><Link2 size={15} /><span><strong>{source.kind === 'imported_text' ? source.label : source.kind === 'single_chat' ? '单聊消息' : 'Studio 消息'}</strong><small>{source.messageId}</small></span></button>)}</div> : <p className="memory-muted">这条记忆没有来源锚点。</p>}
+            {sourceBusy && <p className="memory-muted">正在读取来源上下文…</p>}{sourceError && <p className="form-error">{sourceError}</p>}{sourceResult && (sourceResult.source.kind === 'imported_text'
+              ? <blockquote>{sourceResult.source.label} · 第 {sourceResult.source.messageId} 段<br />{sourceResult.source.excerpt}</blockquote>
+              : <MemorySourceEvidence result={sourceResult} onOpen={openLiveSource} />)}
           </section>
         </div>
       </div>

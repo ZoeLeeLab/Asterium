@@ -1,5 +1,6 @@
+import { testRm as rm } from '../helpers/autoTest.mjs';
 import { PassThrough } from 'node:stream';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -344,7 +345,7 @@ describe('ClaudeCodeAdapter lifecycle', () => {
       ].join('\n')));
       return child;
     };
-    const sessionId = '417878a2-0066-4471-b81f-67a37418b7c0';
+    const sessionId = '00000001-0000-4000-8000-000000000001';
     const events = await collect(new ClaudeCodeAdapter('claude.exe', 'K:\\qa', spawnClaude).sendMessage({ ...command(), sessionId }));
 
     expect(args).toEqual(expect.arrayContaining(['--resume', sessionId]));

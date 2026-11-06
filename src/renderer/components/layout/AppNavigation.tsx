@@ -1,5 +1,6 @@
 import { Clock3, Menu, MessageCircleMore, Moon, Search, Sun, UsersRound } from 'lucide-react';
 import { WindowRailControls, type RailControls } from './WindowRailControls';
+import type { RefObject } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePrototype } from '../../app/PrototypeProvider';
 import { readLastStudioRoute } from '../../app/navigationPersistence';
@@ -28,7 +29,10 @@ export function Brand() {
   );
 }
 
-export function MainHeader({ rails }: { rails?: RailControls }) {
+export function MainHeader({ rails, conversationSearch }: {
+  rails?: RailControls;
+  conversationSearch?: { open: boolean; onToggle: () => void; triggerRef: RefObject<HTMLButtonElement | null> };
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const { state, theme, toggleTheme } = usePrototype();
@@ -46,8 +50,11 @@ export function MainHeader({ rails }: { rails?: RailControls }) {
         </button>
       </nav>
       <div className="header-actions"><button className="icon-button icon-button--large" type="button" aria-label="自动化" title="自动化" onClick={() => navigate(`/settings/partners?section=automations&${studio ? `room=${encodeURIComponent(state.activeGroupChatId)}` : `conversation=${encodeURIComponent(state.activeConversationId)}`}`, { state: { from: location.pathname } })}><Clock3 size={20} /></button>
-        <button className="icon-button icon-button--large" type="button" disabled title="全局搜索将在后续开放">
-          <Search size={22} /><span className="sr-only">全局搜索（后续开放）</span>
+        <button ref={conversationSearch?.triggerRef} className="icon-button icon-button--large" type="button"
+          disabled={!conversationSearch} title={conversationSearch ? '搜索当前对话' : '请在单聊中搜索当前对话'}
+          aria-label="搜索当前对话" aria-expanded={conversationSearch?.open} aria-controls={conversationSearch?.open ? 'conversation-search' : undefined}
+          onClick={conversationSearch?.onToggle}>
+          <Search size={22} />
         </button>
         <button className="icon-button icon-button--large" type="button" onClick={toggleTheme} title={`切换到${theme === 'light' ? '深色' : '浅色'}模式`}>
           {theme === 'light' ? <Sun size={22} /> : <Moon size={22} />}

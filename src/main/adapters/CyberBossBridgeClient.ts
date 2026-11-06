@@ -1,5 +1,7 @@
+import { cyberBossChatFileCapabilitiesSchema, cyberBossChatFileSchema } from '../../shared/cyberBossChatAttachments';
 import { CyberBossSseParser, type CyberBossSseEvent } from './cyberBossSseParser';
 import { studioWakeControlReplySchema, studioWakeControlRequestSchema, type StudioWakeControlRequest } from '../../shared/studioWakeAdapter';
+import { EXISTING_PARTNER_REVIEW_PATH, reviewCapabilitySchema, reviewReceiptSchema, reviewRequestSchema, type ExistingPartnerReviewRequest } from '../../shared/existingPartnerReview';
 
 type Fetcher = typeof fetch;
 const INITIAL_RECONNECT_MS = 2_000;
@@ -35,13 +37,14 @@ export class CyberBossBridgeClient {
     this.lastEventId = options.initialLastEventId ?? '';
   }
 
-  async authenticate(signal?: AbortSignal | null) {
+  async authenticate(signal?: AbortSignal | null, redirect?: RequestRedirect) {
     signal?.throwIfAborted();
     const response = await this.fetcher(new URL('/api/auth', this.baseUrl), {
       method: 'POST',
       headers: { Origin: this.origin, 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: this.options.secret }),
       ...(signal ? { signal } : {}),
+      ...(redirect ? { redirect } : {}),
     });
     try {
       if (response.status === 401 || response.status === 403) throw new Error('CYBERBOSS_AUTH_FAILED');
@@ -53,8 +56,11 @@ export class CyberBossBridgeClient {
     }
   }
 
-  async checkSession() {
-    const response = await this.authorizedFetch('/api/session', { method: 'GET' });
+  async checkSession(forChatAttachment = false) {
+    const response = await this.authorizedFetch('/api/session', {
+      method: 'GET',
+      ...(forChatAttachment ? { redirect: 'error' as const, signal: AbortSignal.timeout(10_000), cache: 'no-store' as const } : {}),
+    });
     if (!response.ok) throw new Error('CYBERBOSS_SESSION_UNAVAILABLE');
     this.captureCookie(response.headers);
     try {
@@ -69,14 +75,154 @@ export class CyberBossBridgeClient {
     }
   }
 
-  async sendMessage(text: string, clientMessageId: string) {
+  async uploadChatImage(image: { name: string; mediaType: string }, bytes: Uint8Array, mixed = false) {
+    const errorCode = 'CYBERBOSS_CHAT_IMAGE_UPLOAD_FAILED';
+    let response: Response | undefined;
+    try {
+      response = await this.authorizedFetch('/api/media', {
+        method: 'POST',
+        headers: { 'Content-Type': image.mediaType, 'X-File-Name-B64': Buffer.from(image.name, 'utf8').toString('base64url') },
+        body: new Uint8Array(bytes),
+        redirect: 'error',
+        signal: AbortSignal.timeout(60_000),
+      }, !mixed);
+      if (response.status === 401 && mixed) throw new Error('CYBERBOSS_AUTH_FAILED');
+      if (response.status !== 201) throw new Error(errorCode);
+      const reply = await readBoundedJson(response, 16 * 1024, errorCode);
+      if (!isRecord(reply) || reply.ok !== true || !isRecord(reply.media) || typeof reply.media.mediaId !== 'string'
+        || !reply.media.mediaId.trim() || reply.media.mediaId.length > 256) {
+        throw new Error(errorCode);
+      }
+      return reply.media.mediaId;
+    } catch (error) {
+      if (error instanceof Error && error.message === 'CYBERBOSS_AUTH_FAILED') throw error;
+      throw new Error(errorCode, { cause: error });
+    } finally {
+      await response?.body?.cancel().catch(() => undefined);
+    }
+  }
+
+  async chatFileCapabilities() {
+    const errorCode = 'CYBERBOSS_CHAT_FILE_UNAVAILABLE';
+    const response = await this.authorizedFetch('/api/attachments/capabilities', {
+      method: 'GET', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(8_000),
+    });
+    try {
+      if (response.status === 404 || response.status === 405) return undefined;
+      if (response.status !== 200) throw await chatAttachmentResponseError(response, errorCode);
+      const result = cyberBossChatFileCapabilitiesSchema.safeParse(await readBoundedJson(response, 32 * 1024, errorCode));
+      return result.success ? result.data : undefined;
+    } finally {
+      await response.body?.cancel().catch(() => undefined);
+    }
+  }
+
+  async uploadChatFile(file: { name: string; mediaType: string; sizeBytes: number }, bytes: Uint8Array, threadId: string) {
+    const errorCode = 'CYBERBOSS_CHAT_FILE_UPLOAD_FAILED';
+    let response: Response | undefined;
+    try {
+      response = await this.authorizedFetch('/api/attachments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.mediaType,
+          'X-File-Name-B64': Buffer.from(file.name, 'utf8').toString('base64url'),
+          'X-Cyberboss-Thread-Id': threadId,
+        },
+        body: new Uint8Array(bytes),
+        redirect: 'error',
+        signal: AbortSignal.timeout(60_000),
+      }, false);
+      if (response.status !== 201) throw await chatAttachmentResponseError(response, errorCode);
+      const reply = await readBoundedJson(response, 16 * 1024, errorCode);
+      if (!isRecord(reply) || reply.ok !== true) throw new Error(errorCode);
+      if (reply.threadId !== threadId) throw new Error('CYBERBOSS_CHAT_THREAD_CHANGED');
+      const result = cyberBossChatFileSchema.safeParse(reply.attachment);
+      if (!result.success || result.data.sizeBytes !== file.sizeBytes || result.data.contentType !== file.mediaType) {
+        throw new Error(errorCode);
+      }
+      return result.data.attachmentId;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('CYBERBOSS_')) throw error;
+      throw new Error(errorCode, { cause: error });
+    } finally {
+      await response?.body?.cancel().catch(() => undefined);
+    }
+  }
+
+  async sendChatWithFiles(input: { text: string; clientMessageId: string; mediaIds: string[]; attachmentIds: string[]; threadId: string }) {
+    const body = JSON.stringify(input);
+    let uncertain = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let response: Response | undefined;
+      try {
+        response = await this.authorizedFetch('/api/messages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+          redirect: 'error', signal: AbortSignal.timeout(30_000),
+        }, false);
+      } catch {
+        uncertain = true;
+        continue;
+      }
+      try {
+        if (response.status === 202) {
+          const reply = await readBoundedJson(response, 64 * 1024, 'CYBERBOSS_CHAT_MESSAGE_UNCERTAIN').catch(() => undefined);
+          if (isRecord(reply) && reply.ok === true && reply.clientMessageId === input.clientMessageId
+            && isRecord(reply.message) && reply.message.clientMessageId === input.clientMessageId) return;
+          uncertain = true;
+          continue;
+        }
+        if (response.status >= 500) {
+          uncertain = true;
+          continue;
+        }
+        if (uncertain) break;
+        throw await chatAttachmentResponseError(response, 'CYBERBOSS_CHAT_MESSAGE_REJECTED');
+      } finally {
+        await response.body?.cancel().catch(() => undefined);
+      }
+    }
+    throw new Error('CYBERBOSS_CHAT_MESSAGE_UNCERTAIN');
+  }
+
+  async sendMessage(text: string, clientMessageId: string, mediaIds: string[] = []) {
     const response = await this.authorizedFetch('/api/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, clientMessageId }),
+      body: JSON.stringify({ text, clientMessageId, ...(mediaIds.length ? { mediaIds } : {}) }),
+      ...(mediaIds.length ? { redirect: 'error' as const, signal: AbortSignal.timeout(30_000) } : {}),
     });
+    await response.body?.cancel().catch(() => undefined);
     if (response.status === 409) throw new Error('CYBERBOSS_IDEMPOTENCY_CONFLICT');
-    if (response.status !== 202 && !response.ok) throw new Error('CYBERBOSS_MESSAGE_REJECTED');
+    if (mediaIds.length ? response.status !== 202 : !response.ok) throw new Error('CYBERBOSS_MESSAGE_REJECTED');
+  }
+
+  async reviewCapability(signal: AbortSignal) {
+    return reviewCapabilitySchema.parse(await this.reviewResponse(EXISTING_PARTNER_REVIEW_PATH, { method: 'GET', signal }));
+  }
+
+  async submitReview(request: ExistingPartnerReviewRequest, bytes: Uint8Array, signal: AbortSignal) {
+    const metadata = reviewRequestSchema.parse(request);
+    const form = new FormData();
+    form.append('metadata', JSON.stringify(metadata));
+    form.append('file', new Blob([new Uint8Array(bytes)], { type: 'text/markdown' }), metadata.file.name);
+    return reviewReceiptSchema.parse(await this.reviewResponse(EXISTING_PARTNER_REVIEW_PATH, { method: 'POST', body: form, signal }));
+  }
+
+  async reviewStatus(requestId: string, signal: AbortSignal) {
+    const pathname = `${EXISTING_PARTNER_REVIEW_PATH}/${encodeURIComponent(requestId)}`;
+    return reviewReceiptSchema.parse(await this.reviewResponse(pathname, { method: 'GET', signal }));
+  }
+
+  private async reviewResponse(pathname: string, init: RequestInit) {
+    const timeout = AbortSignal.timeout(8_000);
+    const response = await this.authorizedFetch(pathname, {
+      ...init, redirect: 'error', cache: 'no-store',
+      signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
+    }, init.method !== 'POST');
+    try {
+      if (!response.ok) throw new Error('CYBERBOSS_REVIEW_UNAVAILABLE');
+      return await readBoundedJson(response, 128 * 1024, 'CYBERBOSS_REVIEW_REPLY_INVALID');
+    } finally { await response.body?.cancel().catch(() => undefined); }
   }
 
   /** Dedicated control action; never publish a user message or run the chat events loop. */
@@ -128,6 +274,7 @@ export class CyberBossBridgeClient {
         const decoder = new TextDecoder();
         for (;;) {
           const next = await reader.read();
+          if (signal.aborted) return;
           if (next.done) break;
           for (const event of parser.push(decoder.decode(next.value, { stream: true }))) {
             if (this.acceptEvent(event.id)) yield event;
@@ -156,15 +303,15 @@ export class CyberBossBridgeClient {
     }
   }
 
-  private async authorizedFetch(pathname: string, init: RequestInit) {
+  private async authorizedFetch(pathname: string, init: RequestInit, retryUnauthorized = true) {
     init.signal?.throwIfAborted();
-    if (!this.cookie) await this.authenticate(init.signal);
+    if (!this.cookie) await this.authenticate(init.signal, init.redirect);
     init.signal?.throwIfAborted();
     let response = await this.fetcher(new URL(pathname, this.baseUrl), { ...init, headers: { Origin: this.origin, Cookie: this.cookie, ...init.headers } });
-    if (response.status === 401) {
-      this.cookie = '';
+    if (response.status === 401) this.cookie = '';
+    if (response.status === 401 && retryUnauthorized) {
       await response.body?.cancel().catch(() => undefined);
-      await this.authenticate(init.signal);
+      await this.authenticate(init.signal, init.redirect);
       init.signal?.throwIfAborted();
       response = await this.fetcher(new URL(pathname, this.baseUrl), { ...init, headers: { Origin: this.origin, Cookie: this.cookie, ...init.headers } });
     }
@@ -186,6 +333,45 @@ export class CyberBossBridgeClient {
     this.options.onLastEventId?.(id);
     return true;
   }
+}
+
+async function readBoundedJson(response: Response, maxBytes: number, errorCode: string): Promise<unknown> {
+  if (!response.body) throw new Error(errorCode);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      bytes += part.value.byteLength;
+      if (bytes > maxBytes) throw new Error(errorCode);
+      chunks.push(part.value);
+    }
+  } finally { reader.releaseLock(); }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw new Error(errorCode); }
+}
+
+const CHAT_ATTACHMENT_ERRORS = new Map([
+  ['unsafe_attachment_name', 'CYBERBOSS_CHAT_FILE_NAME'],
+  ['attachment_signature_mismatch', 'CYBERBOSS_CHAT_FILE_SIGNATURE'],
+  ['invalid_attachments', 'CYBERBOSS_CHAT_ATTACHMENT_INVALID'],
+  ['too_many_attachments', 'CYBERBOSS_CHAT_TOO_MANY_ATTACHMENTS'],
+  ['attachment_forbidden', 'CYBERBOSS_CHAT_ATTACHMENT_FORBIDDEN'],
+  ['thread_changed', 'CYBERBOSS_CHAT_THREAD_CHANGED'],
+  ['client_message_id_conflict', 'CYBERBOSS_IDEMPOTENCY_CONFLICT'],
+  ['attachment_expired', 'CYBERBOSS_CHAT_ATTACHMENT_EXPIRED'],
+  ['attachment_too_large', 'CYBERBOSS_CHAT_FILE_SIZE'],
+  ['attachments_too_large', 'CYBERBOSS_CHAT_TOTAL_SIZE'],
+  ['unsupported_attachment_type', 'CYBERBOSS_CHAT_FILE_TYPE'],
+]);
+
+async function chatAttachmentResponseError(response: Response, fallback: string) {
+  if (response.status === 401) return new Error('CYBERBOSS_AUTH_FAILED');
+  const reply = await readBoundedJson(response, 16 * 1024, fallback).catch(() => undefined);
+  const code = isRecord(reply) && typeof reply.error === 'string' ? CHAT_ATTACHMENT_ERRORS.get(reply.error) : undefined;
+  return new Error(code ?? fallback);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

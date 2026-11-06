@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { STUDIO_MCP_DEFAULT_PORT, type StudioMcpStatus } from '../../../shared/studioMcp';
 import type { Partner } from '../../types/domain';
 
 export function StudioMcpSettings({ partners }: { partners: Partner[] }) {
   const api = window.asteriumStudioMcp;
+  const automationHelpId = useId();
   const candidates = partners.filter((partner) => !partner.isRemoved && !partner.isPrototype && partner.sourceMode === 'existing_thread');
   const [status, setStatus] = useState<StudioMcpStatus>();
   const [port, setPort] = useState(STUDIO_MCP_DEFAULT_PORT);
@@ -11,6 +12,7 @@ export function StudioMcpSettings({ partners }: { partners: Partner[] }) {
   const [automationManagementEnabled, setAutomationManagementEnabled] = useState(false);
   const [partnerId, setPartnerId] = useState('');
   const [issued, setIssued] = useState<{ partnerId: string; token: string }>();
+  const [copyResult, setCopyResult] = useState<'success' | 'failure'>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const locked = useRef(false);
@@ -43,8 +45,11 @@ export function StudioMcpSettings({ partners }: { partners: Partner[] }) {
     <p>让现有伙伴在原来的前端读取群消息、公开发言。文字工具可主动调用，自动唤醒需另行配置。</p>
     <label>本地服务端口<input type="number" min={1024} max={65535} value={port} disabled={busy} onChange={(event) => setPort(Number(event.target.value))} /></label>
     <label>私网 HTTPS 地址<input type="url" value={publicOrigin} disabled={busy} placeholder="https://你的电脑.tailnet.ts.net" onChange={(event) => setPublicOrigin(event.target.value.trim().replace(/\/$/, ''))} /></label>
-    <label><input type="checkbox" checked={automationManagementEnabled} disabled={busy} onChange={event => setAutomationManagementEnabled(event.target.checked)} />允许外部伙伴管理自己的自动化（每次变更仍需我确认）</label>
-    <p>默认关闭。开启只授予任务管理，不代表外部宿主已支持定时执行，也不改变群聊或目录权限。</p>
+    <label className="studio-mcp-automation">
+      <input type="checkbox" checked={automationManagementEnabled} disabled={busy} aria-describedby={automationHelpId} onChange={event => setAutomationManagementEnabled(event.target.checked)} />
+      允许外部伙伴管理自己的自动化（每次变更仍需我确认）
+    </label>
+    <p className="studio-mcp-automation-help" id={automationHelpId}>默认关闭。勾选后点击「保存连接设置」。开启只授予任务管理，不代表外部宿主已支持定时执行，也不改变群聊或目录权限。</p>
     <p>服务只监听本机。跨设备接入需要配置 Tailscale Serve；此页面不会自动修改网络配置。开启状态会保存，重启星丛后自动恢复；手动停止也会保存。启动异常时可点击开启重试。</p>
     <div className="studio-mcp-actions">
       <button className="secondary-button" type="button" disabled={busy || !status} onClick={() => void perform(async () => { setStatus(await api.configure({ enabled: !status!.running, port, publicOrigin, automationManagementEnabled })); })}>{status?.running ? '停止群聊接入' : '开启群聊接入'}</button>
@@ -55,11 +60,30 @@ export function StudioMcpSettings({ partners }: { partners: Partner[] }) {
     {status?.running && <p>接入地址：{status.configuration.publicOrigin ? `${status.configuration.publicOrigin}/mcp` : '尚未填写私网地址，仅可在本机测试'}</p>}
     {status?.lastAuthenticatedAt && <p>最近一次认证请求：{new Date(status.lastAuthenticatedAt).toLocaleString()}。这表示工具请求到达，不代表伙伴正在运行。</p>}
     <label>绑定伙伴<select aria-label="群聊接入绑定伙伴" disabled={busy || !candidates.length} value={selectedPartnerId} onChange={(event) => setPartnerId(event.target.value)}>{!candidates.length && <option value="">请先接回一个现有伙伴</option>}{candidates.map((partner) => <option key={partner.id} value={partner.id}>{partner.publicIdentity.displayName}</option>)}</select></label>
-    <button className="secondary-button" type="button" disabled={busy || !selectedPartnerId} onClick={() => void perform(async () => {
+    <button className="secondary-button" type="button" disabled={busy || !status || !selectedPartnerId} onClick={() => void perform(async () => {
       const value = await api.issueCredential(selectedPartnerId);
-      setIssued({ partnerId: value.credential.partnerId, token: value.token }); setStatus(await api.status());
+      setCopyResult(undefined);
+      setIssued({ partnerId: value.credential.partnerId, token: value.token });
+      setStatus(current => current && { ...current, credentials: [...current.credentials, value.credential] });
     })}>生成伙伴接入凭据</button>
-    {issued && <div className="studio-mcp-issued"><label>新接入凭据（仅显示一次）<input type="password" readOnly value={issued.token} /></label><p>只交给绑定伙伴的 MCP 配置；它仅能访问该伙伴已加入的群。离开此页面后不再显示。</p><button className="text-button" type="button" onClick={() => void perform(async () => { await navigator.clipboard.writeText(issued.token); })}>复制接入凭据</button><button className="text-button" type="button" onClick={() => setIssued(undefined)}>隐藏接入凭据</button></div>}
+    {issued && <div className="studio-mcp-issued">
+      <label>新接入凭据（仅显示一次）<input type="password" readOnly value={issued.token} /></label>
+      <p>只交给绑定伙伴的 MCP 配置；它仅能访问该伙伴已加入的群。离开此页面后不再显示。</p>
+      <div className="studio-mcp-actions">
+        <button className="secondary-button studio-mcp-copy" type="button" disabled={busy} onClick={() => void perform(async () => {
+          setCopyResult(undefined);
+          try {
+            await api.copyCredential(issued.token);
+            setCopyResult('success');
+          } catch {
+            setCopyResult('failure');
+          }
+        })}>复制接入凭据</button>
+        <button className="secondary-button" type="button" disabled={busy} onClick={() => setIssued(undefined)}>隐藏接入凭据</button>
+        {copyResult === 'success' && <small className="studio-mcp-copy-status" role="status">已复制</small>}
+        {copyResult === 'failure' && <small className="studio-mcp-copy-status studio-mcp-copy-status--error" role="alert">复制失败，请重试</small>}
+      </div>
+    </div>}
     {!!status?.credentials.length && <ul className="studio-mcp-credentials">{status.credentials.map((credential) => <li key={credential.credentialId}><span>{partners.find((partner) => partner.id === credential.partnerId)?.publicIdentity.displayName ?? '已移除伙伴'} · {credential.revokedAt ? '已撤销' : '有效凭据'}</span>{!credential.revokedAt && <button className="text-button text-button--danger" type="button" disabled={busy} aria-label={`撤销群聊凭据 ${credential.credentialId}`} onClick={() => void perform(async () => { setStatus(await api.revokeCredential(credential.credentialId)); if (issued?.partnerId === credential.partnerId) setIssued(undefined); })}>撤销</button>}</li>)}</ul>}
     {error && <p role="alert" className="form-error">{error}</p>}
   </details>;

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiPartnerConnectionFields } from '../../src/renderer/components/settings/ApiPartnerConnectionFields';
 import { saveApiPartnerConnection, newApiModel, type ApiConnectionValue } from '../../src/renderer/components/settings/apiPartnerConnection';
@@ -28,6 +28,21 @@ function Form({ value = initial, onChange = () => undefined, submit = () => unde
 }
 
 describe('API partner site configuration', () => {
+  it('loads the already saved default DeepSeek site in StrictMode and saves a second model under it', async () => {
+    const saved = { ...apiSitePreset('preset-deepseek')!, credentialRef: 'existing-deepseek-key' };
+    const previous = { ...newApiModel(saved, 'deepseek-existing'), id: 'first-model' };
+    const { mutate, save } = setup({
+      ...configuration, services: [saved], models: [previous], bindings: [{ partnerId: 'first-partner', modelId: previous.id }],
+    });
+    let draft = initial;
+    render(<StrictMode><Form onChange={next => { draft = { ...draft, ...next }; }} /></StrictMode>);
+    await screen.findByPlaceholderText('已安全保存，留空保持不变');
+    fireEvent.change(screen.getByRole('combobox', { name: '模型' }), { target: { value: 'deepseek-flash' } });
+    await expect(saveApiPartnerConnection(draft, saved.credentialRef)).resolves.toEqual(expect.any(String));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ action: 'model', value: expect.objectContaining({ serviceId: saved.id, model: 'deepseek-flash' }) }));
+    expect(save).not.toHaveBeenCalled();
+  });
   it('shows five ready presets and only key/model fields, with advanced settings closed', () => {
     setup(); const { container } = render(<Form />);
     for (const name of ['DeepSeek', 'Kimi', 'OpenAI', 'Anthropic', '硅基流动', '＋ 自定义配置…']) expect(screen.getByRole('option', { name })).toBeInTheDocument();

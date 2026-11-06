@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { mkdtemp, readFile, realpath, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp, readFile, realpath, writeFile, mkdir, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';

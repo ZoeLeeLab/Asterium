@@ -56,6 +56,7 @@ export type PrototypeAction =
   | { type: 'syncNativeThreadLifecycle'; conversationId: string; state: NativeThreadLifecycleState; checkedAt: string; message?: string }
   | { type: 'toggleConversationPin'; conversationId: string }
   | { type: 'setConversationPermissionMode'; conversationId: string; mode: PermissionMode }
+  | { type: 'setConversationCodexModel'; conversationId: string; selection: import('../../../shared/codexModels').CodexModelSelection }
   | { type: 'setConversationPlanMode'; conversationId: string; mode: PlanMode }
   | { type: 'switchConversationWorkspace'; conversationId: string; conversation: Conversation }
   | { type: 'createProject'; project: Project }

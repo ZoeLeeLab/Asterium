@@ -109,6 +109,10 @@ export class StudioRuntimeCatalog {
     return this.partners.get(partnerId);
   }
 
+  allPartners() {
+    return [...this.partners.values()];
+  }
+
   members(partnerIds: string[]) {
     return partnerIds.map((partnerId) => this.partners.get(partnerId)).filter((partner): partner is StudioPartnerRecord => Boolean(partner));
   }

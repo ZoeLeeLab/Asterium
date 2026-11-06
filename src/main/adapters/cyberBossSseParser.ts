@@ -1,3 +1,8 @@
+import { z } from 'zod';
+import { cyberBossChatFileSchema } from '../../shared/cyberBossChatAttachments';
+
+const chatFilesSchema = z.array(cyberBossChatFileSchema).max(10);
+
 export interface CyberBossChatEvent {
   event: 'chat';
   id: string;
@@ -7,6 +12,7 @@ export interface CyberBossChatEvent {
   clientMessageId: string;
   createdAt: string;
   media: unknown[];
+  attachments?: z.infer<typeof chatFilesSchema>;
 }
 
 export interface CyberBossThreadChangedEvent {
@@ -80,6 +86,7 @@ function parseBlock(block: string): CyberBossSseEvent | undefined {
     };
   }
   if (!['user', 'assistant', 'status', 'error'].includes(String(value.role))) throw new Error('CYBERBOSS_MALFORMED_SSE');
+  const attachments = chatFilesSchema.safeParse(value.attachments);
   return {
     event: 'chat',
     id,
@@ -89,6 +96,7 @@ function parseBlock(block: string): CyberBossSseEvent | undefined {
     clientMessageId: typeof value.clientMessageId === 'string' ? value.clientMessageId : '',
     createdAt: typeof value.createdAt === 'string' ? value.createdAt : '',
     media: Array.isArray(value.media) ? value.media : [],
+    ...(attachments.success ? { attachments: attachments.data } : {}),
   };
 }
 

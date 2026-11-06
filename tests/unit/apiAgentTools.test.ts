@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +19,17 @@ async function tempDirectory() {
 }
 
 describe('ApiAgentTools', () => {
+  it('routes delegation through the configured controller with the runtime call identity', async () => {
+    const delegation = vi.fn(async () => '{"id":"batch"}');
+    const runtime = new ApiAgentTools(undefined, [], undefined, {
+      status: vi.fn(async () => '{}'), workspace: vi.fn(async () => '{}'), update: vi.fn(), delegation,
+    });
+    const signal = new AbortController().signal;
+    const input = { tasks: [{ targetPartnerId: 'reviewer', instruction: 'Review the proposal' }] };
+    expect(runtime.definitions.map(tool => tool.name)).toContain('wait_delegate_tasks');
+    expect(await runtime.execute('delegate_tasks', input, signal, { toolCallId: 'call-1' })).toEqual({ content: '{"id":"batch"}' });
+    expect(delegation).toHaveBeenCalledWith('delegate_tasks', { tasks: [{ ...input.tasks[0], attachmentIds: [] }] }, signal, 'call-1');
+  });
   it('never executes tools absent from the configured runtime catalog', async () => {
     const signal = new AbortController().signal;
     const noWorkspace = new ApiAgentTools(undefined);

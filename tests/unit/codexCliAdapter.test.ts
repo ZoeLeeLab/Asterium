@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, recommendedCodexRuntime, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, recommendedCodexRuntime, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
 import { PLAN_EXECUTION_QUESTION_ID, PLAN_EXECUTION_START, PLAN_EXECUTION_STOP } from '../../src/main/adapters/planExecutionDecision';
 import type { CodexAppServerTransport, CodexRpcMessage, JsonRpcId } from '../../src/main/adapters/codexAppServerProtocol';
 import { AGENT_PROTOCOL_VERSION, CODEX_NATIVE_TOOL_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
@@ -32,6 +33,31 @@ function command(sessionId?: string, clientMessageId = 'client-1'): SendMessageC
     content: { type: 'text', text: '你好' },
   };
 }
+
+it('reads visible model choices and supported effort from the selected runtime across pages', async () => {
+  const transport = new FakeTransport();
+  const request = vi.spyOn(transport, 'request')
+    .mockResolvedValueOnce({
+      data: [
+        { model: 'fixture-first', displayName: 'First', defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] },
+        { model: 'fixture-hidden', hidden: true },
+      ],
+      nextCursor: 'page-two',
+    })
+    .mockResolvedValueOnce({ data: [{ model: 'fixture-second' }], nextCursor: null });
+  const create = vi.fn(() => transport);
+
+  await expect(listCodexModels('codex.exe', '.', create)).resolves.toEqual([
+    { model: 'fixture-first', displayName: 'First', defaultEffort: 'medium', efforts: ['medium'] },
+    { model: 'fixture-second', displayName: 'fixture-second', efforts: [] },
+  ]);
+  expect(create).toHaveBeenCalledWith('codex.exe', '.');
+  expect(request.mock.calls).toEqual([
+    ['model/list', { limit: 100, includeHidden: false }],
+    ['model/list', { limit: 100, includeHidden: false, cursor: 'page-two' }],
+  ]);
+  expect(transport.connected).toBe(false);
+});
 
 class FakeTransport implements CodexAppServerTransport {
   connected = true;
@@ -90,6 +116,27 @@ async function collect(stream: AsyncIterable<PartnerEvent>) {
 }
 
 describe('CodexCliAdapter', () => {
+  it('keeps one turn open across assistant text, a tool, and a second assistant message', async () => {
+    const transport = new FakeTransport(false);
+    const adapter = new CodexCliAdapter('codex.exe', 'K:\\qa', () => transport);
+    const iterator = adapter.sendMessage(command())[Symbol.asyncIterator]();
+    await iterator.next();
+    await iterator.next();
+    const route = { threadId: 'thread-1', turnId: 'turn-1' };
+    transport.emit({ method: 'item/agentMessage/delta', params: { ...route, itemId: 'before', delta: '我先查一下。' } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'text.delta', text: '我先查一下。' });
+    transport.emit({ method: 'item/completed', params: { ...route, item: { id: 'before', type: 'agentMessage', text: '我先查一下。' } } });
+    transport.emit({ method: 'item/started', params: { ...route, item: { id: 'tool', type: 'commandExecution', status: 'inProgress', command: 'echo ok' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool.started', toolCallId: 'tool' });
+    transport.emit({ method: 'item/completed', params: { ...route, item: { id: 'tool', type: 'commandExecution', status: 'completed', command: 'echo ok' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool.completed', toolCallId: 'tool' });
+    transport.emit({ method: 'item/completed', params: { ...route, item: { id: 'after', type: 'agentMessage', text: '查完了，这是结论。' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'text.delta', text: '查完了，这是结论。' });
+    transport.emit({ method: 'turn/completed', params: { threadId: route.threadId, turn: { id: route.turnId, status: 'completed' } } });
+    expect((await iterator.next()).value).toMatchObject({ type: 'run.completed' });
+    expect((await iterator.next()).done).toBe(true);
+  });
+
   it('forwards free-form answers to native Codex without leaking Asterium custom-choice metadata', async () => {
     const transport = new FakeTransport(true, [{ id: 7, method: 'item/tool/requestUserInput', params: { threadId: 'thread-1', turnId: 'turn-1', questions: [{ id: 'format', question: '选择格式', options: [{ label: 'A' }] }] } }]);
     const adapter = new CodexCliAdapter('codex.exe', 'K:\\qa', () => transport);
@@ -126,7 +173,8 @@ describe('CodexCliAdapter', () => {
 
   it('revises repeatedly in the same read-only Plan thread, separates custom start text, then executes only an explicit selection', async () => {
     const transport = new FakeTransport(), adapter = new CodexCliAdapter('codex.exe', 'K:\\qa', () => transport);
-    const iterator = adapter.sendMessage({ ...command(), execution: { permissionMode: 'full', planMode: 'plan' } })[Symbol.asyncIterator]();
+    const codexModel = { model: 'codex-fixture-model', effort: 'low' };
+    const iterator = adapter.sendMessage({ ...command(), execution: { permissionMode: 'full', planMode: 'plan', codexModel } })[Symbol.asyncIterator]();
     const events: PartnerEvent[] = [];
     let bound!: PartnerEvent;
     const ask = async () => {
@@ -145,12 +193,18 @@ describe('CodexCliAdapter', () => {
     const planning = transport.requests.filter((r) => r.method === 'turn/start');
     expect(planning).toHaveLength(3);
     expect(planning.every((r) => r.params?.threadId === bound.sessionId)).toBe(true);
-    for (const turn of planning) expect(turn.params).toMatchObject({ sandboxPolicy: { type: 'readOnly' }, collaborationMode: { mode: 'plan' } });
+    for (const turn of planning) expect(turn.params).toMatchObject({
+      ...codexModel, sandboxPolicy: { type: 'readOnly' },
+      collaborationMode: { mode: 'plan', settings: { model: codexModel.model, reasoning_effort: codexModel.effort } },
+    });
     expect(JSON.stringify(planning[1].params?.input)).toContain('请增加测试步骤');
     expect(events.some((e) => e.type === 'run.cancelled' || (e.type === 'plan.updated' && e.planMode === 'default'))).toBe(false);
     await adapter.resolveUserInput(answer(third.requestId, PLAN_EXECUTION_START));
     for (;;) { const next = await iterator.next(); if (next.done) break; events.push(next.value); }
-    expect(transport.requests.filter((r) => r.method === 'turn/start').at(-1)?.params).toMatchObject({ sandboxPolicy: { type: 'workspaceWrite' }, collaborationMode: { mode: 'default' } });
+    expect(transport.requests.filter((r) => r.method === 'turn/start').at(-1)?.params).toMatchObject({
+      ...codexModel, sandboxPolicy: { type: 'workspaceWrite' },
+      collaborationMode: { mode: 'default', settings: { model: codexModel.model, reasoning_effort: codexModel.effort } },
+    });
     expect(events.filter((e) => ['run.completed', 'run.cancelled', 'run.failed'].includes(e.type))).toHaveLength(1);
     expect(events.at(-1)?.type).toBe('run.completed');
   });

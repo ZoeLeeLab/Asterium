@@ -18,6 +18,7 @@ if (destination === path.parse(destination).root || destination.startsWith(root 
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 if (git('rev-parse', 'HEAD') !== commit || git('status', '--porcelain')) throw new Error('Frozen commit must be current and the repository must be clean');
 git('cat-file', '-e', `${commit}^{commit}`);
+execFileSync(process.execPath, [path.join(root, 'scripts/check-privacy.mjs'), '--commit', commit], { cwd: root, stdio: 'inherit', windowsHide: true });
 fs.mkdirSync(destination, { recursive: true });
 for (const name of ['audit', 'tmp', 'cache', 'artifacts']) fs.mkdirSync(path.join(destination, name), { recursive: true });
 const audit = path.join(destination, 'audit'), source = path.join(destination, 'source');
@@ -25,7 +26,7 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
 const save = (name, value) => fs.writeFileSync(path.join(audit, name), JSON.stringify(value, null, 2) + '\n');
 const checks = json(path.join(audit, 'source-checks.json'));
-const requiredChecks = ['typecheck', 'lint', 'capabilities', 'dependencies', 'unit', 'empty-start', 'renderer', 'sandbox', 'claude-bridge', 'studio-wake-build', 'studio-wake-test', 'automation-build', 'automation-test', 'notices', 'source-audit', 'claude-cli'];
+const requiredChecks = ['typecheck', 'lint', 'capabilities', 'privacy', 'dependencies', 'unit', 'empty-start', 'renderer', 'sandbox', 'claude-bridge', 'studio-wake-build', 'studio-wake-test', 'automation-build', 'automation-test', 'notices', 'source-audit', 'claude-cli'];
 if (checks.commit !== commit || checks.status !== 'passed' || !Array.isArray(checks.checks) || checks.checks.some(c => c.exitCode !== 0) || requiredChecks.some(name => !checks.checks.some(c => c.name === name && c.exitCode === 0))) throw new Error('Missing passing source checks for the frozen commit');
 const environment = { ...process.env, TEMP: path.join(destination, 'tmp'), TMP: path.join(destination, 'tmp'), npm_config_cache: path.join(destination, 'cache/npm'), electron_config_cache: path.join(destination, 'cache/electron'), ELECTRON_CACHE: path.join(destination, 'cache/electron'), ELECTRON_BUILDER_CACHE: path.join(destination, 'cache/electron-builder'), npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' };
 for (const key of Object.keys(environment)) if (/^(?:GH_TOKEN|GITHUB_TOKEN|CSC_|WIN_CSC_|ANTHROPIC_|OPENAI_|AWS_|AZURE_)/.test(key)) delete environment[key];

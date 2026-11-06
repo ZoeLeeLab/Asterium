@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { testRm as rm } from '../helpers/autoTest.mjs';
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -19,7 +20,7 @@ describe('Claude session import', () => {
     const project = path.join(projects, 'K--workspace');
     await mkdir(project, { recursive: true });
     await mkdir(workspace);
-    const sessionId = '417878a2-0066-4471-b81f-67a37418b7c0';
+    const sessionId = '00000001-0000-4000-8000-000000000001';
     const sessionFile = path.join(project, `${sessionId}.jsonl`);
     await writeFile(sessionFile, [
       JSON.stringify({ type: 'queue-operation', sessionId }),
@@ -38,7 +39,7 @@ describe('Claude session import', () => {
     directories.push(root);
     const projects = path.join(root, 'projects');
     await mkdir(projects);
-    const outside = path.join(root, '417878a2-0066-4471-b81f-67a37418b7c0.jsonl');
+    const outside = path.join(root, '00000001-0000-4000-8000-000000000001.jsonl');
     await writeFile(outside, '{}');
     await expect(readClaudeSessionFile(outside, projects)).rejects.toThrow('INVALID_CLAUDE_SESSION_FILE');
   });

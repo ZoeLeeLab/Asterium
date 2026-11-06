@@ -1,7 +1,6 @@
-// Isolated packaged acceptance. Does not change Windows login registration or call models.
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm, autoTestEvidence, launchTestElectron } from './helpers/autoTest.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import Module from 'node:module';
 import { createHash } from 'node:crypto';
 import { build } from 'vite';
@@ -9,9 +8,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from 'playwright-core';
 
+await runAutoTest(async () => {
+// Isolated packaged acceptance. Does not change Windows login registration or call models.
+
+
+
+
+
+
+
+
+
+
 const root = path.resolve(import.meta.dirname, '..');
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'asterium-general-smoke-'));
-const evidence = path.resolve(process.env.ASTERIUM_UI_EVIDENCE_DIR ?? path.join(root, '.qa', 'general-settings')); await mkdir(evidence, { recursive: true });
+const evidence = autoTestEvidence('general-settings-smoke', process.env.ASTERIUM_UI_EVIDENCE_DIR); await mkdir(evidence, { recursive: true });
 const executablePath = process.env.ASTERIUM_PACKAGED_EXE ?? path.join(root, 'out', 'Asterium-win32-x64', 'Asterium.exe');
 // Product startup is empty. Keyboard checks deliberately load this source-owned,
 // synthetic fixture into this process only; nothing is added to the application.
@@ -30,7 +41,7 @@ await writeFile(path.join(temporary, 'project-domain.v1.json'), JSON.stringify({
 await writeFile(path.join(temporary, 'project-workspaces.v1.json'), JSON.stringify({ version: 1, projects: [{ version: 1, projectId: project.id, name: project.name, rootPath: workspace, deliverablesPath: path.join(workspace, 'deliverables'), templateFiles: [], createdAt: project.createdAt, updatedAt: project.updatedAt }] }));
 let app;
 try {
-  app = await electron.launch({ executablePath, args: [`--user-data-dir=${temporary}`] });
+  app = await launchTestElectron(electron, { executablePath, args: [`--user-data-dir=${temporary}`] });
   const page = await app.firstWindow(); await page.getByLabel('主要页面').waitFor();
   await page.evaluate(state => { localStorage.setItem('asterium.prototype.v7', JSON.stringify(state)); }, fixture);
   await page.reload(); await page.getByLabel('主要页面').waitFor();
@@ -101,3 +112,4 @@ try {
   assert.ok(path.basename(temporary).startsWith('asterium-general-smoke-'));
   await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
 }
+});

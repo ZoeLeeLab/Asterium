@@ -1,14 +1,25 @@
+import { runAutoTest, spawnTestProcess as spawn, testRm as rm, autoTestEvidence, createTestNetServer } from './helpers/autoTest.mjs';
 import { requireLiveTestSource } from './helpers/liveTestConfiguration.mjs';
-// Explicit opt-in. Real model/native CLI, synthetic messages, temporary app data and workspace.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import net from 'node:net';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { prepareCodexPlanThread } from './helpers/codexPlanThread.mjs';
+
+await runAutoTest(async () => {
+// Explicit opt-in. Real model/native CLI, synthetic messages, temporary app data and workspace.
+
+
+
+
+
+
+
+
+
 
 const sourceKind = process.argv.find((arg) => arg.startsWith('--source='))?.split('=')[1] ?? 'api';
 assert.ok(['api', 'codex', 'claude'].includes(sourceKind));
@@ -18,7 +29,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const userData = await mkdtemp(path.join(os.tmpdir(), 'asterium-compact-smoke-'));
 const workspace = path.join(userData, 'workspace');
 const legacyRunPath = process.env.ASTERIUM_USE_LEGACY_RUN_PATH === '1';
-const evidence = path.join(root, '.qa', 'session-compaction-s6', legacyRunPath ? `${sourceKind}-legacy` : sourceKind); await mkdir(evidence, { recursive: true });
+const evidence = autoTestEvidence('session-compaction-live-smoke'); await mkdir(evidence, { recursive: true });
 const partnerId = `compact-${sourceKind}`, conversationId = 'compact-chat', credentialRef = 'compact-credential', grantId = 'compact-workspace';
 const result = { status: 'running', sourceKind, legacyRunPath, isolatedUserData: true, cases: {} };
 await writeFile(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
@@ -148,5 +159,6 @@ async function send(text) {
   await page.waitForFunction((id) => { const c = JSON.parse(localStorage.getItem('asterium.prototype.v7')).conversations.find((c) => c.id === id); return c && !c.activeRun && !c.awaitingFirstResponse; }, conversationId);
 }
 function hash(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
-async function reservePort() { const server = net.createServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve)); const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port; }
+async function reservePort() { const server = createTestNetServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve)); const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port; }
 async function until(probe, timeout, label) { const deadline = Date.now() + timeout; while (Date.now() < deadline) { if (await probe()) return; await new Promise((resolve) => setTimeout(resolve, 150)); } throw new Error(`Timed out: ${label}`); }
+});

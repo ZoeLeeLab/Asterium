@@ -95,6 +95,7 @@ export interface Conversation {
   unreadCompletedAt?: string;
   sessionId?: SessionId;
   runtimeModel?: RuntimeModelObservation;
+  codexModel?: import('../../../shared/codexModels').CodexModelSelection;
   nativeThreadState?: NativeThreadLifecycleState;
   nativeThreadStateCheckedAt?: string;
   nativeThreadNotice?: { state: 'info' | 'warning' | 'error'; message: string };

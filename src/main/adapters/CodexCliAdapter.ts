@@ -1,3 +1,5 @@
+import { isCodexEffort, isCodexModelId, type CodexModelOption } from '../../shared/codexModels';
+import { withHandoffContext } from '../../shared/contextHandoff';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
@@ -229,6 +231,37 @@ export async function listCodexThreads(executablePath: string, workingDirectory:
       archived: false,
     });
     return parseCodexThreads(result, workingDirectory);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+export async function listCodexModels(executablePath: string, workingDirectory: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<CodexModelOption[]> {
+  const client = createTransport(executablePath, workingDirectory);
+  const models = new Map<string, CodexModelOption>();
+  const signal = AbortSignal.timeout(10_000);
+  try {
+    await abortable(client.start(), signal);
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+    do {
+      const result = await abortable(client.request<{ data?: unknown; nextCursor?: unknown }>('model/list', {
+        limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}),
+      }), signal);
+      if (!Array.isArray(result?.data)) throw new Error('CODEX_MODEL_LIST_INVALID');
+      for (const entry of result.data) {
+        if (!isRecord(entry) || entry.hidden === true || !isCodexModelId(entry.model)) continue;
+        const efforts = Array.isArray(entry.supportedReasoningEfforts)
+          ? [...new Set(entry.supportedReasoningEfforts.flatMap(option => isRecord(option) && isCodexEffort(option.reasoningEffort) ? [option.reasoningEffort] : []))]
+          : [];
+        const defaultEffort = isCodexEffort(entry.defaultReasoningEffort) ? entry.defaultReasoningEffort : undefined;
+        models.set(entry.model, { model: entry.model, displayName: text(entry.displayName) || entry.model, efforts, defaultEffort });
+      }
+      cursor = text(result.nextCursor) || undefined;
+      if (cursor && (seenCursors.has(cursor) || seenCursors.size >= 10)) throw new Error('CODEX_MODEL_LIST_INVALID_CURSOR');
+      if (cursor) seenCursors.add(cursor);
+    } while (cursor);
+    return [...models.values()];
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -516,6 +549,7 @@ export class CodexCliAdapter implements PartnerAdapter {
     // Pin tools to this turn. A later retry may replace the adapter-level
     // controller, but late events from this turn must never target that retry.
     const runtimeTools = this.runtimeTools;
+    const toolLifetime = new AbortController();
     const runtimeWorkspaceDirectories = [...this.additionalDirectories];
     const client = await this.ensureClient();
     const resolvedAttachments = await resolveCommandAttachments(command, this.resolveAttachment);
@@ -532,7 +566,7 @@ export class CodexCliAdapter implements PartnerAdapter {
     let runId = '';
     let nativeTurnId: string;
     let planDecisionShown = false;
-    const wrap = (event: CodexMappedEvent | { type: 'session.bound'; isNew: boolean; toolProtocolVersion?: number; model?: string; modelSource?: 'native_thread' } | { type: 'message.accepted' }): PartnerEvent => ({
+    const wrap = (event: CodexMappedEvent | { type: 'session.bound'; isNew: boolean; toolProtocolVersion?: number; model?: string; modelSource?: 'native_thread' | 'runtime' } | { type: 'message.accepted' }): PartnerEvent => ({
       ...event,
       protocolVersion: AGENT_PROTOCOL_VERSION,
       eventId: `codex-${sessionId}-${++this.eventCounter}`,
@@ -574,13 +608,16 @@ export class CodexCliAdapter implements PartnerAdapter {
       runId = text(result?.turn?.id);
       if (!runId) throw new Error('CODEX_TURN_ID_MISSING');
       nativeTurnId = runId;
+      const selectedModel = command.execution?.codexModel?.model;
+      if (selectedModel) this.threadModels.set(sessionId, selectedModel);
       this.active.set(runId, { client, threadId: sessionId, turnId: runId, cancelReason: '已由用户停止', owner: userInputOwner(command, runId, sessionId), emit: (event) => queue.push({ kind: 'mapped', event }) });
       this.runPermissionModes.set(runId, command.execution?.permissionMode ?? 'manual');
       yield remember(wrap({
         type: 'session.bound',
         isNew: !command.sessionId || Boolean(command.forkFromTurnId),
         ...(thread.toolProtocolVersion ? { toolProtocolVersion: thread.toolProtocolVersion } : {}),
-        ...(thread.model ? { model: thread.model, modelSource: 'native_thread' as const } : {}),
+        ...(selectedModel ? { model: selectedModel, modelSource: 'runtime' as const }
+          : thread.model ? { model: thread.model, modelSource: 'native_thread' as const } : {}),
       }));
       yield remember(wrap({ type: 'message.accepted' }));
 
@@ -609,7 +646,7 @@ export class CodexCliAdapter implements PartnerAdapter {
               queue.push({ kind: 'mapped', event: { type: 'work.status', state: 'working', summary: revising ? 'Codex 正在调整计划…' : 'Codex 正在按计划开始执行…' } });
               const continuationCommand: SendMessageCommand = {
                 ...command,
-                execution: { permissionMode: command.execution?.permissionMode ?? 'manual', planMode: revising ? 'plan' : 'default' },
+                execution: { ...command.execution, permissionMode: command.execution?.permissionMode ?? 'manual', planMode: revising ? 'plan' : 'default' },
               };
               this.updateRuntimeContext(continuationCommand);
               const continuing = this.active.get(runId);
@@ -648,7 +685,7 @@ export class CodexCliAdapter implements PartnerAdapter {
             { type: 'user_input.requested', requestId, questions },
           ];
         } else {
-          mapped = input.kind === 'mapped' ? [input.event] : this.mapInput(input.message, mapper, runId, nativeTurnId, queue, runtimeTools);
+          mapped = input.kind === 'mapped' ? [input.event] : this.mapInput(input.message, mapper, runId, nativeTurnId, queue, runtimeTools, toolLifetime.signal);
         }
         for (const event of mapped) {
           if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.cancelled') terminal = true;
@@ -676,6 +713,7 @@ export class CodexCliAdapter implements PartnerAdapter {
       disposeClose();
       queue.close();
       if (runId) {
+        toolLifetime.abort();
         this.active.delete(runId);
         this.runPermissionModes.delete(runId);
         for (const [authorizationId, pending] of this.pendingApprovals) {
@@ -686,7 +724,7 @@ export class CodexCliAdapter implements PartnerAdapter {
     }
   }
 
-  private mapInput(message: CodexRpcMessage, mapper: CodexEventMapper, runId: string, nativeTurnId: string, queue: AsyncEventQueue<StreamInput>, runtimeTools?: AsteriumRuntimeToolController): CodexMappedEvent[] {
+  private mapInput(message: CodexRpcMessage, mapper: CodexEventMapper, runId: string, nativeTurnId: string, queue: AsyncEventQueue<StreamInput>, runtimeTools: AsteriumRuntimeToolController | undefined, signal: AbortSignal): CodexMappedEvent[] {
     if (!messageBelongsToTurn(message, nativeTurnId)) return [];
     if (message.method === 'item/tool/requestUserInput' && message.id !== undefined) {
       const params = isRecord(message.params) ? message.params : {};
@@ -723,7 +761,7 @@ export class CodexCliAdapter implements PartnerAdapter {
         this.client?.respond(message.id, { success: true, contentItems: [{ type: 'inputText', text: `已登记交付：${name}` }] });
         return [{ type: 'file.produced', artifactId: `codex-delivery-${String(params.callId ?? message.id)}`, toolCallId: text(params.callId) || undefined, name, artifactRef: target, source: { kind: 'local_path', path: target }, registrationMethod: 'deliver_tool' }];
       }
-      if (toolName === 'asterium_automation' || toolName === 'asterium_status' || toolName === 'asterium_workspace' || toolName === 'mention_partner' || toolName === 'asterium_task' || toolName === 'submit_workflow_draft' || toolName === 'project_notebook'
+      if (delegationTools.some(tool => tool.name === toolName) || toolName === 'asterium_automation' || toolName === 'asterium_status' || toolName === 'asterium_workspace' || toolName === 'mention_partner' || toolName === 'asterium_task' || toolName === 'submit_workflow_draft' || toolName === 'project_notebook'
         || toolName === 'hold_memory' || toolName === 'search_memory' || toolName === 'comment_memory' || toolName === 'update_memory' || toolName === 'read_memory_source') {
         const args = isRecord(params.arguments) ? params.arguments : isRecord(params.input) ? params.input : {};
         const action = text(args.action);
@@ -736,6 +774,10 @@ export class CodexCliAdapter implements PartnerAdapter {
             else if (toolName === 'asterium_automation') {
               if (!runtimeTools.automation) throw new Error('AUTOMATION_TOOL_UNAVAILABLE');
               content = await runtimeTools.automation(args);
+            }
+            else if (delegationTools.some(tool => tool.name === toolName)) {
+              if (!runtimeTools.delegation) throw new Error('DELEGATION_TOOL_FORBIDDEN');
+              content = await runtimeTools.delegation(toolName, args, signal, text(params.callId) || String(message.id));
             }
             else if (toolName === 'project_notebook') {
               if (!runtimeTools.projectNotebook) throw new Error('ASTERIUM_PROJECT_NOTEBOOK_NOT_AVAILABLE');
@@ -896,11 +938,14 @@ export class CodexCliAdapter implements PartnerAdapter {
     }
     const wantedMode = plan ? 'plan' : 'default';
     const preset = this.collaborationModes.find((item) => item.mode === wantedMode);
-    const model = text(preset?.model) || threadModel;
+    const selection = command.execution.codexModel;
+    const model = selection?.model ?? (text(preset?.model) || threadModel);
+    const effort = selection ? selection.effort ?? null : preset?.reasoning_effort ?? null;
     if (plan && (!preset || !model)) throw new Error('CODEX_NATIVE_PLAN_UNAVAILABLE');
     return {
       ...permissions,
-      ...(preset && model ? { collaborationMode: { mode: wantedMode, settings: { model, reasoning_effort: preset.reasoning_effort ?? null, developer_instructions: null } } } : {}),
+      ...(selection ? { model, ...(selection.effort ? { effort: selection.effort } : {}) } : {}),
+      ...(preset && model ? { collaborationMode: { mode: wantedMode, settings: { model, reasoning_effort: effort, developer_instructions: null } } } : {}),
     };
   }
 
@@ -1078,7 +1123,7 @@ export class CodexCliAdapter implements PartnerAdapter {
 }
 
 export function codexTurnText(command: SendMessageCommand, attachmentText = '') {
-  return `${command.content.text}${attachmentText}`;
+  return `${withHandoffContext(command.content.text, command.contextHandoff)}${attachmentText}`;
 }
 
 async function resolveCommandAttachments(command: SendMessageCommand, resolver?: AttachmentPathResolver) {
@@ -1127,6 +1172,7 @@ export function asteriumDynamicTools(runtimeTools: AsteriumRuntimeToolController
     }] : []),
     ...(runtimeTools.task ? [asteriumTaskDynamicTool()] : []),
     ...(runtimeTools.projectNotebook ? [projectNotebookDynamicTool()] : []),
+    ...(runtimeTools.delegation ? delegationTools.map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters })) : []),
     ...memoryReadTools,
     ...(runtimeTools.memory?.access === 'write' ? memoryDynamicTools('write') : []),
   ];
@@ -1377,3 +1423,4 @@ class AsyncEventQueue<T> implements AsyncIterable<T> {
     };
   }
 }
+import { delegationTools } from '../runtime/PartnerDelegation';

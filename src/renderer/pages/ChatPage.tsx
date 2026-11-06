@@ -1,6 +1,10 @@
+import { supportsContextHandoff } from '../app/singleChatRuntime';
+import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
+import type { CyberBossChatFileCapabilities } from '../../shared/cyberBossChatAttachments';
 import { MessageAttachmentCards } from '../components/chat/MessageAttachmentCards';
 import { useCollapsibleRails } from '../components/layout/useCollapsibleRails';
 import { SessionCommandNotice } from '../components/chat/SessionCommandNotice';
+import { ConversationSearch } from '../components/chat/ConversationSearch';
 import { JumpToLatest } from '../components/chat/JumpToLatest';
 import { WorkspaceShortcuts } from '../components/layout/WorkspaceShortcuts';
 import {
@@ -15,6 +19,7 @@ import {
   FileText,
   FolderKanban,
   FolderOpen,
+  Inbox,
   ListTodo,
   MessageSquarePlus,
   MoreHorizontal,
@@ -31,7 +36,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { conversationWorkspaceMismatch, usePrototype, type WorkspaceSwitchDecision } from '../app/PrototypeProvider';
 import type { MemorySourceNavigationState } from '../app/memorySourceNavigation';
@@ -40,6 +45,7 @@ import { ASTERIUM_LOGO_DATA_URL } from '../assets/asteriumLogoData';
 import { Brand, MainHeader } from '../components/layout/AppNavigation';
 import { Avatar } from '../components/ui/Avatar';
 import { Composer } from '../components/ui/Composer';
+import { CodexModelPicker } from '../components/ui/CodexModelPicker';
 import { Modal } from '../components/ui/Modal';
 import { FileDeletionModal } from '../components/ui/FileDeletionModal';
 import { DiaryModal } from '../components/diary/DiaryModal';
@@ -49,9 +55,11 @@ import { MarkdownContent } from '../components/chat/MarkdownContent';
 import { MessageQuoteCard } from '../components/chat/MessageQuoteCard';
 import { TurnTimeline } from '../components/chat/TurnTimeline';
 import { FilePreviewPane, type PreviewTab } from '../components/chat/FilePreviewPane';
-import type { Message, MessageQuote } from '../types/domain';
+import type { Conversation, Message, MessageQuote } from '../types/domain';
+import type { DelegationBatchView } from '../../main/runtime/PartnerDelegation';
 import type { ConversationAttachmentInfo, PendingMessageAttachment } from '../../shared/agentProtocol';
 import { assistantMessageText, formatMessageWithQuote } from '../app/messageQuote';
+import { partnerStatusLabel } from '../components/chat/partnerStatusLabel';
 import { friendlyRuntimeErrorMessage } from '../app/runtimeErrorPresentation';
 import type { FileDeletionInspection } from '../../shared/projectWorkspace';
 
@@ -74,8 +82,12 @@ export function ChatPage() {
     toggleConversationPin,
     setConversationPermissionMode,
     setConversationPlanMode,
+    setConversationCodexModel,
     prepareConversationWorkspace,
     sendChatMessage,
+    selectGroupChat,
+    contextHandoffDraft,
+    setContextHandoffDraft,
     chatCompactions,
     dismissChatCompaction,
     executeChatCommand,
@@ -98,6 +110,9 @@ export function ChatPage() {
   const messageListRef = useRef<HTMLDivElement>(null);
   const previousConversationIdRef = useRef<string | undefined>(undefined);
   const followLatestMessageRef = useRef(true);
+  const conversationSearchTrigger = useRef<HTMLButtonElement>(null);
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const stopFollowingLatest = useCallback(() => { followLatestMessageRef.current = false; }, []);
   const deferredGuidanceSendingRef = useRef(new Set<string>());
   const [overlay, setOverlay] = useState<ChatOverlay>(null);
   const [query, setQuery] = useState('');
@@ -111,7 +126,37 @@ export function ChatPage() {
   const [partnerArchiveTargetId, setPartnerArchiveTargetId] = useState('');
   const activeConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
   const activeConversationId = activeConversation?.id;
+  const [delegationBatches, setDelegationBatches] = useState<DelegationBatchView[]>([]);
+  const [delegationError, setDelegationError] = useState('');
+  const chatRows = useMemo(() => buildChatRows(activeConversation, delegationBatches), [activeConversation, delegationBatches]);
+  useEffect(() => {
+    const bridge = window.asteriumDelegation;
+    if (!activeConversationId || !bridge) return;
+    let disposed = false;
+    let reading = false;
+    const refresh = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const batches = await bridge.list(activeConversationId);
+        if (!disposed) setDelegationBatches(batches);
+      } catch {
+        if (!disposed) setDelegationError('委派记录暂时无法读取。');
+      } finally {
+        reading = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 1000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [activeConversationId]);
   const activePartner = state.partners.find((partner) => partner.id === (activeConversation?.partnerId ?? state.activePartnerId)) ?? availablePartners[0];
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const activeHandoff = contextHandoffDraft?.target.kind === 'single' && contextHandoffDraft.target.id === activeConversation?.id ? contextHandoffDraft : undefined;
+  const handoffTargets = activePartner && supportsContextHandoff(activePartner)
+    ? state.groupChats.filter(room => !room.archivedAt && room.memberIds.includes(activePartner.id))
+      .map(room => ({ kind: 'group' as const, id: room.id, partnerId: activePartner.id, label: `${room.name} · ${activePartner.publicIdentity.displayName}` }))
+    : [];
   const partnerRemoved = Boolean(activePartner?.isRemoved);
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN');
   const newChatPartners = availablePartners.filter((partner) => partner.sourceMode !== 'existing_thread');
@@ -176,9 +221,30 @@ export function ChatPage() {
   const canRegenerate = activePartner?.sourceMode !== 'existing_thread'
     && !compacting
     && !activeConversation?.activeRun && !activeConversation?.isDisabled && !workspaceMismatch && !latestUserMessage?.isGuidance;
-  const attachmentsEnabled = Boolean(activeConversation && activePartner && (activePartner.sourceMode === 'api_partner'
-    ? !activePartner.isPrototype && activePartner.configured
-    : activePartner.sourceMode === 'local_cli' && (activePartner.connectionKind === 'local_claude' || activePartner.connectionKind === 'local_codex')));
+  const cyberBossChat = activePartner?.sourceMode === 'existing_thread';
+  const cyberBossConnected = cyberBossChat && !activePartner.isPrototype && activePartner.configured && activePartner.connectionStatus === 'connected';
+  const cyberBossPartnerId = cyberBossConnected ? activePartner.id : undefined;
+  const cyberBossServiceUrl = cyberBossConnected ? activePartner.serviceUrl : undefined;
+  const cyberBossCredentialRef = cyberBossConnected ? activePartner.credentialRef : undefined;
+  const cyberBossThreadId = cyberBossConnected ? activePartner.threadId : undefined;
+  const cyberBossBinding = JSON.stringify([cyberBossPartnerId, cyberBossServiceUrl, cyberBossCredentialRef, cyberBossThreadId]);
+  const [fileCapability, setFileCapability] = useState<{ binding: string; policy?: CyberBossChatFileCapabilities }>();
+  const cyberBossFileCapabilities = fileCapability?.binding === cyberBossBinding ? fileCapability.policy : undefined;
+
+  useEffect(() => {
+    const query = window.asteriumAgents?.getExistingThreadFileCapabilities;
+    if (!query || !cyberBossPartnerId || !cyberBossServiceUrl || !cyberBossCredentialRef || !cyberBossThreadId) return;
+    let active = true;
+    void query({ serviceUrl: cyberBossServiceUrl, credentialRef: cyberBossCredentialRef, threadId: cyberBossThreadId })
+      .then(policy => { if (active) setFileCapability({ binding: cyberBossBinding, policy }); })
+      .catch(() => { if (active) setFileCapability({ binding: cyberBossBinding }); });
+    return () => { active = false; };
+  }, [cyberBossBinding, cyberBossPartnerId, cyberBossServiceUrl, cyberBossCredentialRef, cyberBossThreadId]);
+  const attachmentsEnabled = Boolean(activeConversation && activePartner && (
+    cyberBossConnected
+    || (activePartner.sourceMode === 'api_partner' && !activePartner.isPrototype && activePartner.configured)
+    || (activePartner.sourceMode === 'local_cli' && (activePartner.connectionKind === 'local_claude' || activePartner.connectionKind === 'local_codex'))
+  ));
   const localNativeControls = activePartner?.sourceMode === 'local_cli' && (activePartner.connectionKind === 'local_claude' || activePartner.connectionKind === 'local_codex');
   const apiRuntimeControls = Boolean(activePartner?.sourceMode === 'api_partner' && !activePartner.isPrototype && activePartner.configured);
   const runtimeControls = localNativeControls || apiRuntimeControls;
@@ -202,7 +268,7 @@ export function ChatPage() {
   const memorySourceTarget = (location.state as MemorySourceNavigationState | null)?.memorySourceTarget;
 
   const commitAndSend = async (content: string, pending: PendingMessageAttachment[], quote?: MessageQuote, workspaceDecision?: WorkspaceSwitchDecision) => {
-    if (!activeConversation) return false;
+    if (!activeConversation || (pending.length > 0 && !attachmentsEnabled)) return false;
     try {
       followLatestMessageRef.current = true;
       const messageId = `message-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
@@ -210,7 +276,7 @@ export function ChatPage() {
         ? await window.asteriumAttachments?.commit(activeConversation.id, pending.map((item) => item.selectionId), messageId)
         : undefined;
       if (pending.length && !attachments) return false;
-      const sent = await sendChatMessage(activeConversation.id, content, attachments, messageId, workspaceDecision, quote);
+      const sent = await sendChatMessage(activeConversation.id, content, attachments, messageId, workspaceDecision, quote, activeHandoff);
       if (!sent) return false;
       setPendingQuote(undefined);
       void window.asteriumAttachments?.list(activeConversation.id).then(setUserAttachments);
@@ -223,7 +289,16 @@ export function ChatPage() {
   const sendWithAttachments = (content: string, pending: PendingMessageAttachment[], quote?: MessageQuote) => {
     if (activeConversation?.activeRun) {
       if (!canStageGuidance || pending.length || pendingGuidance || !content.trim()) return false;
-      setPendingGuidanceByConversation((current) => ({ ...current, [activeConversation.id]: { content: content.trim(), ...(quote ? { quote } : {}), targetRunId: activeConversation.activeRun!.runId, clientMessageId: `client-guidance-${globalThis.crypto.randomUUID()}`, state: 'staged' } }));
+      const conversationId = activeConversation.id;
+      const clientMessageId = `client-guidance-${globalThis.crypto.randomUUID()}`;
+      setPendingGuidanceByConversation((current) => ({ ...current, [conversationId]: { content: content.trim(), ...(quote ? { quote } : {}), targetRunId: activeConversation.activeRun!.runId, clientMessageId, state: 'staged' } }));
+      void window.asteriumDelegation?.interruptWait(conversationId).then(interrupted => {
+        if (!interrupted) return;
+        setPendingGuidanceByConversation(current => current[conversationId]?.clientMessageId === clientMessageId
+          ? { ...current, [conversationId]: { ...current[conversationId], state: 'deferred' } }
+          : current);
+        cancelChatRun(conversationId);
+      }).catch(() => undefined);
       setPendingQuote(undefined);
       return true;
     }
@@ -370,7 +445,7 @@ export function ChatPage() {
 
   const trackMessageScroll = () => {
     const root = messageListRef.current;
-    if (!root) return;
+    if (!root || conversationSearchOpen) return;
     followLatestMessageRef.current = root.scrollHeight - root.scrollTop - root.clientHeight <= 72;
   };
 
@@ -678,7 +753,7 @@ export function ChatPage() {
       setArtifactProjectTarget(null);
       setOverlay(null);
     } catch (error) {
-      setArtifactProjectError(projectTransferError(error));
+      if (!(error instanceof Error && error.message.includes('PROJECT_CREATE_CANCELLED'))) setArtifactProjectError(projectTransferError(error));
     } finally {
       setArtifactProjectBusy(false);
     }
@@ -801,7 +876,11 @@ export function ChatPage() {
       <div hidden={rails.left} className="rail-resizer rail-resizer--left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize('left', event)} />
 
       <section className="glass-panel center-stage">
-        <MainHeader rails={rails} />
+        <MainHeader rails={rails} conversationSearch={activeConversation ? {
+          open: conversationSearchOpen,
+          onToggle: () => setConversationSearchOpen(open => !open),
+          triggerRef: conversationSearchTrigger,
+        } : undefined} />
         <div className="partner-orbit" aria-label="伙伴快速切换">
           {availablePartners.map((partner) => (
             <button className={partner.id === activePartner?.id ? 'active' : ''} type="button" key={partner.id} onClick={() => selectPartner(partner.id)} title={partner.publicIdentity.displayName} aria-pressed={partner.id === activePartner?.id}>
@@ -814,16 +893,21 @@ export function ChatPage() {
           {activeConversation?.isDisabled && <div className="removed-partner-notice">伙伴配置来源已改变 · 这条旧会话已停用，请切换到自动创建的新对话</div>}
           {workspaceMismatch && <div className="removed-partner-notice">这条对话仍绑定原工作区「{activeConversation?.partnerRoot}」。你可以切回原工作区继续原 session；也可以直接发送，确认后将切换到当前工作区的独立 session。</div>}
           {activeConversation ? (<>
+            {conversationSearchOpen && <ConversationSearch key={activeConversation.id} listRef={messageListRef} onNavigate={stopFollowingLatest} onClose={() => {
+              setConversationSearchOpen(false);
+              conversationSearchTrigger.current?.focus();
+            }} />}
             {turnMessages.length > 1 && <nav className="turn-navigator" aria-label="快速选择对话回合">{turnMessages.map((turn, index) => <button className={activeTurnId === turn.id ? 'active' : ''} type="button" key={turn.id} onClick={() => document.getElementById(`chat-message-${turn.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span>{index + 1}</span><em>{turn.content.slice(0, 48) || `第 ${index + 1} 轮`}</em></button>)}</nav>}
             <div className="message-scroll-region">
             <div className="message-list" ref={messageListRef} onScroll={trackMessageScroll}>
-              {activeConversation.messages.map((message, messageIndex) => {
+              {chatRows.map(({ message, key, batches, receiptOnly }) => {
                 const mine = isAsteriumUser(message.authorId);
                 const author = mine ? undefined : state.partners.find((partner) => partner.id === message.authorId);
                 const isLatestUser = message.id === latestUserMessage?.id;
                 const isLatestAssistant = message.id === latestAssistantMessage?.id;
-                const showStreamTail = !mine
-                  && activeConversation.activeRun?.runId === message.runId
+                const showStreamTail = !receiptOnly && !mine && message.runState === 'running'
+                  && activeConversation.activeRun !== undefined
+                  && activeConversation.activeRun.runId === message.runId
                   && !activeConversation.awaitingFirstResponse
                   && !activeConversation.pendingAuthorization
                   && !activeConversation.pendingUserInput;
@@ -831,13 +915,62 @@ export function ChatPage() {
                 const canQuote = !mine && Boolean(quoteText) && !message.isStreaming
                   && (message.runState === undefined || message.runState === 'completed')
                   && activeConversation.activeRun?.runId !== message.runId;
+                const delegationReceipts = batches.map(batch => {
+                  const pending = batch.tasks.some(task => task.status === 'queued' || task.status === 'running');
+                  const uncertain = batch.tasks.some(task => task.status === 'uncertain');
+                  const hasResult = batch.tasks.some(task => task.status === 'succeeded');
+                  const senderName = author?.publicIdentity.displayName ?? '伙伴';
+                  return {
+                    id: batch.id,
+                    requestId: batch.requestId,
+                    card: (
+                      <section className="delegation-receipt" aria-label="指派任务">
+                        <header className="delegation-receipt__header">
+                          <Inbox size={15} aria-hidden="true" />
+                          <span role="status">{uncertain ? '正在确认复核结果' : pending ? '正在等小弟汇报回来' : hasResult ? `${senderName}派出的小弟带回了结果` : '指派任务'}</span>
+                        </header>
+                        {batch.summaryState === 'interrupted' && <small>汇总未完成，原始回复可在下方查看。</small>}
+                        {batch.tasks.map(task => {
+                          const cancel = task.status === 'queued' || (task.status === 'running' && !task.externalReview);
+                          const retry = !task.rejected && ['failed', 'interrupted', 'timed_out'].includes(task.status);
+                          const reason = task.reason && (delegationReviewReason[task.reason] ?? task.reason);
+                          return (
+                          <details className="delegation-receipt__task" key={task.id}>
+                            <summary>
+                              <span>{state.partners.find(partner => partner.id === task.targetPartnerId)?.publicIdentity.displayName ?? task.targetPartnerId}</span>
+                              <small data-status={task.status}>{task.reason === 'DELEGATION_REVIEW_BUSY' ? '伙伴正忙' : ({ queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断', timed_out: '超时', uncertain: '待确认' })[task.status]}</small>
+                              <ChevronRight size={14} aria-hidden="true" />
+                            </summary>
+                            <div className="delegation-receipt__body">
+                              <p>{task.instruction}</p>
+                              {task.materials?.length ? <small>{task.materials.map(material => material.name).join('、')}</small> : null}
+                              {task.result && <MarkdownContent>{task.result}</MarkdownContent>}
+                              {reason && <small>{reason}</small>}
+                              {(cancel || retry) && <button type="button" className="secondary-button" onClick={() => {
+                                const action = cancel ? 'cancel' : 'retry';
+                                setDelegationError('');
+                                void window.asteriumDelegation?.control(activeConversation.id, task.id, action).catch(() => setDelegationError('操作未完成，请刷新任务状态后重试。'));
+                              }}>{cancel ? '取消任务' : '重试任务'}</button>}
+                            </div>
+                          </details>
+                          );
+                        })}
+                        {batch.summary && <details className="delegation-receipt__task">
+                          <summary><span>查看任务汇总</span><span /><ChevronRight size={14} aria-hidden="true" /></summary>
+                          <div className="delegation-receipt__body"><MarkdownContent>{batch.summary}</MarkdownContent></div>
+                        </details>}
+                        {delegationError && <small role="status">{delegationError}</small>}
+                      </section>
+                    ),
+                  };
+                });
                 return (
-                  <article id={`chat-message-${message.id}`} data-turn-id={mine ? message.id : undefined} className={`message-row ${mine ? 'message-row--mine' : ''} ${highlightedMessageId === message.id ? 'is-reference-target' : ''}`} key={`${activeConversation.id}:${message.id}:${messageIndex}`}>
+                  <article id={`chat-message-${message.id}`} data-turn-id={mine ? message.id : undefined} className={`message-row ${mine ? 'message-row--mine' : ''} ${highlightedMessageId === message.id ? 'is-reference-target' : ''}`} key={`${activeConversation.id}:${key}`}>
                     {!mine && <Avatar partnerId={author?.id} name={author?.publicIdentity.displayName ?? '伙伴'} src={author?.publicIdentity.avatarDataUrl} accent={author?.accent} size="md" source={author?.sourceMode} />}
                     <div className="message-stack">
                       <div className="message-meta">{message.automation && <button className="text-button automation-message-label" type="button" onClick={() => navigate('/settings/partners?section=automations')}>自动化 · {message.automation.name}</button>}<strong>{mine ? userProfile.displayName : author?.publicIdentity.displayName}</strong><time>{message.createdAt}</time></div>
                       <div className={`message-bubble-row ${mine ? 'message-bubble-row--mine' : ''}`}>
-                        {mine && <small className="delivery-state">{deliveryLabel(message.status)}</small>}
+                        {mine && <small className="delivery-state">{message.error?.code === 'CYBERBOSS_CHAT_MESSAGE_UNCERTAIN' ? '发送结果待确认' : deliveryLabel(message.status)}</small>}
                         <div className="message-bubble">
                           {editingMessageId === message.id ? <div className="message-editor">
                             {message.quote && <MessageQuoteCard quote={message.quote} className="message-quote-card--sent" />}
@@ -847,24 +980,26 @@ export function ChatPage() {
                             {message.quote && <MessageQuoteCard quote={message.quote} className="message-quote-card--sent" />}
                             {message.content && <MarkdownContent className="message-content--user">{message.content}</MarkdownContent>}
                             <MessageAttachmentCards attachments={message.attachments} conversationId={activeConversation.id} onPreview={(attachment) => void openUserAttachment(attachment.id)} onContextMenu={(attachment, x, y) => { setArtifactMenu(null); setQuoteMenu(null); setAttachmentMenu({ id: attachment.id, x, y }); }} />
-                          </> : <TurnTimeline message={message} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
+                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
                         </div>
                       </div>
                       {showStreamTail && <span className="stream-tail" role="status" aria-label={`${author?.publicIdentity.displayName ?? '伙伴'}仍在工作`}><i /><i /><i /></span>}
-                      <div className="message-actions"><button className={copiedMessageId === message.id ? 'copied' : ''} type="button" onClick={() => void copyMessage(message)} title="复制本段对话">{copiedMessageId === message.id ? <Check size={14} /> : <Copy size={14} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{canQuote && <button type="button" onClick={() => quoteWholeMessage(message)} title="引用这段回复"><Quote size={14} /><span>引用</span></button>}{canRegenerate && mine && isLatestUser && <button type="button" onClick={() => { setEditingMessageId(message.id); setEditingText(message.content); }} title="编辑并重新生成"><Pencil size={14} /><span>编辑并重新生成</span></button>}{canRegenerate && !mine && isLatestAssistant && <button type="button" onClick={() => regenerateChatTurn(activeConversation.id)} title="重新生成"><RotateCcw size={14} /><span>重新生成</span></button>}</div>
+                      {!receiptOnly && <div className="message-actions"><button className={copiedMessageId === message.id ? 'copied' : ''} type="button" onClick={() => void copyMessage(message)} title="复制本段对话">{copiedMessageId === message.id ? <Check size={14} /> : <Copy size={14} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{canQuote && <button type="button" onClick={() => quoteWholeMessage(message)} title="引用这段回复"><Quote size={14} /><span>引用</span></button>}{canRegenerate && mine && isLatestUser && <button type="button" onClick={() => { setEditingMessageId(message.id); setEditingText(message.content); }} title="编辑并重新生成"><Pencil size={14} /><span>编辑并重新生成</span></button>}{canRegenerate && !mine && isLatestAssistant && <button type="button" onClick={() => regenerateChatTurn(activeConversation.id)} title="重新生成"><RotateCcw size={14} /><span>重新生成</span></button>}</div>}
                     </div>
                     {mine && <Avatar name={userProfile.displayName} src={userAvatar} accent="#91a9cf" size="md" />}
                   </article>
                 );
               })}
-              {activeConversation.awaitingFirstResponse && activePartner && <div className="first-response-wait" role="status" aria-live="polite">
+              {activeConversation.awaitingFirstResponse && activePartner
+                && !chatRows.some(row => row.receiptOnly && row.message.clientMessageId === activeConversation.awaitingFirstResponse?.clientMessageId)
+                && <div className="first-response-wait" role="status" aria-live="polite">
                 <Avatar partnerId={activePartner.id} name={activePartner.publicIdentity.displayName} src={activePartner.publicIdentity.avatarDataUrl} accent={activePartner.accent} size="md" source={activePartner.sourceMode} />
-                <div className="first-response-wait__content"><strong>{activeConversation.workStatus || `${activePartner.publicIdentity.displayName} 正在整理思路`}</strong><span className="breathing-dots" aria-hidden="true"><i /><i /><i /></span></div>
+                <div className="first-response-wait__content"><strong>{activeConversation.workStatus ? partnerStatusLabel(activeConversation.workStatus, activePartner.publicIdentity.displayName) : `${activePartner.publicIdentity.displayName} 正在整理思路`}</strong><span className="breathing-dots" aria-hidden="true"><i /><i /><i /></span></div>
               </div>}
               {activeConversation.runNotice?.restored && <div className={`run-notice run-notice--${activeConversation.runNotice.state}`} role="status"><CircleAlert size={15} /><span>{activeConversation.runNotice.message}，已恢复原回复。</span></div>}
               <div ref={messageEndRef} />
             </div>
-            <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} onJump={() => { followLatestMessageRef.current = true; }} />
+            <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} partnerName={activePartner?.publicIdentity.displayName} onJump={() => { followLatestMessageRef.current = true; }} />
             </div>
           </>) : (
             <div className="friendly-empty">
@@ -879,8 +1014,17 @@ export function ChatPage() {
         {commandResult && <SessionCommandNotice result={commandResult} onDismiss={dismissCommandResult} />}
         {compaction && <SessionCommandNotice result={compaction} onDismiss={dismissCompaction} label="会话压缩状态" />}
         {activeConversation?.planMode === 'plan' && <div className="plan-mode-banner"><ListTodo size={14} /><span><strong>Plan 模式</strong>{activeConversation.planStatus === 'waiting_user' ? ' · 等待你的回答' : activeConversation.planStatus === 'ready' ? ' · 计划已就绪' : ' · 仅规划，不修改'}</span></div>}
+        {activeConversation && handoffTargets.length > 0 && <div className="context-handoff-action"><button className="text-button" type="button" onClick={() => setHandoffOpen(true)}>带上下文去群聊</button></div>}
+        {activeHandoff && <ContextHandoffDraftCard draft={activeHandoff} partnerName={activePartner?.publicIdentity.displayName ?? '伙伴'} disabled={Boolean(activeConversation?.activeRun)} onRemove={() => setContextHandoffDraft(undefined)} />}
+        {handoffOpen && activeConversation && handoffTargets.length > 0 && <ContextHandoffDialog
+          key={`handoff:${activeConversation.id}`} source={{ kind: 'single', id: activeConversation.id }} messages={activeConversation.messages}
+          targets={handoffTargets} partners={state.partners} onClose={() => setHandoffOpen(false)} onStage={draft => {
+            setContextHandoffDraft(draft);
+            selectGroupChat(draft.target.id);
+            navigate('/studio/discussion');
+          }} />}
         <Composer
-          key={activeConversation?.id ?? 'no-conversation'}
+          key={cyberBossChat ? `${activeConversation?.id}:${cyberBossThreadId}` : activeConversation?.id ?? 'no-conversation'}
           draftKey={activeConversation ? `chat:${activeConversation.id}` : undefined}
           placeholder={canStageGuidance ? `输入补充要求，Enter 后暂存…` : nativeThreadUnavailable ? '原生线程暂不可用，请先查看上方提示' : workspaceMismatch ? '发送时将确认切换到当前工作区的新 session' : activeConversation?.isDisabled ? '这条会话已停用' : activeConversation ? `给 ${activePartner?.publicIdentity.displayName ?? '伙伴'} 发送消息…` : '请先新建一段对话'}
           onSend={sendWithAttachments}
@@ -895,7 +1039,9 @@ export function ChatPage() {
           disabled={partnerRemoved || !activeConversation || activeConversation.isDisabled || nativeThreadUnavailable || compacting}
           attachmentsEnabled={attachmentsEnabled}
           attachmentCapabilities={activePartner?.attachmentCapabilities}
-          attachmentDisabledReason={activePartner?.sourceMode === 'existing_thread' ? '当前接回的伙伴暂不支持附件' : '请先完成伙伴连接'}
+          cyberBossChat={cyberBossChat}
+          cyberBossFileCapabilities={cyberBossFileCapabilities}
+          attachmentDisabledReason="请先完成伙伴连接"
           permissionMode={activeConversation?.permissionMode ?? activePartner?.defaultPermissionMode ?? 'manual'}
           permissionDisabledReason={permissionDisabledReason}
           automaticPermissionAvailable={automaticPermissionAvailable}
@@ -921,7 +1067,26 @@ export function ChatPage() {
       <div hidden={rails.right} className="rail-resizer rail-resizer--right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize('right', event)} />
 
       <aside hidden={rails.right} className="glass-panel right-rail">
-        <PartnerQuickCard key={activePartner?.id} partner={activePartner} conversation={activeConversation} projects={participatingProjects} onUpdatePartner={updatePartner} onUpdateWorkspaceGrants={updatePartnerWorkspaceGrants} />
+        <PartnerQuickCard
+          key={activePartner?.id}
+          partner={activePartner}
+          conversation={activeConversation}
+          projects={participatingProjects}
+          onUpdatePartner={updatePartner}
+          onUpdateWorkspaceGrants={updatePartnerWorkspaceGrants}
+          codexModelPicker={activeConversation && activePartner?.sourceMode === 'local_cli' && activePartner.connectionKind === 'local_codex'
+            && activePartner.codexRuntimeId && (activeConversation.partnerRootGrantId || activePartner.partnerRootGrantId)
+            && window.asteriumAgents?.listCodexModels ? <CodexModelPicker
+              key={JSON.stringify([activePartner.codexRuntimeId, activePartner.codexRuntime?.environment, activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId])}
+              partnerRootGrantId={activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId}
+              codexRuntimeId={activePartner.codexRuntimeId}
+              codexRuntimeEnvironment={activePartner.codexRuntime?.environment}
+              selection={activeConversation.codexModel}
+              currentModel={activeConversation.runtimeModel?.model}
+              disabled={Boolean(partnerRemoved || activeConversation.isDisabled || nativeThreadUnavailable || compacting)}
+              onChange={selection => setConversationCodexModel(activeConversation.id, selection)}
+            /> : undefined}
+        />
         <section className={`side-section${collapsedResourceSections.artifacts ? ' side-section--collapsed' : ''}`}>
           <header><button className="side-section-toggle" type="button" aria-expanded={!collapsedResourceSections.artifacts} aria-controls="chat-artifact-list" aria-label={`${collapsedResourceSections.artifacts ? '展开' : '折叠'}文件与交付`} onClick={() => toggleResourceSection('artifacts')}><span><FileText size={20} />文件与交付</span>{collapsedResourceSections.artifacts ? <ChevronRight size={17} /> : <ChevronDown size={17} />}</button></header>
           {!collapsedResourceSections.artifacts && <div
@@ -949,8 +1114,8 @@ export function ChatPage() {
           >
             {attachmentGroups.map(({ sourceId, versions, latest, sendCount }) => <div className="attachment-source" key={sourceId}>
               <div className="artifact-row" onContextMenu={(event) => { event.preventDefault(); setArtifactMenu(null); setAttachmentMenu({ id: latest.id, x: event.clientX, y: event.clientY }); }}>
-                <button className="artifact-main" type="button" disabled={latest.availability !== 'available'} onClick={() => void openUserAttachment(latest.id)} title={`预览最新版 ${latest.name}`}><span className="resource-icon">{latest.mediaType.startsWith('image/') ? <FileImage /> : <FileText />}</span><span><strong>{latest.name}</strong><small className={latest.availability !== 'available' || latest.sourceAvailability !== 'available' ? 'artifact-missing' : ''}>{latest.availability !== 'available' ? '附件快照不可用' : latest.sourceAvailability !== 'available' ? '原文件已失效 · 快照仍可用' : `${versions.length} 个版本 · 发送 ${sendCount} 次`}</small></span></button>
-                <span className="artifact-actions"><button type="button" disabled={latest.availability !== 'available'} onClick={() => void window.asteriumAttachments?.open(latest.id, activeConversation!.id)} title="用系统应用打开快照"><ExternalLink size={14} /></button><button type="button" disabled={latest.sourceAvailability !== 'available'} onClick={() => void window.asteriumAttachments?.reveal(latest.id, activeConversation!.id)} title={latest.sourceAvailability === 'available' ? '打开原文件所在文件夹' : '原文件已失效'}><FolderOpen size={14} /></button><button type="button" onClick={() => setExpandedAttachmentSources((current) => ({ ...current, [sourceId]: !current[sourceId] }))} title="查看附件版本" aria-expanded={Boolean(expandedAttachmentSources[sourceId])}>{expandedAttachmentSources[sourceId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></span>
+                <button className="artifact-main" type="button" disabled={latest.availability !== 'available'} onClick={() => void openUserAttachment(latest.id)} title={`预览最新版 ${latest.name}`}><span className="resource-icon">{latest.mediaType.startsWith('image/') ? <FileImage /> : <FileText />}</span><span><strong>{latest.name}</strong><small className={latest.availability !== 'available' || latest.sourceAvailability === 'missing' ? 'artifact-missing' : ''}>{latest.availability !== 'available' ? '附件快照不可用' : latest.sourceAvailability === 'missing' ? '原文件已失效 · 快照仍可用' : `${versions.length} 个版本 · 发送 ${sendCount} 次`}</small></span></button>
+                <span className="artifact-actions"><button type="button" disabled={latest.availability !== 'available'} onClick={() => void window.asteriumAttachments?.open(latest.id, activeConversation!.id)} title="用系统应用打开快照"><ExternalLink size={14} /></button><button type="button" disabled={latest.sourceAvailability !== 'available'} onClick={() => void window.asteriumAttachments?.reveal(latest.id, activeConversation!.id)} title={latest.sourceAvailability === 'available' ? '打开原文件所在文件夹' : latest.sourceAvailability === 'missing' ? '原文件已失效' : '没有原文件路径'}><FolderOpen size={14} /></button><button type="button" onClick={() => setExpandedAttachmentSources((current) => ({ ...current, [sourceId]: !current[sourceId] }))} title="查看附件版本" aria-expanded={Boolean(expandedAttachmentSources[sourceId])}>{expandedAttachmentSources[sourceId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></span>
               </div>
               {expandedAttachmentSources[sourceId] && <div className="attachment-version-list">{[...versions].reverse().map((version, index) => <div className="attachment-version" key={version.id} onContextMenu={(event) => { event.preventDefault(); setAttachmentMenu({ id: version.id, x: event.clientX, y: event.clientY }); }}><button type="button" disabled={version.availability !== 'available'} onClick={() => void openUserAttachment(version.id)}><span><strong>{index === 0 ? '最新版' : `版本 ${versions.length - index}`}</strong><small>{formatAttachmentTime(version.sentAt)} · {formatBytes(version.sizeBytes)}</small></span></button>{version.sends.map((send) => { const message = activeConversation?.messages.find((item) => item.id === send.messageId); return <small className="attachment-send-record" key={`${version.id}-${send.messageId}-${send.sentAt}`}>{formatAttachmentTime(send.sentAt)} · {message ? `消息：${message.content.slice(0, 28) || '仅附件'}` : '对应消息已不在本地记录中'}</small>; })}</div>)}</div>}
             </div>)}
@@ -1120,11 +1285,69 @@ function artifactPreviewError(error: unknown, fileName: string) {
 function projectTransferError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? '');
   if (message.includes('PROJECT_WORKSPACE_NOT_READY')) return '这个旧项目还没有真实文件夹，请先在工作室中初始化项目目录。';
+  if (message.includes('PROJECT_CREATE_LOCATION_CHANGED')) return '项目保存位置已变化，请重新确认。';
   if (message.includes('PROJECT_LOCATION_SELECTION_EXPIRED')) return '目录选择已失效，请重新选择。';
   if (message.includes('PROJECT_DIRECTORY')) return '无法使用这个项目文件夹，请检查目录权限或换一个位置。';
   return message && !message.includes('PROJECT_SAVE_UNAVAILABLE') ? message : '暂时无法保存到项目，请稍后重试。';
 }
 
+interface ChatMessageRow {
+  key: string;
+  message: Message;
+  batches: DelegationBatchView[];
+  receiptOnly?: true;
+}
+
+function buildChatRows(conversation: Conversation | undefined, batches: DelegationBatchView[]): ChatMessageRow[] {
+  if (!conversation) return [];
+  const rows = conversation.messages.map((message, index): ChatMessageRow => ({ key: `${message.id}:${index}`, message, batches: [] }));
+  const pendingRows = new Map<number, ChatMessageRow[]>();
+
+  for (const batch of batches) {
+    if (batch.conversationId !== conversation.id || batch.partnerId !== conversation.partnerId) continue;
+    const sourceIndex = conversation.messages.findIndex(message => message.id === batch.messageId && isAsteriumUser(message.authorId));
+    const source = conversation.messages[sourceIndex];
+    if (!source) continue;
+
+    // Regenerating a turn reuses the message ID but gives it a new client message ID.
+    const sourceRunId = !source.clientMessageId || source.clientMessageId === batch.turnId ? source.runId : undefined;
+    const runId = sourceRunId ?? (conversation.activeRun?.clientMessageId === batch.turnId ? conversation.activeRun.runId : undefined);
+    const response = runId && rows.find(({ message }, index) => index > sourceIndex && message.authorId === batch.partnerId
+      && (message.runId === runId || message.runId?.startsWith(`${runId}:before-guidance:`)));
+    if (response) {
+      response.batches.push(batch);
+      continue;
+    }
+
+    // Render the receipt at the source turn even when the assistant has no message yet.
+    const replies = pendingRows.get(sourceIndex) ?? [];
+    const existing = replies.find(row => row.message.clientMessageId === batch.turnId);
+    if (existing) {
+      existing.batches.push(batch);
+      continue;
+    }
+    const id = `delegation-receipt:${batch.turnId}`;
+    const createdAt = new Date(batch.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    replies.push({ key: id, message: { id, authorId: batch.partnerId, content: '', clientMessageId: batch.turnId, createdAt }, batches: [batch], receiptOnly: true });
+    pendingRows.set(sourceIndex, replies);
+  }
+
+  return pendingRows.size ? rows.flatMap((row, index) => [row, ...(pendingRows.get(index) ?? [])]) : rows;
+}
+
 function deliveryLabel(status?: 'sending' | 'awaiting_confirmation' | 'delivered' | 'failed') {
   return { sending: '发送中', awaiting_confirmation: '待确认', delivered: '已送达', failed: '发送失败' }[status ?? 'delivered'];
 }
+
+const delegationReviewReason: Record<string, string> = {
+  DELEGATION_REVIEW_UNCERTAIN: '还没有确认回执，星丛会查询原任务。',
+  DELEGATION_REVIEW_BUSY: '伙伴的原线程正忙，可以稍后重试。',
+  DELEGATION_REVIEW_THREAD_CHANGED: '伙伴的原线程已切换，请确认后发起新的复核。',
+  DELEGATION_REVIEW_UNAVAILABLE: '该伙伴当前无法接收星丛复核。',
+  DELEGATION_REVIEW_FILE_UNREADABLE: '伙伴无法读取这份方案文件。',
+  DELEGATION_REVIEW_MARKDOWN_REQUIRED: '复核需要一份 UTF-8 Markdown 文件。',
+  DELEGATION_REVIEW_FILE_SIZE: '方案文件须为非空且不超过 160 KB。',
+  DELEGATION_REVIEW_MESSAGE_TOO_LONG: '转交说明太长，请将方案内容放在 Markdown 文件里。',
+  DELEGATION_REVIEW_SINGLE_TARGET: '每次复核只能发给一位接回伙伴。',
+  DELEGATION_REVIEW_FAILED: '伙伴未能完成这次复核。',
+};

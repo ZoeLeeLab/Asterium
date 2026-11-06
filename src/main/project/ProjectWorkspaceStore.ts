@@ -27,9 +27,16 @@ export class ProjectWorkspaceStore {
   private mutation = Promise.resolve();
   constructor(
     private readonly indexPath: string,
-    private readonly defaultRoot: () => string,
+    private readonly defaultRoot: () => string | Promise<string>,
     private readonly readIndexFile: (filePath: string) => Promise<string> = (filePath) => readFile(filePath, 'utf8'),
   ) {}
+
+  async preview(input: Pick<CreateProjectWorkspaceInput, 'projectId' | 'name' | 'selectedRoot'>) {
+    validateProjectId(input.projectId);
+    const name = cleanText(input.name, 80, 'PROJECT_NAME_INVALID');
+    return input.selectedRoot ? assertAbsolutePath(input.selectedRoot)
+      : path.join(await this.defaultRoot(), `${safeSegment(name, 'project')}__${shortId(input.projectId)}`);
+  }
 
   async create(input: CreateProjectWorkspaceInput): Promise<ProjectWorkspaceSnapshot> {
     return this.mutate(async () => {
@@ -38,9 +45,7 @@ export class ProjectWorkspaceStore {
       const name = cleanText(input.name, 80, 'PROJECT_NAME_INVALID');
       const description = cleanOptionalText(input.description, 20_000, 'PROJECT_DESCRIPTION_INVALID');
       const existing = this.projects.get(input.projectId);
-      const rootPath = existing?.rootPath ?? (input.selectedRoot
-        ? assertAbsolutePath(input.selectedRoot)
-        : path.join(this.defaultRoot(), `${safeSegment(name, 'project')}__${shortId(input.projectId)}`));
+      const rootPath = existing?.rootPath ?? await this.preview(input);
       const duplicate = [...this.projects.values()].find((item) => item.projectId !== input.projectId && samePath(item.rootPath, rootPath));
       if (duplicate) throw new Error('PROJECT_DIRECTORY_ALREADY_USED');
 

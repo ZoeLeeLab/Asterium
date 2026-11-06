@@ -26,6 +26,9 @@ export interface MemoryArchiveStore {
   purge(id: string, expected?: string): Promise<MemoryRecord>;
   fallbackMemoryIds(): Promise<string[]>;
   fallbackReceipt(operationId: string): Promise<string | undefined>;
+  importReceipt(batchId: string): Promise<import('../../shared/memoryImport').MemoryImportReceipt | undefined>;
+  confirmImport(batchId: string, records: MemoryRecord[]): Promise<import('../../shared/memoryImport').MemoryImportReceipt>;
+  undoImport(batchId: string): Promise<import('../../shared/memoryImport').MemoryImportUndo>;
   applyFallback(operationId: string, expectedVersion: string, after: MemoryRecord[], receipt: string): Promise<string>;
   getBriefing?(): Promise<MemoryArchiveBriefing | undefined>;
   putBriefing?(briefing: MemoryArchiveBriefing): Promise<void>;

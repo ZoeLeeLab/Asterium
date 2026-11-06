@@ -1,3 +1,4 @@
+import type { ContextHandoff } from '../../shared/contextHandoff';
 import type { AsteriumAgentsApi, AsteriumAttachmentsApi } from '../../shared/desktopBridge';
 import { ASTERIUM_USER_ID, isAsteriumUser } from '../../shared/identity';
 import {
@@ -11,6 +12,13 @@ import {
 import type { Conversation, LocalCliPartner, Message, MessageQuote, Partner, PrototypeAction, PrototypeState, UserProfile } from '../types/domain';
 import { apiHistory, sharesUserProfile } from './apiContext';
 import { formatMessageWithQuote, messageTextForRuntime } from './messageQuote';
+
+export function supportsContextHandoff(partner?: Partner) {
+  return Boolean(partner && !partner.isRemoved && (
+    (partner.sourceMode === 'api_partner' && !partner.isPrototype && partner.configured)
+    || (partner.sourceMode === 'local_cli' && (partner.connectionKind === 'local_codex' || partner.connectionKind === 'local_claude'))
+  ));
+}
 
 export type WorkspaceSwitchDecision = 'switch_to_conversation_cwd' | 'new_session_in_current_cwd';
 
@@ -37,6 +45,7 @@ export interface SendSingleChatMessageRequest extends SingleChatRuntimeContext {
   attachments?: MessageAttachment[];
   messageId?: string;
   workspaceDecision?: WorkspaceSwitchDecision;
+  contextHandoff?: ContextHandoff;
   quote?: MessageQuote;
 }
 
@@ -166,6 +175,7 @@ export async function sendSingleChatMessage({
   messageId,
   workspaceDecision,
   quote,
+  contextHandoff,
 }: SendSingleChatMessageRequest): Promise<boolean> {
   let conversation = state.conversations.find((item) => item.id === conversationId);
   let partner = state.partners.find((item) => item.id === conversation?.partnerId);
@@ -188,6 +198,8 @@ export async function sendSingleChatMessage({
   const realLocal = partner?.sourceMode === 'local_cli' && (partner.connectionKind === 'local_claude' || partner.connectionKind === 'local_codex');
   const realApi = partner?.sourceMode === 'api_partner' && !partner.isPrototype && partner.configured;
   const realExisting = partner?.sourceMode === 'existing_thread' && !partner.isPrototype && partner.configured && partner.connectionStatus === 'connected';
+  if (partner?.sourceMode === 'existing_thread' && attachments?.length && !realExisting) return false;
+  if (contextHandoff && (!realLocal && !realApi)) return false;
   if (!conversation || !partner || (!realLocal && !realApi && !realExisting)) {
     dispatch({ type: 'sendChatMessage', conversationId, message: createSingleChatMessage(content, attachments, messageId, quote) });
     return true;
@@ -285,6 +297,7 @@ export async function sendSingleChatMessage({
       sessionId: conversation.sessionId,
       content: { type: 'text', text: runtimeContent },
       ...(attachments?.length ? { attachments } : {}),
+      ...(contextHandoff ? { contextHandoff } : {}),
       apiContext: {
         history: partner.apiSessionHistoryEnabled ? apiHistory(conversation.messages) : [],
         apiSessionHistoryEnabled: partner.apiSessionHistoryEnabled,
@@ -304,7 +317,7 @@ export async function sendSingleChatMessage({
       attachmentCapabilities: partner.attachmentCapabilities,
     }, command).then((receipt) => dispatch({ type: 'bindRunReceipt', conversationId, clientMessageId, ...receipt })).catch((error) => fail({
       code: 'API_SEND_FAILED',
-      message: error instanceof Error && error.message.includes('API_CREDENTIAL_REQUIRED') ? 'DeepSeek API Key 已失效，请在伙伴管理中重新保存。' : '消息未能发送给 DeepSeek。',
+      message: error instanceof Error && error.message.includes('API_CREDENTIAL_REQUIRED') ? 'DeepSeek API Key 已失效，请在伙伴管理中重新保存。' : contextHandoff ? '消息未送达，交接卡仍可重试。请检查会话和连接。' : '消息未能发送给 DeepSeek。',
       stage: 'transport',
       retryable: true,
     }));
@@ -332,7 +345,11 @@ export async function sendSingleChatMessage({
     sourceMessage,
     sessionId: conversation.sessionId,
     content: { type: 'text', text: runtimeContent },
-    execution: { permissionMode: localPermissionMode(partner, conversation), planMode: conversation.planMode ?? 'default' },
+    ...(contextHandoff ? { contextHandoff } : {}),
+    execution: {
+      permissionMode: localPermissionMode(partner, conversation), planMode: conversation.planMode ?? 'default',
+      ...(partner.adapterType === 'codex_cli' && conversation.codexModel ? { codexModel: conversation.codexModel } : {}),
+    },
     runtimeContext: runtimeContext(partner, conversation, state.userProfile, state.partners),
     ...(attachments?.length ? { attachments } : {}),
   } as const;
@@ -423,7 +440,10 @@ export function regenerateSingleChatTurn({ state, dispatch, bridge, conversation
     sessionId: canForkCodex ? conversation.sessionId : undefined,
     ...(canForkCodex ? { forkFromTurnId: previousCodexTurnId } : {}),
     content: { type: 'text', text: canForkCodex ? runtimeContent : visibleContext(history, runtimeContent) },
-    execution: { permissionMode: localPermissionMode(partner, conversation), planMode: conversation.planMode ?? 'default' },
+    execution: {
+      permissionMode: localPermissionMode(partner, conversation), planMode: conversation.planMode ?? 'default',
+      ...(partner.adapterType === 'codex_cli' && conversation.codexModel ? { codexModel: conversation.codexModel } : {}),
+    },
     ...(attachments?.length ? { attachments } : {}),
     runtimeContext: runtimeContext(partner, conversation, state.userProfile, state.partners),
   } as const;

@@ -188,6 +188,7 @@ export interface NativeThreadBinding {
 }
 
 export interface StudioStartRoundRequest {
+  contextHandoff?: import('./contextHandoff').ContextHandoff;
   /** Renderer supplies staged selections; Main supplies canonical attachments. */
   attachmentSelectionIds?: string[];
   attachments?: MessageAttachment[];
