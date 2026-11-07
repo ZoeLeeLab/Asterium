@@ -8,7 +8,7 @@
 
 首版已实现 GitHub Releases 检查、下载、进度、取消、校验和用户确认安装流程。2026-11-01，[ZoeLeeLab/Asterium](https://github.com/ZoeLeeLab/Asterium) 已公开源码及 [v0.1.0-beta.1 未签名预发行版](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.1)，发行页提供 Windows x64 安装器、配套源码与 SHA256SUMS.txt。
 
-已发布客户端绑定上述公开更新源。已安装 Beta.2 的用户可在「关于」里检查 [Beta.3](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.3)。请开启「接收测试版更新」以发现预发行版本。同版本的本地候选可通过手动安装更新。
+已发布客户端绑定上述公开更新源。已安装 Beta.3 的用户可在「关于」里检查 [Beta.4](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.4)。请开启「接收测试版更新」以发现预发行版本。同版本的本地候选可通过手动安装更新。
 
 源码中的配置入口为 `src/shared/appUpdates.ts` 的 `PUBLIC_UPDATE_REPOSITORY`，现值为 `ZoeLeeLab/Asterium`。使用者检查或下载公开版本不需要 GitHub Token。变更更新源须由维护者修改源码并重新构建，不接受模型、聊天消息或渲染页传入下载地址；后续公开发行仍须维护者明确授权。
 

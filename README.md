@@ -4,7 +4,7 @@
 >
 > 保留关系与记忆，也让 Codex、Claude Code 和不同模型一起把想法做出来。
 
-[下载 Beta.3](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.3) · [查看全部版本](https://github.com/ZoeLeeLab/Asterium/releases) · [使用文档](#文档)
+[下载 Beta.4](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.4) · [查看全部版本](https://github.com/ZoeLeeLab/Asterium/releases) · [使用文档](#文档)
 
 星丛是一款面向长期 AI 伙伴与多 Agent 协作的 Windows 桌面应用。
 
@@ -78,7 +78,7 @@
 
 ### 1. 下载并安装
 
-前往 [Beta.3 发行页](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.3)，下载 Windows x64 安装包。已安装 Beta.2 的用户可在「关于」中检查更新。发行页也提供对应源码包和 SHA-256 校验文件。
+前往 [Beta.4 发行页](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.4)，下载 Windows x64 安装包。已安装 Beta.3 的用户可在「关于」中检查更新。发行页也提供对应源码包和 SHA-256 校验文件。
 
 当前安装包尚未进行代码签名，Windows 或浏览器可能提示“未知发布者”或“下载不常见”。请从本仓库的 Releases 下载，并核对发行页提供的哈希。
 
@@ -113,7 +113,7 @@ Beta 数据默认使用 `%APPDATA%/Asterium-Beta`，与旧版默认资料分开�
 
 星丛仍处于早期 Beta，很多地方还在慢慢长出来。
 
-Beta.3 面向 Windows x64，带来当前单聊搜索、本机 Codex 模型与思考强度切换、截图粘贴，以及接回伙伴的附件发送和 Markdown 复核。外部宿主功能按连接能力开放，自动化仍在实验阶段。
+Beta.4 支持在单聊和群聊输入区拖放或粘贴文件、图片与截图。项目群中发送的用户附件会复制到项目的 `uploads/`，右侧「项目文件交付」可以浏览项目根目录和子目录。
 
 如果你也有一个陪了你很久的 AI 伙伴，又想和它一起做点什么，希望星丛能给你们放下一张办公桌。若它刚好帮到了你，欢迎点一颗 ⭐，让我们知道这间小工作室值得继续长大。
 
