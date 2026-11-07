@@ -739,6 +739,7 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .preview-fallback .secondary-button { display: inline-flex; align-items: center; gap: 6px; }
 .artifact-row { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; border-radius: var(--radius-sm); transition: background var(--motion-fast); }
 .artifact-row:hover, .artifact-row:focus-within { background: var(--surface-hover); }
+.artifact-row:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
 .resource-list .artifact-row .artifact-main:hover { background: transparent; }
 .project-location-confirmation {
   padding: 12px;
@@ -824,6 +825,8 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .resource-list .artifact-actions svg { display: block; }
 .resource-empty { padding: 12px 10px; color: var(--muted); font-size: calc(10px * var(--ui-font-scale,1)); }
 .artifact-context-menu { position: fixed; z-index: 100; display: grid; min-width: 190px; padding: 5px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-strong); box-shadow: var(--shadow); backdrop-filter: blur(20px); }
+.artifact-delivery-menu { max-height: calc(100vh - 16px); overflow-y: auto; }
+.artifact-action-error { position: fixed; z-index: 90; right: 12px; bottom: 16px; max-width: min(420px, calc(100vw - 24px)); color: var(--danger); background: var(--surface-strong); box-shadow: var(--shadow); }
 .artifact-context-menu button { display: flex; align-items: center; gap: 8px; padding: 8px; border: 0; border-radius: 5px; color: var(--text); background: transparent; text-align: left; }
 .artifact-context-menu button:hover { background: var(--button-hover); }
 .artifact-context-menu button:disabled { opacity: .45; }
@@ -831,6 +834,8 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .partner-avatar-menu { z-index: 150; width: 204px; }
 .avatar[data-partner-id]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .artifact-context-menu hr { height: 1px; margin: 3px 7px; border: 0; background: var(--border); }
+.artifact-delivery-menu button { padding: 5px 8px; font-size: calc(11px * var(--ui-font-scale, 1)); line-height: 1.4; }
+.artifact-delivery-menu hr { margin: 3px 7px; background: color-mix(in srgb, var(--border) 55%, transparent); }
 .quote-context-menu { min-width: 156px; }
 .attachment-source { display: grid; }
 .attachment-version-list { display: grid; gap: 3px; margin: 0 8px 6px 49px; padding-left: 9px; border-left: 1px solid var(--border); }

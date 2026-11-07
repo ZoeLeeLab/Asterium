@@ -160,6 +160,7 @@ contextBridge.exposeInMainWorld('asteriumArtifacts', {
   inspect: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactInspect, artifactId),
   read: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactRead, artifactId),
   open: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpen, artifactId),
+  openInBrowser: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpenInBrowser, artifactId),
   reveal: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactReveal, artifactId),
   copyPath: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactCopyPath, artifactId),
   saveAs: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactSaveAs, artifactId),

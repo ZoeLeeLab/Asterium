@@ -92,6 +92,7 @@ describe('navigation shell interactions', () => {
     const other = file('other-path', 500, '2026-11-07T10:02:00.000Z');
     const deliveries = [latest, older, other];
     conversation.artifacts = deliveries.map(({ id, name, sizeBytes, createdAt }) => ({ id, artifactRef: id, name, sizeBytes, createdAt }));
+    conversation.messages[0].timeline = [{ id: 'delivery-row', sequence: 1, kind: 'file', name: older.name, artifactId: older.id, summary: '文件已交付', state: 'success' }];
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
     const inspect = vi.fn(async (id: string) => deliveries.find((item) => item.id === id) ?? null);
     const read = vi.fn(async () => ({ info: latest, text: '最新交付的内容' }));
@@ -106,10 +107,79 @@ describe('navigation shell interactions', () => {
       const newestRow = sidebar.getByText(/300 B/).closest('button')!;
       expect(within(newestRow).getByText(/^更新于/)).toHaveAttribute('datetime', latest.createdAt);
       expect(sidebar.getAllByText(/^更新于/).map((time) => time.getAttribute('datetime'))).not.toContain(older.createdAt);
-      fireEvent.click(newestRow);
+      fireEvent.click(screen.getByRole('button', { name: '折叠文件与交付' }));
+      fireEvent.contextMenu(screen.getByText('文件送到了'));
+      fireEvent.click(screen.getByRole('button', { name: '在文件与交付中定位' }));
+      const located = within(screen.getByLabelText('交付文件')).getByText(/300 B/).closest('.artifact-row')!;
+      expect(located).toHaveFocus();
+      fireEvent.click(within(located as HTMLElement).getByTitle('预览 summary.md'));
       expect(await screen.findByText('最新交付的内容')).toBeInTheDocument();
       expect(read).toHaveBeenCalledWith('latest-delivery');
     } finally {
+      window.asteriumArtifacts = previous;
+    }
+  });
+
+  it('shares delivery actions between an image operation, its preview and the delivery list', async () => {
+    const state = createTestState();
+    const conversation = state.conversations[0];
+    const info: ArtifactInfo = {
+      id: 'generated-image', name: '概念图.png', extension: '.png', mediaType: 'image/png', previewKind: 'image',
+      sourceKind: 'content', registrationMethod: 'automatic', availability: 'available', cached: true,
+      createdAt: '2026-11-07T10:01:00.000Z', sizeBytes: 68,
+    };
+    conversation.artifacts = [{ ...info, artifactRef: 'registered-image' }];
+    conversation.messages[0].timeline = [
+      { id: 'image-operation', sequence: 1, kind: 'tool', toolCallId: 'paint', toolName: 'image_gen', summary: '图片完成', state: 'success' },
+      { id: 'image-delivery', sequence: 2, kind: 'file', toolCallId: 'paint', artifactId: info.id, name: info.name, summary: '图片已交付', state: 'success' },
+    ];
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    const railsKey = 'asterium.chat.collapsedRails.v1';
+    localStorage.setItem(railsKey, JSON.stringify({ right: true }));
+    const previous = window.asteriumArtifacts;
+    const openInBrowser = vi.fn(async () => undefined);
+    const exportAs = vi.fn(async () => true);
+    const reveal = vi.fn(async () => { throw new Error('removed'); });
+    const saveToProject = vi.fn(async (_id: string, projectId: string) => ({
+      projectId, artifactId: info.id, fileId: 'project-image', name: info.name, relativePath: info.name,
+      absolutePath: 'C:\\Fixtures\\example.png', sizeBytes: 68, savedAt: info.createdAt, revision: 1, contentHash: 'a'.repeat(64),
+    }));
+    window.asteriumArtifacts = {
+      ...previous, inspect: vi.fn(async () => info),
+      read: vi.fn(async () => ({ info, dataUrl: 'data:image/png;base64,aW1hZ2U=' })),
+      openInBrowser, exportAs, reveal, saveToProject,
+    } as NonNullable<typeof previous>;
+    try {
+      const { container } = withProvider(<ChatPage />, '/chat');
+      const imageOperation = within(container.querySelector<HTMLElement>('.message-list')!).getByTitle('预览 概念图.png');
+      const menu = () => within(screen.getByLabelText('交付文件操作'));
+      fireEvent.contextMenu(imageOperation);
+      fireEvent.click(menu().getByRole('button', { name: '文件另存为' }));
+      expect(exportAs).toHaveBeenCalledWith('registered-image');
+
+      fireEvent.click(imageOperation);
+      const preview = await screen.findByAltText(info.name);
+      fireEvent.contextMenu(preview);
+      fireEvent.click(menu().getByRole('button', { name: '用默认浏览器打开' }));
+      expect(openInBrowser).toHaveBeenCalledWith('registered-image');
+
+      fireEvent.contextMenu(screen.getByRole('tab', { name: /概念图.png/ }));
+      fireEvent.click(menu().getByRole('button', { name: '在文件与交付中定位' }));
+      const delivery = screen.getByText(/服务器文件|网络内容/).closest('.artifact-row')!;
+      expect(delivery).toBeVisible();
+      expect(delivery).toHaveFocus();
+
+      fireEvent.contextMenu(delivery);
+      fireEvent.click(menu().getByRole('button', { name: '打开文件所在文件夹' }));
+      expect(reveal).toHaveBeenCalledWith('registered-image');
+      expect(await screen.findByRole('alert')).toHaveTextContent('无法打开所在文件夹');
+
+      fireEvent.contextMenu(imageOperation);
+      fireEvent.click(menu().getByRole('button', { name: '保存到项目' }));
+      fireEvent.click(within(screen.getByRole('dialog', { name: '保存到项目' })).getByRole('button', { name: '保存到项目' }));
+      await waitFor(() => expect(saveToProject).toHaveBeenCalledWith('registered-image', state.activeProjectId));
+    } finally {
+      localStorage.removeItem(railsKey);
       window.asteriumArtifacts = previous;
     }
   });

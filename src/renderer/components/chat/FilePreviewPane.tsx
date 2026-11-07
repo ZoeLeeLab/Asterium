@@ -1,6 +1,6 @@
 import { CodePreview } from './CodePreview';
 import { ExternalLink, FileQuestion, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { ConversationArtifact } from '../../types/domain';
 import { MarkdownContent } from './MarkdownContent';
@@ -16,6 +16,7 @@ interface FilePreviewPaneProps {
   activeId: string;
   onActive: (id: string) => void;
   onClose: (id: string) => void;
+  onArtifactContextMenu?: (id: string, event: MouseEvent<HTMLElement>) => void;
   onMinimize?: () => void;
 }
 
@@ -24,15 +25,17 @@ interface SheetPreviewData {
   rows: Record<string, Array<Array<string | number | boolean>>>;
 }
 
-export function FilePreviewPane({ tabs, activeId, onActive, onClose, onMinimize }: FilePreviewPaneProps) {
+export function FilePreviewPane({ tabs, activeId, onActive, onClose, onMinimize, onArtifactContextMenu }: FilePreviewPaneProps) {
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
   if (!active) return null;
   return <section className="glass-panel file-preview-pane" aria-label="文件预览">
     {onMinimize && <button className="text-button studio-preview-minimize" type="button" onClick={onMinimize}>收起预览，返回浏览</button>}
     <header className="preview-tabs" role="tablist">
-      {tabs.map((tab) => <button className={tab.id === active.id ? 'active' : ''} type="button" role="tab" aria-selected={tab.id === active.id} key={tab.id} onClick={() => onActive(tab.id)}><span>{tab.name}</span><i role="button" tabIndex={0} aria-label={`关闭 ${tab.name}`} onClick={(event) => { event.stopPropagation(); onClose(tab.id); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.stopPropagation(); onClose(tab.id); } }}><X size={13} /></i></button>)}
+      {tabs.map((tab) => <button className={tab.id === active.id ? 'active' : ''} type="button" role="tab" aria-selected={tab.id === active.id} key={tab.id} onClick={() => onActive(tab.id)} onContextMenu={(event) => onArtifactContextMenu?.(tab.id, event)}><span>{tab.name}</span><i role="button" tabIndex={0} aria-label={`关闭 ${tab.name}`} onClick={(event) => { event.stopPropagation(); onClose(tab.id); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.stopPropagation(); onClose(tab.id); } }}><X size={13} /></i></button>)}
     </header>
-    <div className="preview-content">{active.error ? <PreviewFallback tab={active} message={active.error} /> : !active.content ? <div className="preview-loading">正在读取文件…</div> : <PreviewContent key={active.id} tab={active} />}</div>
+    <div className="preview-content" onContextMenu={(event) => {
+      if (active.content?.info.previewKind === 'image' && event.target instanceof HTMLImageElement) onArtifactContextMenu?.(active.id, event);
+    }}>{active.error ? <PreviewFallback tab={active} message={active.error} /> : !active.content ? <div className="preview-loading">正在读取文件…</div> : <PreviewContent key={active.id} tab={active} />}</div>
   </section>;
 }
 

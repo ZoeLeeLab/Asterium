@@ -44,6 +44,7 @@ import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/Cre
 import { BridgeCursorStore } from './security/BridgeCursorStore';
 import { WorkspaceGrantStore } from './security/WorkspaceGrantStore';
 import { ArtifactRegistry } from './security/ArtifactRegistry';
+import { createArtifactBrowserLink } from './security/ArtifactBrowserLink';
 import { ConversationAttachmentStore, MAX_MESSAGE_ATTACHMENTS } from './security/ConversationAttachmentStore';
 import { StudioAttachments } from './studio/StudioAttachments';
 import type { AppUpdateService } from './settings/AppUpdateService';
@@ -1555,6 +1556,19 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (typeof artifactId !== 'string') throw new Error('INVALID_ARTIFACT_ID');
     const error = await shell.openPath(await artifacts.pathFor(artifactId));
     if (error) throw new Error(error);
+  });
+  ipcMain.handle(AGENT_IPC.artifactOpenInBrowser, async (event, artifactId: unknown) => {
+    requireSender(event);
+    if (typeof artifactId !== 'string') throw new Error('INVALID_ARTIFACT_ID');
+    const path = await artifacts.pathFor(artifactId);
+    const { name, mediaType } = await artifacts.inspect(artifactId);
+    const link = await createArtifactBrowserLink({ path, name, mediaType });
+    try {
+      await shell.openExternal(link.url);
+    } catch (error) {
+      link.close();
+      throw error;
+    }
   });
   ipcMain.handle(AGENT_IPC.artifactReveal, async (event, artifactId: unknown) => {
     requireSender(event);

@@ -205,6 +205,7 @@ export interface AsteriumArtifactsApi {
   inspect: (artifactId: string) => Promise<ArtifactInfo | null>;
   read: (artifactId: string) => Promise<ArtifactReadResult>;
   open: (artifactId: string) => Promise<void>;
+  openInBrowser?: (artifactId: string) => Promise<void>;
   reveal: (artifactId: string) => Promise<void>;
   copyPath: (artifactId: string) => Promise<void>;
   saveAs: (artifactId: string) => Promise<boolean>;
