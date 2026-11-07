@@ -1615,15 +1615,17 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     });
     if (result.canceled) return [];
     if (result.filePaths.length > remaining) throw new Error('ATTACHMENT_COUNT_LIMIT');
-    return messageAttachments.stage(result.filePaths);
+    return messageAttachments.stage(result.filePaths, isRecord(value) && value.allowLocalReferences === true);
   });
   ipcMain.handle(AGENT_IPC.attachmentStageFiles, async (event, value: unknown) => {
     requireSender(event);
-    if (!Array.isArray(value) || !value.every((file) => typeof file === 'string' && path.isAbsolute(file))) throw new Error('ATTACHMENT_NOT_FILE');
-    return messageAttachments.stage(value);
+    const files = isRecord(value) ? value.paths : value;
+    if (!Array.isArray(files) || !files.every((file) => typeof file === 'string' && path.isAbsolute(file))) throw new Error('ATTACHMENT_NOT_FILE');
+    return messageAttachments.stage(files, isRecord(value) && value.allowLocalReferences === true);
   });
-  ipcMain.handle(AGENT_IPC.attachmentPasteFiles, async (event, remaining: unknown) => {
+  ipcMain.handle(AGENT_IPC.attachmentPasteFiles, async (event, value: unknown) => {
     requireSender(event);
+    const remaining = isRecord(value) ? value.remaining : value;
     if (typeof remaining !== 'number' || !Number.isSafeInteger(remaining) || remaining < 1 || remaining > MAX_MESSAGE_ATTACHMENTS) throw new Error('ATTACHMENT_COUNT_LIMIT');
     const mimeType = 'text/uri-list';
     const item = (await clipboard.read()).find((entry) => entry.types.includes(mimeType));
@@ -1631,7 +1633,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (!(payload instanceof Blob)) return [];
     const urls = (await payload.text()).split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('file://'));
     if (urls.length > remaining) throw new Error('ATTACHMENT_COUNT_LIMIT');
-    return urls.length ? messageAttachments.stage(urls.map((url) => fileURLToPath(url))) : [];
+    return urls.length ? messageAttachments.stage(urls.map((url) => fileURLToPath(url)), isRecord(value) && value.allowLocalReferences === true) : [];
   });
   ipcMain.handle(AGENT_IPC.attachmentStageClipboardImage, async (event, value: unknown) => {
     requireSender(event);
@@ -2682,7 +2684,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const connection = assertExistingThreadConnection(request.connection);
     assertAgentCommand(request.command);
     if (request.command.type !== 'message.send' || request.command.connectionSource !== 'existing_thread') throw new Error('INVALID_EXISTING_THREAD_SEND_COMMAND');
-    request.command.attachments = await messageAttachments.canonicalize(request.command.conversationId, request.command.attachments);
+    request.command = await messageAttachments.prepareSend(request.command, protectedRoots);
     await hydrateManagedRuntimeProfile(request.command);
     const fingerprint = JSON.stringify({ connection, command: request.command });
     return runCoordinator.runIdempotent(request.command.clientMessageId, fingerprint, async () => {
@@ -2765,7 +2767,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   async function startApiRuntime(request: ApiSendRequest) {
     await attachAutomationCommand(request.command);
     request = { ...request, connection: await apiConnections.resolve(request.command.partnerId, request.connection) };
-    request.command.attachments = await messageAttachments.canonicalize(request.command.conversationId, request.command.attachments);
+    request.command = await messageAttachments.prepareSend(request.command, protectedRoots);
     if (request.command.sourceMessage) await singleChatMessages.upsertMessage(request.command.conversationId, request.command.partnerId, request.command.sourceMessage);
     const storedProfile = await hydrateManagedRuntimeProfile(request.command);
     if (request.command.runtimeContext) request.command.runtimeContext = { ...request.command.runtimeContext, runtime: { ...request.command.runtimeContext?.runtime, source: 'api_partner', provider: request.connection.provider, model: request.connection.model } };
@@ -2818,7 +2820,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (request.command.execution?.codexModel && (request.adapterType !== 'codex_cli'
       || (request.command.route && request.command.route.scope !== 'single'))) throw new Error('CODEX_MODEL_SELECTION_UNAVAILABLE');
     await attachAutomationCommand(request.command);
-    request.command.attachments = await messageAttachments.canonicalize(request.command.conversationId, request.command.attachments);
+    request.command = await messageAttachments.prepareSend(request.command, protectedRoots);
     if (request.command.sourceMessage) await singleChatMessages.upsertMessage(request.command.conversationId, request.command.partnerId, request.command.sourceMessage);
     const storedProfile = await hydrateManagedRuntimeProfile(request.command);
     let partnerRoot: string;

@@ -372,6 +372,10 @@ export function ChatPage() {
     if (previewTabs.some((tab) => tab.id === tabId)) return setActivePreviewId(tabId);
     try {
       const info = await window.asteriumAttachments.inspect(attachmentId, activeConversation.id);
+      if (info.localReference && info.availability === 'available') {
+        await window.asteriumAttachments.reveal(attachmentId, activeConversation.id);
+        return;
+      }
       const tab: PreviewTab = {
         id: tabId, name: info.name, artifactRef: info.id, mediaType: info.mediaType, sizeBytes: info.sizeBytes,
         createdAt: info.createdAt, availability: info.availability === 'available' ? 'available' : 'missing',
@@ -1040,6 +1044,7 @@ export function ChatPage() {
           pendingGuidanceSendDisabled={Boolean(activeConversation?.activeRun && (activeConversation.pendingAuthorization || activeConversation.pendingUserInput))}
           disabled={partnerRemoved || !activeConversation || activeConversation.isDisabled || nativeThreadUnavailable || compacting}
           attachmentsEnabled={attachmentsEnabled}
+          allowLocalReferences={attachmentsEnabled ? true : undefined}
           attachmentCapabilities={activePartner?.attachmentCapabilities}
           cyberBossChat={cyberBossChat}
           cyberBossFileCapabilities={cyberBossFileCapabilities}
@@ -1123,8 +1128,15 @@ export function ChatPage() {
           >
             {attachmentGroups.map(({ sourceId, versions, latest, sendCount }) => <div className="attachment-source" key={sourceId}>
               <div className="artifact-row" onContextMenu={(event) => { event.preventDefault(); setArtifactMenu(null); setAttachmentMenu({ id: latest.id, x: event.clientX, y: event.clientY }); }}>
+                {latest.localReference ?
+                  <button className="artifact-main" type="button" disabled={latest.availability !== 'available'} onClick={() => void openUserAttachment(latest.id)} title="在文件夹中显示">
+                    <span className="resource-icon"><FileText /></span>
+                    <span><strong>{latest.name}</strong><small>{latest.availability === 'available' ? '本地引用' : '本地引用 · 原文件不可用'}</small></span>
+                  </button>
+                : <>
                 <button className="artifact-main" type="button" disabled={latest.availability !== 'available'} onClick={() => void openUserAttachment(latest.id)} title={`预览最新版 ${latest.name}`}><span className="resource-icon">{latest.mediaType.startsWith('image/') ? <FileImage /> : <FileText />}</span><span><strong>{latest.name}</strong><small className={latest.availability !== 'available' || latest.sourceAvailability === 'missing' ? 'artifact-missing' : ''}>{latest.availability !== 'available' ? '附件快照不可用' : latest.sourceAvailability === 'missing' ? '原文件已失效 · 快照仍可用' : `${versions.length} 个版本 · 发送 ${sendCount} 次`}</small></span></button>
                 <span className="artifact-actions"><button type="button" disabled={latest.availability !== 'available'} onClick={() => void window.asteriumAttachments?.open(latest.id, activeConversation!.id)} title="用系统应用打开快照"><ExternalLink size={14} /></button><button type="button" disabled={latest.sourceAvailability !== 'available'} onClick={() => void window.asteriumAttachments?.reveal(latest.id, activeConversation!.id)} title={latest.sourceAvailability === 'available' ? '打开原文件所在文件夹' : latest.sourceAvailability === 'missing' ? '原文件已失效' : '没有原文件路径'}><FolderOpen size={14} /></button><button type="button" onClick={() => setExpandedAttachmentSources((current) => ({ ...current, [sourceId]: !current[sourceId] }))} title="查看附件版本" aria-expanded={Boolean(expandedAttachmentSources[sourceId])}>{expandedAttachmentSources[sourceId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></span>
+                </>}
               </div>
               {expandedAttachmentSources[sourceId] && <div className="attachment-version-list">{[...versions].reverse().map((version, index) => <div className="attachment-version" key={version.id} onContextMenu={(event) => { event.preventDefault(); setAttachmentMenu({ id: version.id, x: event.clientX, y: event.clientY }); }}><button type="button" disabled={version.availability !== 'available'} onClick={() => void openUserAttachment(version.id)}><span><strong>{index === 0 ? '最新版' : `版本 ${versions.length - index}`}</strong><small>{formatAttachmentTime(version.sentAt)} · {formatBytes(version.sizeBytes)}</small></span></button>{version.sends.map((send) => { const message = activeConversation?.messages.find((item) => item.id === send.messageId); return <small className="attachment-send-record" key={`${version.id}-${send.messageId}-${send.sentAt}`}>{formatAttachmentTime(send.sentAt)} · {message ? `消息：${message.content.slice(0, 28) || '仅附件'}` : '对应消息已不在本地记录中'}</small>; })}</div>)}</div>}
             </div>)}
@@ -1154,7 +1166,16 @@ export function ChatPage() {
       {overlay === 'diary' && activePartner && <DiaryModal key={activePartner.id} partnerId={activePartner.id} onClose={() => setOverlay(null)} />}
 
       {artifactMenu && (() => { const file = activeConversation?.artifacts?.find((item) => item.id === artifactMenu.id); return <div className="artifact-context-menu" style={contextMenuPosition(artifactMenu.x, artifactMenu.y)} onPointerDown={(event) => event.stopPropagation()}>{file?.sourceKind === 'local_path' && <button type="button" onClick={() => { void window.asteriumArtifacts?.copyPath(file.artifactRef); setArtifactMenu(null); }}><Copy size={14} />复制路径</button>}<button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file) void window.asteriumArtifacts?.exportAs(file.artifactRef); setArtifactMenu(null); }}><Save size={14} />{file?.sourceKind === 'local_path' ? '文件另存为' : '下载'}</button><button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file) openSaveToProject(file.id); setArtifactMenu(null); }}><FolderKanban size={14} />保存到项目</button><hr /><button className="danger" type="button" onClick={() => void beginArtifactDeletion(artifactMenu.id)}><Trash2 size={14} />删除文件</button></div>; })()}
-      {attachmentMenu && (() => { const file = userAttachments.find((item) => item.id === attachmentMenu.id); return <div className="artifact-context-menu" style={contextMenuPosition(attachmentMenu.x, attachmentMenu.y)} onPointerDown={(event) => event.stopPropagation()}><button type="button" disabled={file?.sourceAvailability !== 'available'} onClick={() => { if (file && activeConversation) void window.asteriumAttachments?.copyPath(file.id, activeConversation.id); setAttachmentMenu(null); }}><Copy size={14} />复制原文件路径</button><button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file && activeConversation) void window.asteriumAttachments?.exportAs(file.id, activeConversation.id); setAttachmentMenu(null); }}><Save size={14} />文件另存为</button><button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file) openAttachmentSaveToProject(file.id); setAttachmentMenu(null); }}><FolderKanban size={14} />保存到项目</button></div>; })()}
+      {attachmentMenu && (() => {
+        const file = userAttachments.find((item) => item.id === attachmentMenu.id);
+        return <div className="artifact-context-menu" style={contextMenuPosition(attachmentMenu.x, attachmentMenu.y)} onPointerDown={(event) => event.stopPropagation()}>
+          <button type="button" disabled={file?.sourceAvailability !== 'available'} onClick={() => { if (file && activeConversation) void window.asteriumAttachments?.copyPath(file.id, activeConversation.id); setAttachmentMenu(null); }}><Copy size={14} />复制原文件路径</button>
+          {!file?.localReference && <>
+            <button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file && activeConversation) void window.asteriumAttachments?.exportAs(file.id, activeConversation.id); setAttachmentMenu(null); }}><Save size={14} />文件另存为</button>
+            <button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file) openAttachmentSaveToProject(file.id); setAttachmentMenu(null); }}><FolderKanban size={14} />保存到项目</button>
+          </>}
+        </div>;
+      })()}
       {quoteMenu && <div className="artifact-context-menu quote-context-menu" role="menu" aria-label="引用选中内容" style={contextMenuPosition(quoteMenu.x, quoteMenu.y)} onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setPendingQuote(quoteMenu.quote); setQuoteMenu(null); setComposerFocusKey((value) => value + 1); }}><Quote size={14} />引用选中内容</button></div>}
 
       {fileDeletionInspection && <FileDeletionModal inspection={fileDeletionInspection} busy={fileDeletionBusy} error={fileDeletionError} onClose={() => { if (!fileDeletionBusy) { setArtifactDeletionTarget(undefined); setFileDeletionInspection(undefined); setFileDeletionError(''); } }} onConfirm={() => void confirmArtifactDeletion()} />}

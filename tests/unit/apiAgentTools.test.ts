@@ -1,5 +1,5 @@
 import { testRm as rm } from '../helpers/autoTest.mjs';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, open, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -174,6 +174,35 @@ describe('ApiAgentTools', () => {
       inspect: async () => ({ id: 'attachment-image', name: 'image.png', mediaType: 'image/png', sizeBytes: 4 }),
     });
     await expect(tools.execute('read_attachment_text', { attachment_id: 'attachment-image' }, new AbortController().signal)).rejects.toThrow('ATTACHMENT_TEXT_UNSUPPORTED_TYPE');
+  });
+
+  it('reads only the requested UTF-8 bytes from a current-turn large file reference', async () => {
+    const root = await tempDirectory();
+    const target = path.join(root, 'reference.txt');
+    const tailOffset = 21 * 1024 * 1024;
+    const tail = Buffer.from('尾🙂');
+    await writeFile(target, '甲🙂乙');
+    const file = await open(target, 'r+');
+    try { await file.write(tail, 0, tail.length, tailOffset); } finally { await file.close(); }
+    const metadata = { id: 'current', name: 'reference.txt', mediaType: 'text/plain', sizeBytes: tailOffset + tail.length, localReference: true } as const;
+    const snapshotPath = vi.fn(async () => { throw new Error('Unexpected snapshot read'); });
+    const tools = new ApiAgentTools(undefined, [], {
+      conversationId: 'conversation-a', pathFor: snapshotPath, inspect: async () => metadata,
+      referencePathFor: async (id) => {
+        if (id !== metadata.id) throw new Error('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+        return target;
+      },
+    });
+    const signal = new AbortController().signal;
+    const read = async (offset: number) => JSON.parse((await tools.execute('read_attachment_text', { attachment_id: 'current', offset, max_characters: 1 }, signal)).content);
+    const first = await read(0);
+    expect(first).toMatchObject({ content: '甲', nextOffset: 3, offsetUnit: 'bytes', eof: false });
+    expect(await read(first.nextOffset)).toMatchObject({ content: '🙂', nextOffset: 7 });
+    const nearEnd = await read(tailOffset);
+    expect(nearEnd.content).toBe('尾');
+    expect(await read(nearEnd.nextOffset)).toMatchObject({ content: '🙂', eof: true, nextOffset: metadata.sizeBytes });
+    await expect(tools.execute('read_attachment_text', { attachment_id: 'old' }, signal)).rejects.toThrow('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+    expect(snapshotPath).not.toHaveBeenCalled();
   });
 
   it('exposes the status console and narrow workspace manager independently from file tools', async () => {

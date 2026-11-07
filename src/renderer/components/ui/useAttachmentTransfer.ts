@@ -3,7 +3,8 @@ import type { PendingMessageAttachment } from '../../../shared/agentProtocol';
 
 type AddAttachments = (load: (remaining: number) => Promise<PendingMessageAttachment[]>, fallbackError: string) => unknown;
 
-export function useAttachmentTransfer(enabled: boolean, addAttachments: AddAttachments, maxImageBytes: number, showError: (message: string) => void) {
+export function useAttachmentTransfer(enabled: boolean, addAttachments: AddAttachments, maxImageBytes: number, showError: (message: string) => void, allowLocalReferences?: true) {
+  const referenceOption: [true?] = allowLocalReferences ? [true] : [];
   const [draggingFiles, setDraggingFiles] = useState(false);
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     if (!enabled) return;
@@ -22,10 +23,10 @@ export function useAttachmentTransfer(enabled: boolean, addAttachments: AddAttac
       void addAttachments(async (remaining) => {
         if (api.stageFiles) {
           try {
-            return await api.stageFiles(files, remaining);
+            return await api.stageFiles(files, remaining, ...referenceOption);
           } catch (error) {
             if (trustedPaste && api.pasteFiles && String(error).includes('ATTACHMENT_NOT_FILE')) {
-              const staged = await api.pasteFiles(remaining);
+              const staged = await api.pasteFiles(remaining, ...referenceOption);
               if (staged.length) return staged;
             }
             throw error;
@@ -40,7 +41,7 @@ export function useAttachmentTransfer(enabled: boolean, addAttachments: AddAttac
     const types = Array.from(event.clipboardData.types ?? []);
     if (api.pasteFiles && trustedPaste && (!types.length || types.includes('Files'))) {
       event.preventDefault();
-      void addAttachments(api.pasteFiles, '未能粘贴附件，请重试。');
+      void addAttachments((remaining) => api.pasteFiles!(remaining, ...referenceOption), '未能粘贴附件，请重试。');
     }
   };
   const onDragOver = (event: DragEvent<HTMLFormElement>) => {
@@ -59,7 +60,7 @@ export function useAttachmentTransfer(enabled: boolean, addAttachments: AddAttac
     if (!files.length) return;
     event.preventDefault();
     const stage = window.asteriumAttachments?.stageFiles;
-    if (enabled && stage) void addAttachments((remaining) => stage(files, remaining), '未能添加拖入的附件，请重试。');
+    if (enabled && stage) void addAttachments((remaining) => stage(files, remaining, ...referenceOption), '未能添加拖入的附件，请重试。');
   };
   return { draggingFiles: enabled && draggingFiles, onPaste, onDragOver, onDragLeave, onDrop };
 }

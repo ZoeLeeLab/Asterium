@@ -5,6 +5,7 @@ export interface PendingMessageAttachment {
   name: string;
   mediaType: string;
   sizeBytes: number;
+  localReference?: true;
 }
 
 export interface MessageAttachment {
@@ -12,6 +13,7 @@ export interface MessageAttachment {
   name: string;
   mediaType: string;
   sizeBytes: number;
+  localReference?: true;
 }
 
 export interface AttachmentSendRecord {

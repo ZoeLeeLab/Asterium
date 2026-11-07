@@ -1,9 +1,11 @@
 import { testRm as rm } from '../helpers/autoTest.mjs';
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, stat, truncate, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ConversationAttachmentStore, MAX_MESSAGE_ATTACHMENT_BYTES } from '../../src/main/security/ConversationAttachmentStore';
+import { AGENT_PROTOCOL_VERSION, type SendMessageCommand } from '../../src/shared/agentProtocol';
+import { assertAgentCommand } from '../../src/shared/agentProtocolValidation';
 
 const temporaryDirectories: string[] = [];
 
@@ -75,6 +77,58 @@ describe('ConversationAttachmentStore', () => {
 
     expect(await store.canonicalize('conversation-a', [{ ...attachment, name: '伪造.exe', mediaType: 'image/png', sizeBytes: 1 }])).toEqual([attachment]);
     await expect(store.pathFor(attachment.id, 'conversation-b')).rejects.toThrow('ATTACHMENT_REFERENCE_INVALID');
+  });
+
+  it('sends a large local reference as text to local and existing partners while preserving ordinary snapshots', async () => {
+    const { root, source, storeRoot, options, store } = await fixture();
+    const large = path.join(root, '示例 大文件.json');
+    await writeFile(large, '');
+    await truncate(large, MAX_MESSAGE_ATTACHMENT_BYTES + 1);
+    const [reference, snapshot] = await store.stage([large, source], true);
+    expect(reference).toMatchObject({ localReference: true, sizeBytes: MAX_MESSAGE_ATTACHMENT_BYTES + 1 });
+    expect(await readdir(path.join(storeRoot, '.pending'))).toEqual([snapshot.selectionId]);
+    const attachments = await store.commit('conversation-a', [reference.selectionId, snapshot.selectionId], 'message-one');
+    expect(await readdir(path.join(storeRoot, 'conversation-a'))).toEqual(expect.arrayContaining(['index.json', attachments[1].id]));
+    await expect(stat(path.join(storeRoot, 'conversation-a', attachments[0].id))).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const restarted = new ConversationAttachmentStore(options);
+    const command: SendMessageCommand = {
+      protocolVersion: AGENT_PROTOCOL_VERSION, type: 'message.send', commandId: 'command', partnerId: 'partner',
+      conversationId: 'conversation-a', messageId: 'message-one', clientMessageId: 'client-message',
+      connectionSource: 'local_cli', content: { type: 'text', text: '请查看' }, attachments,
+    };
+    expect(() => assertAgentCommand(command)).not.toThrow();
+    expect(await restarted.prepareSend(command, [])).toMatchObject({
+      content: { text: `请查看\n\n本地文件路径\n- ${large}` }, attachments: [attachments[1]],
+    });
+    const forExistingPartner = await restarted.prepareSend({
+      ...command, connectionSource: 'existing_thread', attachments: [attachments[0]], content: { type: 'text', text: '' },
+    }, []);
+    expect(forExistingPartner.content.text).toBe(`本地文件路径\n- ${large}`);
+    expect(forExistingPartner.attachments).toBeUndefined();
+    const forApiPartner = await restarted.prepareSend({ ...command, connectionSource: 'api_partner' }, []);
+    expect(forApiPartner.content).toEqual(command.content);
+    expect(forApiPartner.attachments).toEqual(attachments);
+    await expect(restarted.prepareSend({ ...command, messageId: 'another-message' }, [])).rejects.toThrow('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+    await expect(restarted.prepareSend(command, [root])).rejects.toThrow('PROFILE_DATA_ACCESS_DENIED');
+    await expect(restarted.read(attachments[0].id, 'conversation-a')).rejects.toThrow('ATTACHMENT_REFERENCE_HAS_NO_SNAPSHOT');
+
+    await rename(large, path.join(root, '移走的文件.json'));
+    await expect(restarted.inspect(attachments[0].id, 'conversation-a')).resolves.toMatchObject({ availability: 'missing' });
+    await expect(restarted.prepareSend(command, [])).rejects.toThrow('ATTACHMENT_SOURCE_MISSING');
+  });
+
+  it('keeps the size limit for media and project group attachments', async () => {
+    const { root, store } = await fixture();
+    const file = path.join(root, '示例.xlsx');
+    const video = path.join(root, '示例.mp4');
+    await writeFile(file, '');
+    await truncate(file, MAX_MESSAGE_ATTACHMENT_BYTES + 1);
+    await expect(store.stage([file])).rejects.toThrow('ATTACHMENT_TOO_LARGE');
+    const [reference] = await store.stage([file], true);
+    await expect(store.commit('studio-attachments-room', [reference.selectionId], 'message-one', true)).rejects.toThrow('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+    await rename(file, video);
+    await expect(store.stage([video], true)).rejects.toThrow('ATTACHMENT_TOO_LARGE');
   });
 
   it('reuses an unchanged snapshot, creates a new version after edits, and restores indexes after restart', async () => {

@@ -218,9 +218,9 @@ export interface AsteriumArtifactsApi {
 
 export interface AsteriumAttachmentsApi {
   stageClipboardImage?: (bytes: Uint8Array) => Promise<PendingMessageAttachment>;
-  stageFiles?: (files: File[], remaining: number) => Promise<PendingMessageAttachment[]>;
-  pasteFiles?: (remaining: number) => Promise<PendingMessageAttachment[]>;
-  choose: (remaining: number, filter?: 'cyberboss_images') => Promise<PendingMessageAttachment[]>;
+  stageFiles?: (files: File[], remaining: number, allowLocalReferences?: boolean) => Promise<PendingMessageAttachment[]>;
+  pasteFiles?: (remaining: number, allowLocalReferences?: boolean) => Promise<PendingMessageAttachment[]>;
+  choose: (remaining: number, filter?: 'cyberboss_images', allowLocalReferences?: boolean) => Promise<PendingMessageAttachment[]>;
   discard: (selectionIds: string[]) => Promise<void>;
   commit: (conversationId: string, selectionIds: string[], messageId: string) => Promise<MessageAttachment[]>;
   list: (conversationId: string) => Promise<ConversationAttachmentInfo[]>;

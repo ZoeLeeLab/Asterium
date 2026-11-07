@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MessageAttachment, SendMessageCommand } from '../../shared/agentProtocol';
 import type { ApiToolDefinition } from './ApiProviderAdapter';
@@ -35,6 +35,7 @@ export interface ApiAttachmentReader {
   conversationId: string;
   pathFor: (attachmentId: string, conversationId: string) => Promise<string>;
   inspect: (attachmentId: string, conversationId: string) => Promise<MessageAttachment>;
+  referencePathFor?: (attachmentId: string) => Promise<string>;
 }
 
 export const API_AGENT_TOOL_DEFINITIONS: ApiToolDefinition[] = [
@@ -50,7 +51,7 @@ export const API_AGENT_TOOL_DEFINITIONS: ApiToolDefinition[] = [
 
 const READ_ATTACHMENT_TOOL: ApiToolDefinition = {
   name: 'read_attachment_text',
-  description: 'Read a UTF-8 text attachment in character chunks. Continue with nextOffset until eof is true. Binary, image, PDF, Office and archive parsing is not supported.',
+  description: 'Read a bounded chunk of a UTF-8 text attachment. Start at offset 0 and continue with nextOffset as needed. Offsets are bytes for local file references and character positions for saved attachments. Binary, image, PDF, Office and archive parsing is not supported.',
   parameters: objectSchema({
     attachment_id: { type: 'string' },
     offset: { type: 'integer', minimum: 0 },
@@ -381,6 +382,12 @@ export class ApiAgentTools {
     if (offset < 0 || maxCharacters < 1 || maxCharacters > 32_768) throw new Error('ATTACHMENT_READ_RANGE_INVALID');
     const metadata = await this.attachmentReader.inspect(attachmentId, this.attachmentReader.conversationId);
     if (!isTextAttachment(metadata.mediaType)) throw new Error('ATTACHMENT_TEXT_UNSUPPORTED_TYPE');
+    if (metadata.localReference) {
+      if (!this.attachmentReader.referencePathFor) throw new Error('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+      const target = await this.attachmentReader.referencePathFor(attachmentId);
+      const chunk = await readReferenceChunk(target, offset, maxCharacters);
+      return JSON.stringify({ id: metadata.id, name: metadata.name, mediaType: metadata.mediaType, ...chunk });
+    }
     const target = await this.attachmentReader.pathFor(attachmentId, this.attachmentReader.conversationId);
     const info = await stat(target);
     if (!info.isFile()) throw new Error('ATTACHMENT_MISSING');
@@ -472,6 +479,32 @@ export class ApiAgentTools {
 
   private async resolveAuthorized(input: string, mustExist: boolean) {
     return executionPermissions.resolveWorkspacePath(this.accessScope, input, mustExist);
+  }
+}
+
+async function readReferenceChunk(target: string, offset: number, maxCharacters: number) {
+  const file = await open(target, 'r');
+  try {
+    const info = await file.stat();
+    if (!info.isFile()) throw new Error('ATTACHMENT_SOURCE_MISSING');
+    if (offset > info.size) throw new Error('ATTACHMENT_READ_OFFSET_OUT_OF_RANGE');
+    const bytes = Buffer.alloc(Math.min(maxCharacters * 4, info.size - offset));
+    const { bytesRead } = bytes.length ? await file.read(bytes, 0, bytes.length, offset) : { bytesRead: 0 };
+    const slice = bytes.subarray(0, bytesRead);
+    if (slice.includes(0)) throw new Error('ATTACHMENT_BINARY_FILE');
+    let text: string;
+    try {
+      const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+      text = decoder.decode(slice, { stream: offset + bytesRead < info.size });
+    } catch {
+      throw new Error('ATTACHMENT_TEXT_INVALID_UTF8');
+    }
+    const content = Array.from(text).slice(0, maxCharacters).join('');
+    const nextOffset = offset + Buffer.byteLength(content);
+    if (nextOffset === offset && offset < info.size) throw new Error('ATTACHMENT_SOURCE_CHANGED_DURING_READ');
+    return { offset, nextOffset, offsetUnit: 'bytes', eof: nextOffset >= info.size, totalBytes: info.size, content };
+  } finally {
+    await file.close();
   }
 }
 

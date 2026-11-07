@@ -23,6 +23,7 @@ interface ComposerProps {
   disabled?: boolean;
   onCancel?: () => void;
   attachmentsEnabled?: boolean;
+  allowLocalReferences?: true;
   attachmentDisabledReason?: string;
   cyberBossChat?: boolean;
   cyberBossFileCapabilities?: CyberBossChatFileCapabilities;
@@ -54,7 +55,7 @@ const permissionOptions: Array<{ mode: PermissionMode; label: string; descriptio
   { mode: 'full', label: '完整权限', description: '使用伙伴可提供的最高权限', icon: Flame },
 ];
 
-export function Composer({ placeholder, onSend, draftKey, compact = false, busy = false, allowBusySend = false, pendingGuidance, onSendPendingGuidance, onDiscardPendingGuidance, pendingGuidanceSendDisabled = false, disabled = false, onCancel, attachmentsEnabled = false, cyberBossChat = false, cyberBossFileCapabilities, attachmentDisabledReason = '当前伙伴暂不支持附件', attachmentCapabilities, permissionMode = 'manual', permissionDisabledReason, automaticPermissionAvailable = true, automaticPermissionDisabledReason = '当前伙伴不支持自动审批', onPermissionModeChange, planMode = 'default', planAvailable = false, planDisabledReason = '当前伙伴暂不支持计划模式', onPlanModeChange, onSessionCommand, onCompactSession, compactDisabledReason, reloadDisabledReason, focusRequestKey = 0, pendingQuote, onRemovePendingQuote }: ComposerProps) {
+export function Composer({ placeholder, onSend, draftKey, compact = false, busy = false, allowBusySend = false, pendingGuidance, onSendPendingGuidance, onDiscardPendingGuidance, pendingGuidanceSendDisabled = false, disabled = false, onCancel, attachmentsEnabled = false, allowLocalReferences, cyberBossChat = false, cyberBossFileCapabilities, attachmentDisabledReason = '当前伙伴暂不支持附件', attachmentCapabilities, permissionMode = 'manual', permissionDisabledReason, automaticPermissionAvailable = true, automaticPermissionDisabledReason = '当前伙伴不支持自动审批', onPermissionModeChange, planMode = 'default', planAvailable = false, planDisabledReason = '当前伙伴暂不支持计划模式', onPlanModeChange, onSessionCommand, onCompactSession, compactDisabledReason, reloadDisabledReason, focusRequestKey = 0, pendingQuote, onRemovePendingQuote }: ComposerProps) {
   const { settings: { sendShortcut }, available: sendShortcutReady } = useGeneralSettings();
   const [value, setValue] = useState(() => draftKey ? composerDrafts.get(draftKey) ?? '' : '');
   const [attachments, setAttachments] = useState<PendingMessageAttachment[]>([]);
@@ -110,7 +111,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
     }
     if ((!next && (!attachments.length || pendingQuote)) || pendingGuidance || (busy && !allowBusySend) || disabled) return;
     if (cyberBossChat) {
-      const problem = cyberBossChatAttachmentError(attachments, cyberBossFileCapabilities);
+      const problem = cyberBossChatAttachmentError(attachments.filter(item => !item.localReference), cyberBossFileCapabilities);
       if (problem) {
         setAttachmentError(cyberBossChatAttachmentHint(problem, cyberBossFileCapabilities) ?? '请重新选择附件。');
         return;
@@ -119,7 +120,10 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
     sending.current = true;
     try {
       const sent = await (pendingQuote ? onSend(next, attachments, pendingQuote) : onSend(next, attachments));
-      if (sent === false) return;
+      if (sent === false) {
+        if (attachments.some(item => item.localReference)) setAttachmentError('未能发送本地引用，请确认原文件仍在原处。');
+        return;
+      }
     } finally {
       sending.current = false;
     }
@@ -130,8 +134,8 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
   };
 
   const cyberBossImagesOnly = cyberBossChat && !cyberBossFileCapabilities;
-  const attachmentLimit = cyberBossImagesOnly ? CYBERBOSS_CHAT_IMAGE_LIMIT : cyberBossFileCapabilities?.maxAttachments ?? 10;
-  const attachmentLabel = cyberBossImagesOnly ? '添加图片' : '添加图片或文件';
+  const attachmentLimit = allowLocalReferences ? 10 : cyberBossImagesOnly ? CYBERBOSS_CHAT_IMAGE_LIMIT : cyberBossFileCapabilities?.maxAttachments ?? 10;
+  const attachmentLabel = cyberBossImagesOnly && !allowLocalReferences ? '添加图片' : '添加图片或文件';
   const addAttachments = async (load: (remaining: number) => Promise<PendingMessageAttachment[]>, fallbackError: string) => {
     const api = window.asteriumAttachments;
     if (!api || addingAttachments.current || sending.current) return;
@@ -144,7 +148,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
       const chosen = await load(remaining);
       if (!chosen.length) return;
       const combined = [...attachmentsRef.current, ...chosen];
-      const problem = cyberBossChat ? cyberBossChatAttachmentError(combined, cyberBossFileCapabilities) : undefined;
+      const problem = cyberBossChat ? cyberBossChatAttachmentError(combined.filter(item => !item.localReference), cyberBossFileCapabilities) : undefined;
       if (!mounted.current || problem) {
         await api.discard(chosen.map(item => item.selectionId));
         if (mounted.current && problem) setAttachmentError(cyberBossChatAttachmentHint(problem, cyberBossFileCapabilities) ?? fallbackError);
@@ -168,13 +172,16 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
     const api = window.asteriumAttachments;
     if (!api || !attachmentsEnabled || disabled || busy) return;
     return addAttachments(
-      (remaining) => cyberBossImagesOnly ? api.choose(remaining, 'cyberboss_images') : api.choose(remaining),
+      (remaining) => {
+        if (allowLocalReferences) return api.choose(remaining, undefined, true);
+        return cyberBossImagesOnly ? api.choose(remaining, 'cyberboss_images') : api.choose(remaining);
+      },
       '未能添加附件。',
     );
   };
 
   const maxImageBytes = cyberBossChat ? cyberBossFileCapabilities?.maxImageBytes ?? CYBERBOSS_CHAT_IMAGE_MAX_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
-  const { draggingFiles, onPaste, onDragOver, onDragLeave, onDrop } = useAttachmentTransfer(attachmentsEnabled && !disabled && !busy, addAttachments, maxImageBytes, setAttachmentError);
+  const { draggingFiles, onPaste, onDragOver, onDragLeave, onDrop } = useAttachmentTransfer(attachmentsEnabled && !disabled && !busy, addAttachments, maxImageBytes, setAttachmentError, allowLocalReferences);
 
   const removeAttachment = (selectionId: string) => {
     updateAttachments(attachmentsRef.current.filter((item) => item.selectionId !== selectionId));
@@ -278,7 +285,7 @@ export function PendingAttachmentCard({ attachment, onRemove, disabled = false }
   }, [attachment.selectionId, image]);
   return <div className={`pending-attachment ${image ? 'pending-attachment--image' : ''}`}>
     {thumbnail ? <img src={thumbnail} alt={attachment.name} /> : image ? <ImageIcon size={18} /> : <File size={18} />}
-    <span><strong>{attachment.name}</strong><small>{formatBytes(attachment.sizeBytes)}</small></span>
+    <span><strong>{attachment.name}</strong><small>{formatBytes(attachment.sizeBytes)}{attachment.localReference ? ' · 本地引用' : ''}</small></span>
     <button type="button" disabled={disabled} onClick={onRemove} aria-label={`移除 ${attachment.name}`} title="移除附件"><X size={14} /></button>
   </div>;
 }

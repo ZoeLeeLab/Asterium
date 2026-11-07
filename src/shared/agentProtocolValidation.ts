@@ -1,5 +1,6 @@
 import { isCodexModelSelection } from './codexModels';
 import { AGENT_PROTOCOL_VERSION, type AgentCommand, type JsonValue, type PartnerEvent } from './agentProtocol';
+import { MAX_MESSAGE_ATTACHMENT_BYTES } from './contracts/attachments';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -130,7 +131,8 @@ function isMessageAttachments(value: unknown) {
   return Array.isArray(value) && value.length <= 10 && value.every((item) => isRecord(item)
     && hasString(item, 'id') && hasString(item, 'name') && hasString(item, 'mediaType')
     && Number.isSafeInteger(item.sizeBytes)
-    && (item.sizeBytes as number) >= 0 && (item.sizeBytes as number) <= 20 * 1024 * 1024);
+    && (item.sizeBytes as number) >= 0
+    && (item.localReference === true || (item.localReference === undefined && (item.sizeBytes as number) <= MAX_MESSAGE_ATTACHMENT_BYTES)));
 }
 
 function isApiTextContext(value: unknown) {

@@ -41,9 +41,16 @@ function AttachmentCard({ attachment, conversationId, onPreview, onContextMenu }
   }, [id, mediaType, conversationId]);
   const image = mediaType.startsWith('image/');
   const missing = availability === 'missing';
-  return <button type="button" className="message-attachment-card" disabled={missing} onClick={() => onPreview(attachment)} onContextMenu={event => { event.preventDefault(); onContextMenu(attachment, event.clientX, event.clientY); }}>
+  const description = attachment.localReference
+    ? missing ? '本地引用 · 原文件不可用' : '本地引用 · 在文件夹中显示'
+    : missing ? '附件快照不可用' : `${formatBytes(attachment.sizeBytes)} · 点击预览`;
+  const open = () => {
+    if (!attachment.localReference) return onPreview(attachment);
+    void window.asteriumAttachments?.reveal(id, conversationId).catch(() => setAvailability('missing'));
+  };
+  return <button type="button" className="message-attachment-card" disabled={missing} onClick={open} onContextMenu={event => { event.preventDefault(); onContextMenu(attachment, event.clientX, event.clientY); }}>
     {thumbnail ? <img src={thumbnail} alt="" /> : image ? <FileImage size={20} /> : <FileText size={20} />}
-    <span><strong>{attachment.name}</strong><small>{missing ? '附件快照不可用' : `${formatBytes(attachment.sizeBytes)} · 点击预览`}</small></span>
+    <span><strong>{attachment.name}</strong><small>{description}</small></span>
   </button>;
 }
 

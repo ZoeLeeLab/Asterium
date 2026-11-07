@@ -95,6 +95,34 @@ function textRound(text: string): ApiProviderStreamEvent[] {
 }
 
 describe('ApiAgentRuntime loop', () => {
+  it('gives the API only reference metadata until it requests a chunk of the current attachment', async () => {
+    const root = await tempDirectory();
+    const target = path.join(root, 'private-reference.txt');
+    await writeFile(target, '本轮的示例内容。');
+    const attachment = { id: 'ref-one', name: '参考.txt', mediaType: 'text/plain', sizeBytes: 21 * 1024 * 1024, localReference: true } as const;
+    const reader = { conversationId: 'conversation-1', inspect: async () => attachment,
+      pathFor: vi.fn(async () => { throw new Error('Snapshot unavailable'); }),
+      referencePathFor: vi.fn(async () => target) };
+    const requests: ApiProviderRequest[] = [];
+    const sessionStore = new ApiAgentSessionStore(root);
+    const runtime = new ApiAgentRuntime({
+      provider: scriptedProvider([toolRound('chunk', 'read_attachment_text', { attachment_id: attachment.id, max_characters: 2 }), textRound('已读取。')], requests),
+      tools: new ApiAgentTools(undefined, [], reader), attachmentReader: reader, sessionStore,
+    });
+
+    const events = await collect(runtime.sendMessage({ ...command(), attachments: [attachment] }));
+    expect(events.at(-1)?.type).toBe('run.completed');
+    expect(JSON.stringify(requests[0].messages)).toContain('本地引用');
+    expect(JSON.stringify(requests[0].messages)).not.toContain('本轮的示例内容');
+    const result = requests[1].messages.find(message => message.role === 'tool');
+    expect(result?.role).toBe('tool');
+    expect(JSON.parse(JSON.parse(result!.content as string).result)).toMatchObject({ content: '本轮', nextOffset: 6 });
+    expect(reader.referencePathFor).toHaveBeenCalledExactlyOnceWith(attachment.id);
+    expect(reader.pathFor).not.toHaveBeenCalled();
+    expect(JSON.stringify(requests)).not.toContain('private-reference.txt');
+    expect((await sessionStore.load('partner-1', 'conversation-1'))?.turns[0].attachments).toEqual([attachment]);
+  });
+
   it('includes a handoff only in the current model turn and keeps it out of persisted API history', async () => {
     const store = new ApiAgentSessionStore(await tempDirectory());
     const requests: ApiProviderRequest[] = [];

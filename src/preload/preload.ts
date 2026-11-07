@@ -173,15 +173,17 @@ contextBridge.exposeInMainWorld('asteriumArtifacts', {
 
 contextBridge.exposeInMainWorld('asteriumAttachments', {
   stageClipboardImage: (bytes: Uint8Array): Promise<PendingMessageAttachment> => ipcRenderer.invoke(AGENT_IPC.attachmentStageClipboardImage, bytes),
-  stageFiles: async (files: File[], remaining: number): Promise<PendingMessageAttachment[]> => {
+  stageFiles: async (files: File[], remaining: number, allowLocalReferences = false): Promise<PendingMessageAttachment[]> => {
     if (!files.length || files.length > remaining || files.length > 10) throw new Error('ATTACHMENT_COUNT_LIMIT');
     const entries = files.map((file) => ({ file, path: webUtils.getPathForFile(file) }));
     for (const entry of entries) {
-      if (entry.file.size > MAX_MESSAGE_ATTACHMENT_BYTES) throw new Error('ATTACHMENT_TOO_LARGE');
+      if (entry.file.size > MAX_MESSAGE_ATTACHMENT_BYTES && !(entry.path && allowLocalReferences)) throw new Error('ATTACHMENT_TOO_LARGE');
       if (!entry.path && entry.file.type !== 'image/png') throw new Error('ATTACHMENT_NOT_FILE');
     }
     const paths = entries.flatMap((entry) => entry.path ? [entry.path] : []);
-    const staged: PendingMessageAttachment[] = paths.length ? await ipcRenderer.invoke(AGENT_IPC.attachmentStageFiles, paths) : [];
+    const staged: PendingMessageAttachment[] = paths.length
+      ? await ipcRenderer.invoke(AGENT_IPC.attachmentStageFiles, allowLocalReferences ? { paths, allowLocalReferences } : paths)
+      : [];
     try {
       let index = 0;
       const ordered: PendingMessageAttachment[] = [];
@@ -200,8 +202,10 @@ contextBridge.exposeInMainWorld('asteriumAttachments', {
       throw error;
     }
   },
-  pasteFiles: (remaining: number): Promise<PendingMessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentPasteFiles, remaining),
-  choose: (remaining: number, filter?: 'cyberboss_images'): Promise<PendingMessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentChoose, { remaining, filter }),
+  pasteFiles: (remaining: number, allowLocalReferences = false): Promise<PendingMessageAttachment[]> =>
+    ipcRenderer.invoke(AGENT_IPC.attachmentPasteFiles, allowLocalReferences ? { remaining, allowLocalReferences } : remaining),
+  choose: (remaining: number, filter?: 'cyberboss_images', allowLocalReferences?: boolean): Promise<PendingMessageAttachment[]> =>
+    ipcRenderer.invoke(AGENT_IPC.attachmentChoose, { remaining, filter, ...(allowLocalReferences ? { allowLocalReferences } : {}) }),
   discard: (selectionIds: string[]): Promise<void> => ipcRenderer.invoke(AGENT_IPC.attachmentDiscard, selectionIds),
   commit: (conversationId: string, selectionIds: string[], messageId: string): Promise<MessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentCommit, { conversationId, selectionIds, messageId }),
   list: (conversationId: string): Promise<ConversationAttachmentInfo[]> => ipcRenderer.invoke(AGENT_IPC.attachmentList, conversationId),

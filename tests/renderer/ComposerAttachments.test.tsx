@@ -70,6 +70,30 @@ describe('Composer attachments', () => {
     await waitFor(() => expect(onSend).toHaveBeenCalledWith('', [filePending, imagePending]));
   });
 
+  it.each(['picker', 'paste', 'drop'] as const)('adds a large file reference through %s without sending immediately', async (entry) => {
+    const file = new File([], '备份.json', { type: 'application/json' });
+    const pending = { selectionId: 'reference', name: file.name, mediaType: file.type, sizeBytes: 21 * 1024 * 1024, localReference: true } as const;
+    const choose = vi.fn(async () => [pending]);
+    const stageFiles = vi.fn(async () => [pending]);
+    mockAttachmentApi({ choose, stageFiles });
+    const onSend = vi.fn(async () => true);
+    render(<Composer placeholder="发送消息" onSend={onSend} attachmentsEnabled allowLocalReferences cyberBossChat />);
+    const input = screen.getByRole('textbox', { name: '发送消息' });
+
+    if (entry === 'picker') {
+      fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
+      expect(choose).toHaveBeenCalledWith(10, undefined, true);
+    } else {
+      if (entry === 'paste') fireEvent.paste(input, { clipboardData: { files: [file], types: ['Files'] } });
+      else fireEvent.drop(input, { dataTransfer: { files: [file], types: ['Files'] } });
+      expect(stageFiles).toHaveBeenCalledWith([file], 10, true);
+    }
+    expect(await screen.findByText(/本地引用/)).toBeVisible();
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledExactlyOnceWith('', [pending]));
+  });
+
   it('discards a pasted screenshot if the conversation changes while staging', async () => {
     const pending = { selectionId: 'pasted-image', name: '截图.png', mediaType: 'image/png', sizeBytes: 1 };
     let finish!: (value: typeof pending) => void;

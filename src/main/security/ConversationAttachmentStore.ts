@@ -1,9 +1,10 @@
 import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { studioAttachmentConversationId } from '../../shared/studioRuntime';
-import { MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentSendRecord, type ConversationAttachmentInfo, type MessageAttachment, type PendingMessageAttachment } from '../../shared/agentProtocol';
+import { MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentSendRecord, type ConversationAttachmentInfo, type MessageAttachment, type PendingMessageAttachment, type SendMessageCommand } from '../../shared/agentProtocol';
+import { assertCanonicalPathOutsideProtectedRoots } from './ProtectedPathPolicy';
 
 export const MAX_MESSAGE_ATTACHMENTS = 10;
 export { MAX_MESSAGE_ATTACHMENT_BYTES };
@@ -81,7 +82,7 @@ export class ConversationAttachmentStore {
     }
   }
 
-  async stage(filePaths: string[]): Promise<PendingMessageAttachment[]> {
+  async stage(filePaths: string[], allowLocalReferences = false): Promise<PendingMessageAttachment[]> {
     await this.initialize();
     if (!filePaths.length || filePaths.length > MAX_MESSAGE_ATTACHMENTS) throw new Error('ATTACHMENT_COUNT_LIMIT');
     const staged: PendingRecord[] = [];
@@ -91,8 +92,20 @@ export class ConversationAttachmentStore {
         const absolute = path.resolve(sourcePath);
         const sourceInfo = await stat(absolute);
         if (!sourceInfo.isFile()) throw new Error('ATTACHMENT_NOT_FILE');
-        if (sourceInfo.size > MAX_MESSAGE_ATTACHMENT_BYTES) throw new Error('ATTACHMENT_TOO_LARGE');
         const selectionId = `pending-attachment-${randomUUID()}`;
+        const mediaType = normalizeMediaType(mediaTypeFor(absolute));
+        const name = path.basename(absolute);
+        if (sourceInfo.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
+          if (!allowLocalReferences || !canReferenceFile(name, mediaType)) throw new Error('ATTACHMENT_TOO_LARGE');
+          const record: PendingRecord = {
+            selectionId, name, mediaType, sizeBytes: sourceInfo.size, localReference: true,
+            sourcePath: absolute, contentPath: '', createdAt: Date.now(),
+          };
+          createdSelectionIds.push(selectionId);
+          staged.push(record);
+          this.pending.set(selectionId, record);
+          continue;
+        }
         const directory = path.join(this.pendingDirectory(), selectionId);
         createdSelectionIds.push(selectionId);
         const contentPath = path.join(directory, 'preview');
@@ -103,8 +116,8 @@ export class ConversationAttachmentStore {
         if (copiedInfo.size > MAX_MESSAGE_ATTACHMENT_BYTES) throw new Error('ATTACHMENT_TOO_LARGE');
         const record: PendingRecord = {
           selectionId,
-          name: path.basename(absolute),
-          mediaType: normalizeMediaType(mediaTypeFor(absolute)),
+          name,
+          mediaType,
           sizeBytes: copiedInfo.size,
           contentPath,
           sourcePath: absolute,
@@ -163,6 +176,23 @@ export class ConversationAttachmentStore {
       const sentAt = new Date().toISOString();
       try {
         for (const record of records as PendingRecord[]) {
+          if (record.localReference) {
+            if (conversationId.startsWith('studio-attachments-')) throw new Error('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+            const sizeBytes = await stat(record.sourcePath)
+              .then((info) => info.isFile() ? info.size : undefined, () => undefined);
+            if (sizeBytes === undefined) throw new Error('ATTACHMENT_SOURCE_MISSING');
+            const existing = Object.values(index.attachments).find((item) => item.localReference && sameSourcePath(item.sourcePath, record.sourcePath));
+            const stored: StoredAttachment = existing ?? {
+              id: `attachment-${randomUUID()}`, name: record.name, mediaType: record.mediaType,
+              sizeBytes, localReference: true, createdAt: sentAt, sourceId: `source-${randomUUID()}`,
+              sourcePath: record.sourcePath, sha256: '', snapshotPath: '', sends: [],
+            };
+            stored.sizeBytes = sizeBytes;
+            if (!stored.sends.some(send => send.messageId === messageId)) stored.sends.push({ messageId, sentAt });
+            index.attachments[stored.id] = stored;
+            committed.push(stored);
+            continue;
+          }
           const source = record.sourcePath || record.contentPath;
           const before = await stat(source);
           if (!before.isFile()) throw new Error('ATTACHMENT_NOT_FILE');
@@ -188,7 +218,7 @@ export class ConversationAttachmentStore {
           await mkdir(attachmentDirectory, { recursive: true });
           createdDirectories.push(attachmentDirectory);
           await rename(temporary, snapshotPath);
-          const sameSource = Object.values(index.attachments).find((item) => sameSourcePath(item.sourcePath, record.sourcePath));
+          const sameSource = Object.values(index.attachments).find((item) => !item.localReference && sameSourcePath(item.sourcePath, record.sourcePath));
           const stored: StoredAttachment = {
             id,
             name: record.name,
@@ -215,13 +245,35 @@ export class ConversationAttachmentStore {
     });
   }
 
-  async canonicalize(conversationId: string, attachments: MessageAttachment[] | undefined): Promise<MessageAttachment[] | undefined> {
+  async canonicalize(conversationId: string, attachments: MessageAttachment[] | undefined, referenceMessageId?: string): Promise<MessageAttachment[] | undefined> {
     if (!attachments?.length) return undefined;
     return Promise.all(attachments.map(async (attachment) => {
       const info = await this.inspect(attachment.id, conversationId);
-      if (info.availability !== 'available') throw new Error('ATTACHMENT_MISSING');
+      if (info.localReference && (!referenceMessageId || !info.sends.some(send => send.messageId === referenceMessageId))) {
+        throw new Error('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+      }
+      if (info.availability !== 'available') throw new Error(info.localReference ? 'ATTACHMENT_SOURCE_MISSING' : 'ATTACHMENT_MISSING');
       return publicAttachment(info);
     }));
+  }
+
+  async prepareSend(command: SendMessageCommand, protectedRoots: readonly string[]) {
+    const allowReferences = (command.connectionSource === 'local_cli' || command.connectionSource === 'existing_thread' || command.connectionSource === 'api_partner')
+      && (!command.route || command.route.scope === 'single');
+    const attachments = await this.canonicalize(command.conversationId, command.attachments, allowReferences ? command.messageId : undefined);
+    const references = attachments?.filter(item => item.localReference) ?? [];
+    if (!references.length) return { ...command, attachments };
+    const paths = await Promise.all(references.map(async (item) => {
+      const source = await this.sourcePathFor(item.id, command.conversationId);
+      await assertCanonicalPathOutsideProtectedRoots(source, protectedRoots);
+      return source;
+    }));
+    if (command.connectionSource === 'api_partner') return { ...command, attachments };
+    const pathsText = ['本地文件路径', ...paths.map(source => `- ${source}`)].join('\n');
+    const text = [command.content.text, pathsText].filter(Boolean).join('\n\n');
+    if (command.connectionSource === 'existing_thread' && text.length > 8_000) throw new Error('CYBERBOSS_CHAT_TEXT_TOO_LONG');
+    const snapshots = attachments?.filter(item => !item.localReference);
+    return { ...command, content: { ...command.content, text }, attachments: snapshots?.length ? snapshots : undefined };
   }
 
   async list(conversationId: string): Promise<ConversationAttachmentInfo[]> {
@@ -254,6 +306,7 @@ export class ConversationAttachmentStore {
   async pathFor(id: string, conversationId: string) {
     conversationId = this.readScope(conversationId, id);
     const info = await this.inspect(id, conversationId);
+    if (info.localReference) throw new Error('ATTACHMENT_REFERENCE_HAS_NO_SNAPSHOT');
     if (info.availability !== 'available') throw new Error('ATTACHMENT_MISSING');
     return this.contentPath(conversationId, id);
   }
@@ -270,10 +323,18 @@ export class ConversationAttachmentStore {
     return record.sourcePath;
   }
 
+  async referencePathFor(id: string, conversationId: string, protectedRoots: readonly string[]) {
+    const source = await this.sourcePathFor(id, conversationId);
+    const resolved = await realpath(source).catch(() => { throw new Error('ATTACHMENT_SOURCE_MISSING'); });
+    await assertCanonicalPathOutsideProtectedRoots(resolved, protectedRoots);
+    return resolved;
+  }
+
   async pendingPath(selectionId: string) {
     await this.initialize();
     const record = this.pending.get(selectionId);
     if (!record) throw new Error('ATTACHMENT_SELECTION_EXPIRED');
+    if (record.localReference) throw new Error('ATTACHMENT_REFERENCE_HAS_NO_SNAPSHOT');
     return record.contentPath;
   }
 
@@ -324,10 +385,10 @@ export class ConversationAttachmentStore {
   }
 
   private async toInfo(conversationId: string, record: StoredAttachment): Promise<ConversationAttachmentInfo> {
-    const availability: ConversationAttachmentInfo['availability'] = await this.snapshotIsValid(conversationId, record) ? 'available' : 'missing';
     const sourceAvailability: ConversationAttachmentInfo['sourceAvailability'] = !record.sourcePath
       ? 'unknown'
       : await isFile(record.sourcePath) ? 'available' : 'missing';
+    const available = record.localReference ? sourceAvailability === 'available' : await this.snapshotIsValid(conversationId, record);
     const sends = [...record.sends].sort((left, right) => left.sentAt.localeCompare(right.sentAt));
     return {
       ...publicAttachment(record),
@@ -336,7 +397,7 @@ export class ConversationAttachmentStore {
       sourceId: record.sourceId,
       sourceAvailability,
       sends,
-      availability,
+      availability: available ? 'available' : 'missing',
     };
   }
 
@@ -441,18 +502,21 @@ export class ConversationAttachmentStore {
 }
 
 function publicPending(record: PendingRecord): PendingMessageAttachment {
-  return { selectionId: record.selectionId, name: record.name, mediaType: record.mediaType, sizeBytes: record.sizeBytes };
+  return { selectionId: record.selectionId, name: record.name, mediaType: record.mediaType, sizeBytes: record.sizeBytes,
+    ...(record.localReference ? { localReference: true } : {}) };
 }
 
 function publicAttachment(record: MessageAttachment): MessageAttachment {
-  return { id: record.id, name: record.name, mediaType: normalizeMediaType(record.mediaType), sizeBytes: record.sizeBytes };
+  return { id: record.id, name: record.name, mediaType: normalizeMediaType(record.mediaType), sizeBytes: record.sizeBytes,
+    ...(record.localReference ? { localReference: true } : {}) };
 }
 
 function normalizeV3Index(index: AttachmentIndex, conversationId: string, contentPath: (conversationId: string, id: string) => string): AttachmentIndex {
   const attachments: Record<string, StoredAttachment> = {};
   for (const candidate of Object.values(index.attachments)) {
     if (!isV3Attachment(candidate)) continue;
-    attachments[candidate.id] = { ...candidate, mediaType: normalizeMediaType(candidate.mediaType), snapshotPath: contentPath(conversationId, candidate.id), sends: candidate.sends.filter(isSendRecord) };
+    attachments[candidate.id] = { ...candidate, mediaType: normalizeMediaType(candidate.mediaType),
+      snapshotPath: candidate.localReference ? '' : contentPath(conversationId, candidate.id), sends: candidate.sends.filter(isSendRecord) };
   }
   return { version: 3, conversationId, attachments };
 }
@@ -488,6 +552,11 @@ function sameSourcePath(left: string, right: string) {
 }
 async function hashFile(filePath: string) { return createHash('sha256').update(await readFile(filePath)).digest('hex'); }
 function normalizeMediaType(value: string) { return value.trim().toLocaleLowerCase() || 'application/octet-stream'; }
+
+function canReferenceFile(name: string, mediaType: string) {
+  return !/^(?:image|audio|video)\//.test(mediaType)
+    && !/\.(?:avif|heic|heif|ico|jpe|jfif|tiff?|psd|raw|dng|cr2|cr3|nef|arw|mp4|m4v|mov|mkv|webm|avi|mpeg|mpg|wmv|flv|3gp|m4a|mp3|wav|flac|aac|ogg|oga|ogv|opus|wma|aiff?|mid|midi|amr)$/i.test(name);
+}
 
 export function mediaTypeFor(filePath: string) {
   const extension = path.extname(filePath).toLocaleLowerCase();

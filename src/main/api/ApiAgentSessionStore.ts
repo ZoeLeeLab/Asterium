@@ -210,11 +210,13 @@ function isRuntimeTurn(value: unknown): value is ApiRuntimeTurn {
 function isMessageAttachment(value: unknown): value is MessageAttachment {
   return isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string'
     && typeof value.mediaType === 'string'
-    && Number.isSafeInteger(value.sizeBytes) && (value.sizeBytes as number) >= 0;
+    && Number.isSafeInteger(value.sizeBytes) && (value.sizeBytes as number) >= 0
+    && (value.localReference === undefined || value.localReference === true);
 }
 
 function publicAttachment(attachment: MessageAttachment): MessageAttachment {
-  return { id: attachment.id, name: attachment.name, mediaType: attachment.mediaType.toLocaleLowerCase(), sizeBytes: attachment.sizeBytes };
+  return { id: attachment.id, name: attachment.name, mediaType: attachment.mediaType.toLocaleLowerCase(), sizeBytes: attachment.sizeBytes,
+    ...(attachment.localReference ? { localReference: true } : {}) };
 }
 
 function isRuntimeMessage(value: unknown): value is ApiRuntimeMessage {

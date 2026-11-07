@@ -77,10 +77,15 @@ export class PartnerRuntimeFactory {
 
   createApi(request: ApiRuntimeRequest) {
     const providerDefinition = this.options.apiProviders.require(request.provider);
+    const referenceIds = new Set(request.command.attachments?.filter(item => item.localReference).map(item => item.id));
     const attachmentReader = {
       conversationId: request.command.conversationId,
       pathFor: (attachmentId: string, conversationId: string) => this.options.attachments.pathFor(attachmentId, conversationId),
       inspect: (attachmentId: string, conversationId: string) => this.options.attachments.inspect(attachmentId, conversationId),
+      referencePathFor: (attachmentId: string) => {
+        if (!referenceIds.has(attachmentId)) throw new Error('ATTACHMENT_REFERENCE_SCOPE_INVALID');
+        return this.options.attachments.referencePathFor(attachmentId, request.command.conversationId, this.options.protectedRoots);
+      },
     };
     const tools = new ApiAgentTools(request.primaryDirectory, request.additionalDirectories, attachmentReader,
       request.runtimeTools, new ApiWebTools({ braveApiKey: this.options.braveApiKey }), this.options.protectedRoots,

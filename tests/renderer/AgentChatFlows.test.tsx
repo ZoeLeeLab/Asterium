@@ -358,7 +358,7 @@ describe('local Codex renderer flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: '添加图片或文件' }));
     expect(await screen.findByAltText('样图.png')).toBeInTheDocument();
     expect(screen.getByText('方案.md')).toBeInTheDocument();
-    expect(choose).toHaveBeenCalledWith(10);
+    expect(choose).toHaveBeenCalledWith(10, undefined, true);
     expect(screen.queryByText(/伙伴无法查看其中的图片/)).not.toBeInTheDocument();
     fireEvent.change(input, { target: { value: '星丛桥接测试' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -431,6 +431,15 @@ describe('local Codex renderer flow', () => {
       sentCommand = command;
       return { runId: 'api-run-1', sessionId: 'api-session-1' };
     });
+    const attachment = { id: 'large-reference', name: '测试文档.json', mediaType: 'application/json', sizeBytes: 21 * 1024 * 1024, localReference: true } as const;
+    const choose = vi.fn(async () => [{ ...attachment, selectionId: 'large-reference-selection' }]);
+    window.asteriumAttachments = {
+      choose, discard: vi.fn(), commit: vi.fn(async () => [attachment]),
+      list: vi.fn(async () => []),
+      inspect: vi.fn(async () => ({ ...attachment, availability: 'available' as const, sourceAvailability: 'available' as const, sends: [], sentAt: '', createdAt: '', sourceId: 'source' })),
+      read: vi.fn(), open: vi.fn(), thumbnail: vi.fn(),
+      reveal: vi.fn(), copyPath: vi.fn(), exportAs: vi.fn(), saveToProject: vi.fn(), deleteConversation: vi.fn(),
+    };
     window.asteriumAgents = {
       detectClaude: vi.fn(), selectWorkspace: vi.fn(), sendClaudeMessage: vi.fn(), cancelRun: vi.fn(), resumeSession: vi.fn(),
       saveApiCredential: vi.fn(async () => ({ credentialRef: 'credential-deepseek', configured: true, masked: '••••••••' })),
@@ -468,11 +477,15 @@ describe('local Codex renderer flow', () => {
     fireEvent.click(planMode);
     fireEvent.click(screen.getByRole('button', { name: '指令' }));
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /计划模式/ }));
+    fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
+    expect(await screen.findByText(/本地引用/)).toBeVisible();
+    expect(choose).toHaveBeenCalledWith(10, undefined, true);
     fireEvent.change(input, { target: { value: '你好呀' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(sendApiMessage).toHaveBeenCalledTimes(1));
     expect(sendApiMessage.mock.calls[0][0]).toEqual({ provider: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-v4-flash', credentialRef: 'credential-deepseek', thinkingMode: 'auto', reasoningEffort: 'high', primaryWorkspaceGrantId: undefined, workspaceGrantIds: [], attachmentCapabilities: { supportsImageInput: false, acceptedMimeTypes: [], maxImageBytes: 0, attachmentTransport: 'metadata_only' } });
     expect(sentCommand).toMatchObject({ connectionSource: 'api_partner', apiContext: { history: [], apiSessionHistoryEnabled: true } });
+    expect(sentCommand?.attachments).toEqual([attachment]);
     expect(sentCommand!.apiContext).not.toHaveProperty('systemPrompt');
     expect(sentCommand!.apiContext).not.toHaveProperty('userProfileContext');
 
