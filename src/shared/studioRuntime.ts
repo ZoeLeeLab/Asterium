@@ -53,6 +53,8 @@ export interface StudioRoomMetadata {
 
 export interface StudioRoomMessage {
   attachments?: MessageAttachment[];
+  /** Main-owned marker for a published message whose project upload copy is pending. */
+  projectUploadPending?: true;
   automation?: { automationId: string; runId: string; name: string };
   roomId: string;
   messageId: string;

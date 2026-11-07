@@ -6,12 +6,14 @@ import { useProjectRunChanges } from '../components/studio/useProjectRunChanges'
 import { RunChangeSummary } from '../components/studio/RunChangeSummary';
 import type { ProjectRunChange } from '../../shared/projectRunChanges';
 import { ProjectBrowserPane, type BrowserTab } from '../components/studio/ProjectBrowserPane';
+import { ProjectFileTree } from '../components/studio/ProjectFileTree';
+import { useProjectBrowseRefresh } from '../components/studio/useProjectBrowseRefresh';
 import { useStudioPreview } from '../components/studio/useStudioPreview';
 import { MessageAttachmentCards } from '../components/chat/MessageAttachmentCards';
 import { studioAttachmentConversationId } from '../../shared/studioRuntime';
 import type { PendingMessageAttachment } from '../../shared/agentProtocol';
 import {
-  Archive, ArchiveRestore, AtSign, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleCheck, FileArchive, FileImage, FileSpreadsheet, FileText, FolderKanban, FolderOpen, Gamepad2, Home, Loader2,
+  Archive, ArchiveRestore, AtSign, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleCheck, FileText, FolderKanban, FolderOpen, Gamepad2, Home, Loader2, RefreshCw,
   Flame, Hand, LockKeyhole, MapPin, MessageSquare, MessageSquarePlus, Mic, MicOff, MoreHorizontal, Pause, Pencil, Plane, Play, Plus, RotateCcw,
   NotebookPen, ShieldCheck, Sparkles, Square, StickyNote, Trash2, Upload, UserPlus, UsersRound,
 } from 'lucide-react';
@@ -197,6 +199,7 @@ export function StudioPage() {
   const [projectBusy, setProjectBusy] = useState(false);
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [studioSendError, setStudioSendError] = useState('');
+  const [retryingProjectUploads, setRetryingProjectUploads] = useState(false);
   const [editingGroup, setEditingGroup] = useState<GroupChat>();
   const [editingProject, setEditingProject] = useState<Project>();
   const [projectDeleteTarget, setProjectDeleteTarget] = useState<Project>();
@@ -256,6 +259,7 @@ export function StudioPage() {
   if (browserState.projectId !== project?.id) setBrowserState({ projectId: project?.id, open: false, tab: 'files' });
   useEffect(() => { localStorage.setItem('asterium.studio.browserWidth', String(browserWidth)); }, [browserWidth]);
   const studioRoom = groupChat ? studioRooms[groupChat.id] : undefined;
+  const [projectFilesRefresh, refreshProjectFiles] = useProjectBrowseRefresh(project?.id, projectFilesOpen && project?.workspace?.status === 'ready');
   const activeHandoff = contextHandoffDraft?.target.kind === 'group' && contextHandoffDraft.target.id === groupChat?.id ? contextHandoffDraft : undefined;
   const handoffTargets = state.conversations.flatMap(conversation => {
     const partner = state.partners.find(item => item.id === conversation.partnerId);
@@ -1609,6 +1613,15 @@ export function StudioPage() {
           <div><button className="secondary-button" type="button" onClick={() => void resolveStudioDiscussion(groupChat!.id, 'end')}>结束本轮</button><button className="primary-button" type="button" onClick={() => void resolveStudioDiscussion(groupChat!.id, 'continue')}>继续讨论</button></div>
         </section>}
         {studioSendError && !isWork && <p className="studio-inline-error studio-composer-error">{studioSendError}</p>}
+        {!isWork && groupChat && studioRoom?.messages.some((message) => message.projectUploadPending) && <p className="studio-inline-error studio-composer-error">
+          消息已发送，附件尚未全部保存到项目上传资料。
+          <button type="button" className="text-button" disabled={retryingProjectUploads} onClick={() => {
+            const retry = window.asteriumStudio?.retryProjectUploads;
+            if (!retry) return;
+            setRetryingProjectUploads(true);
+            void retry(groupChat.id).catch(() => undefined).finally(() => setRetryingProjectUploads(false));
+          }}>{retryingProjectUploads ? '正在补存…' : '重试归档'}</button>
+        </p>}
         {!isWork && groupChat && handoffTargets.length > 0 && <div className="context-handoff-action"><button className="text-button" type="button" onClick={() => setHandoffOpen(true)}>带上下文去单聊</button></div>}
         {!isWork && activeHandoff && <ContextHandoffDraftCard draft={activeHandoff}
           partnerName={state.partners.find(partner => partner.id === activeHandoff.partnerId)?.publicIdentity.displayName ?? '伙伴'}
@@ -1651,17 +1664,40 @@ export function StudioPage() {
           <header className="project-files-panel__header">
             <FolderKanban className="studio-side-card__heading-icon" size={18} />
             <div className="project-files-panel__heading-copy">
-              <div><button type="button" onClick={() => setProjectFilesOpen((current) => !current)} aria-expanded={projectFilesOpen}>项目文件</button>{project.workspace?.status === 'ready' && <button className="project-files-panel__folder" type="button" onClick={() => void window.asteriumProjects?.open(project.id)} title="打开项目文件夹" aria-label="打开项目文件夹"><FolderOpen size={13} /></button>}</div>
-              <small>{project.files.length ? `${project.files.length} 份资料与交付` : '交付文件会在这里汇集'}</small>
+              <div><button type="button" onClick={() => setProjectFilesOpen((current) => !current)} aria-expanded={projectFilesOpen}>项目文件交付</button>
+                {project.workspace?.status === 'ready' && <>
+                  <button className="project-files-panel__folder" type="button" onClick={() => void window.asteriumProjects?.open(project.id)} title="打开项目文件夹" aria-label="打开项目文件夹"><FolderOpen size={13} /></button>
+                  <button className="project-files-panel__folder" type="button" onClick={refreshProjectFiles} title="刷新项目文件交付" aria-label="刷新项目文件交付"><RefreshCw size={13} /></button>
+                </>}
+              </div>
+              <small>项目文件夹与交付成果</small>
             </div>
-            <button className="project-files-panel__chevron" type="button" onClick={() => setProjectFilesOpen((current) => !current)} aria-expanded={projectFilesOpen} aria-label={`${projectFilesOpen ? '收起' : '展开'}项目文件`}><ChevronDown size={15} /></button>
+            <button className="project-files-panel__chevron" type="button" onClick={() => setProjectFilesOpen((current) => !current)} aria-expanded={projectFilesOpen} aria-label={`${projectFilesOpen ? '收起' : '展开'}项目文件交付`}><ChevronDown size={15} /></button>
           </header>
           {projectFilesOpen && <div className="studio-side-card__body"><div
             className={`delivery-list project-files-list${projectFilesScrollbarVisible ? ' project-files-list--scrollbar' : ''}`}
-            aria-label="项目文件列表"
+            aria-label="项目文件交付列表"
             onPointerMove={(event) => setProjectFilesScrollbarVisible(event.currentTarget.getBoundingClientRect().right - event.clientX <= 20)}
             onPointerLeave={() => setProjectFilesScrollbarVisible(false)}
-          >{project.files.map((file) => { const missing = file.availability === 'missing'; return <button className={`delivery-item${missing ? ' is-missing' : ''}`} type="button" disabled={!file.fileId} aria-disabled={missing} key={file.id} onContextMenu={(event) => { if (!file.fileId) return; event.preventDefault(); setProjectFileMenu({ fileId: file.fileId, x: event.clientX, y: event.clientY }); }} onClick={() => file.fileId && !missing && void preview.open({ projectId: project.id, action: 'file', fileId: file.fileId }, `${project.id}:file:${file.fileId}`, file.name)}><span className={`resource-icon resource-icon--${file.kind}`}>{projectFileIcon(file.kind)}</span><span><strong>{file.name}</strong><small>{missing ? '原文件已删除，引用已失效' : file.sourcePartnerName ? `${file.sourcePartnerName} 交付 · ${file.meta}` : file.meta}</small></span><ChevronRight size={14} /></button>; })}{!project.files.length && <p className="delivery-empty">这个项目还没有文件</p>}</div></div>}
+          >{project.workspace?.status === 'ready' ? <ProjectFileTree key={project.id} projectId={project.id} refresh={projectFilesRefresh} label="项目文件交付目录"
+              onOpenFile={(request, key, name) => {
+                const indexed = request.action === 'file' && request.path ? project.files.find((file) => matchesProjectFilePath(file, request.path!)) : undefined;
+                if (indexed?.fileId && indexed.availability !== 'missing') void preview.open({ projectId: project.id, action: 'file', fileId: indexed.fileId }, `${project.id}:file:${indexed.fileId}`, name);
+                else void preview.open(request, key, name);
+              }}
+              onFileMenu={(path, event) => {
+                const indexed = project.files.find((file) => matchesProjectFilePath(file, path));
+                if (!indexed?.fileId) return;
+                event.preventDefault();
+                setProjectFileMenu({ fileId: indexed.fileId, x: event.clientX, y: event.clientY });
+              }}
+            /> : <p className="delivery-empty">请先建立项目文件夹</p>}
+            {project.files.filter((file) => file.fileId && file.availability === 'missing').map((file) => <button
+              className="delivery-item is-missing" type="button" aria-disabled="true" key={file.id} onContextMenu={(event) => {
+                event.preventDefault();
+                setProjectFileMenu({ fileId: file.fileId!, x: event.clientX, y: event.clientY });
+              }}><span className="resource-icon"><FileText size={19} /></span><span><strong>{file.name}</strong><small>原文件已删除，引用已失效</small></span></button>)}
+          </div></div>}
         </section></> : <section className="studio-side-card studio-empty-project-card"><div className="studio-side-card__body"><FolderKanban size={24} /><strong>还没有项目</strong><p>项目资料、成员和文件会显示在这里。</p><button className="primary-button" type="button" onClick={openProjectConversation}>新建项目</button></div></section>}
         <section className="member-panel">
           <header><span><UsersRound size={20} />群聊成员（{members.length}）</span><small>右键管理</small></header>
@@ -2104,7 +2140,7 @@ function NewGroupModal(props: {
       {props.projectChoice === 'existing' ? <div className="project-choice-list" role="radiogroup" aria-label="选择项目">{props.state.projects.map((item, index) => { const Icon = projectIcons[index] ?? FolderKanban; return <button className={props.selectedProjectId === item.id ? 'active' : ''} type="button" role="radio" aria-checked={props.selectedProjectId === item.id} key={item.id} disabled={props.busy} onClick={() => props.setSelectedProjectId(item.id)}><span><Icon size={19} /></span><span><strong>{item.name}</strong><small>{item.workspace?.status === 'ready' ? '真实项目文件夹已建立' : item.description}</small></span>{props.selectedProjectId === item.id && <i className="choice-dot" />}</button>; })}</div> : <div className="new-project-fields">
         <label className="modal-field">项目名称<input value={props.newProjectName} disabled={props.busy} onChange={(event) => props.setNewProjectName(event.target.value)} placeholder="例如：秋季示例项目 B" maxLength={50} /></label>
         <label className="modal-field">项目背景 <small>会写入项目方案的“背景”章节</small><textarea value={props.newProjectDescription} disabled={props.busy} onChange={(event) => props.setNewProjectDescription(event.target.value)} placeholder="简单写下为什么要做这个项目，也可以稍后补充。" maxLength={1000} /></label>
-        <section className="project-location-choice"><span className="project-location-choice__icon"><MapPin size={18} /></span><span><small>{props.projectLocation ? '使用指定文件夹' : '自动创建项目文件夹'}</small><strong title={props.projectLocation?.path}>{props.projectLocation?.path ?? (defaultProjectRoot || '创建前将显示最终保存位置')}</strong><em>会生成 3 份基础 MD 和 deliverables 交付区</em></span><div>{props.projectLocation && <button className="text-button" type="button" disabled={props.busy} onClick={() => props.setProjectLocation(null)}>恢复默认</button>}<button className="secondary-button" type="button" disabled={props.busy || !window.asteriumProjects} onClick={props.chooseProjectLocation}><FolderOpen size={14} />选择文件夹</button></div></section>
+        <section className="project-location-choice"><span className="project-location-choice__icon"><MapPin size={18} /></span><span><small>{props.projectLocation ? '使用指定文件夹' : '自动创建项目文件夹'}</small><strong title={props.projectLocation?.path}>{props.projectLocation?.path ?? (defaultProjectRoot || '创建前将显示最终保存位置')}</strong><em>会生成 3 份基础 MD，项目上传资料将存入 uploads</em></span><div>{props.projectLocation && <button className="text-button" type="button" disabled={props.busy} onClick={() => props.setProjectLocation(null)}>恢复默认</button>}<button className="secondary-button" type="button" disabled={props.busy || !window.asteriumProjects} onClick={props.chooseProjectLocation}><FolderOpen size={14} />选择文件夹</button></div></section>
       </div>}
       <label className="modal-field">群聊名称<input value={props.newGroupName} disabled={props.busy} onChange={(event) => props.setNewGroupName(event.target.value)} placeholder="例如：方案讨论组" maxLength={50} /></label>
       {props.error && <p className="modal-error">{props.error}</p>}
@@ -2238,11 +2274,8 @@ function speakingModeLabel(mode: StudioRoomSettings['speakingMode']) {
   return { free_discussion: '自由讨论', selected_partners: '指定发言', round_robin: '逐一回应' }[mode];
 }
 
-function projectFileIcon(kind: Project['files'][number]['kind']) {
-  if (kind === 'sheet') return <FileSpreadsheet size={19} />;
-  if (kind === 'image') return <FileImage size={19} />;
-  if (kind === 'archive') return <FileArchive size={19} />;
-  return <FileText size={19} />;
+function matchesProjectFilePath(file: Project['files'][number], path: string) {
+  return file.relativePath?.replaceAll('\\', '/') === path.replaceAll('\\', '/');
 }
 
 function nextGroupChatName(existingNames: string[]) {

@@ -319,6 +319,7 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 
 .composer, .studio-composer { display: flex; flex: 0 0 auto; min-width: 0; flex-direction: column; gap: 2px; margin-top: 10px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 14px; background: color-mix(in srgb,var(--surface-strong) 82%,transparent); box-shadow: 0 10px 30px color-mix(in srgb,var(--page-bg) 18%,transparent); transition: border-color var(--motion-fast),box-shadow var(--motion-fast),background var(--motion-fast); }
 .composer--compact { display: grid; grid-template-columns: 48px minmax(0,1fr) 48px 48px; align-items: center; gap: 9px; flex-basis: 92px; padding: 8px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb,var(--surface-strong) 72%,transparent); box-shadow: var(--shadow-soft); }
+.composer.attachment-drop-active, .studio-composer.attachment-drop-active { border-color: var(--accent); background: var(--accent-soft); }
 .composer textarea { width: 100%; min-height: 52px; max-height: 144px; padding: 4px 10px; overflow-y: auto; resize: none; border: 0; border-radius: 10px; color: var(--text-strong); background: transparent; outline: 0; line-height: 1.55; scrollbar-width: none; }
 .composer--compact textarea { min-height: 42px; padding: 9px 16px; background: var(--surface-soft); }
 .composer textarea::placeholder { color: var(--muted); }

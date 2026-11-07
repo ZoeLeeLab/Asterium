@@ -19,7 +19,8 @@ export interface ProjectWorkspaceSnapshot {
   projectId: string;
   name: string;
   rootPath: string;
-  deliverablesPath: string;
+  /** Kept for workspaces created before deliveries used the project root. */
+  deliverablesPath?: string;
   templateFiles: ProjectWorkspaceFile[];
   createdAt: string;
   updatedAt: string;

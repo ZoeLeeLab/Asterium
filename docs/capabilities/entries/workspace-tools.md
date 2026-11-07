@@ -29,7 +29,9 @@
     "src/renderer/components/ui/Composer.tsx",
     "src/main/studio/StudioAttachments.ts",
     "src/main/project/ProjectWorkspaceStore.ts",
-    "src/main/settings/projectDirectory.ts"
+    "src/main/settings/projectDirectory.ts",
+    "src/preload/preload.ts",
+    "src/renderer/components/ui/useAttachmentTransfer.ts"
   ],
   "tests": [
     "tests/unit/apiAgentTools.test.ts",
@@ -50,7 +52,8 @@
     "tests/unit/studioAttachments.test.ts",
     "tests/unit/projectWorkspaceStore.test.ts",
     "tests/unit/generalSettings.test.ts",
-    "tests/renderer/StorageSettings.test.tsx"
+    "tests/renderer/StorageSettings.test.tsx",
+    "tests/renderer/StudioComposer.test.tsx"
   ],
   "docs": [
     "docs/release-status.md",
@@ -62,7 +65,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
+  "lastVerifiedCommit": "efeb5445bf93510e2d3871aaee831aadfccad880"
 }
 ---
 
@@ -72,9 +75,11 @@
 
 本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
 
-## 单聊截图附件
+## 聊天附件拖放与粘贴
 
-在支持附件的单聊输入框按 `Ctrl+V`，可将剪贴板中的 PNG 截图添加到附件草稿。发送前可以预览或移除，并可和文字或其他受支持的附件一起发送。大小、数量及伙伴能力按该对话的附件规则校验。截图没有原文件路径，发送后保留独立快照，可预览或另存。未发送的截图按现有附件草稿规则清理。自动测试使用合成图片，隔离 Electron 核验覆盖暂存、缩略图、快照读取和草稿清理。真实伙伴收图仍待验收。
+单聊与群聊可将磁盘文件和图片拖入支持附件的输入框，或按 `Ctrl+V` 粘贴资源管理器复制的文件及剪贴板 PNG 截图，普通文本仍粘贴到正文。发送前可以预览或移除，并可和文字或其他受支持的附件一起发送。大小、数量及伙伴能力按该对话的附件规则校验。截图没有原文件路径，发送后保留独立快照，可预览或另存。未发送的截图按现有附件草稿规则清理。自动测试使用合成图片，隔离 Electron 核验覆盖暂存、缩略图、快照读取和草稿清理。真实伙伴收图仍待验收。
+
+项目群中用户发送成功的附件另存一份到项目的 `uploads/`，单聊仍由用户手动选项目保存。「项目文件交付」浏览实际项目根目录，保留已有交付登记和原有项目目录。新建项目不再预建 `deliverables/`。本轮能力以 `efeb5445bf93510e2d3871aaee831aadfccad880` 为代码基线。相关自动回归使用合成数据；开发版已人工确认拖放、粘贴、项目群附件归档和项目文件交付。
 
 ## 历史阶段记录
 

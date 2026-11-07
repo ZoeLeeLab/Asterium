@@ -49,6 +49,27 @@ describe('Composer attachments', () => {
     expect(discard).not.toHaveBeenCalled();
   });
 
+  it('stages a copied regular file and a dropped image before explicitly sending them together', async () => {
+    const file = new File(['draft'], 'draft.md', { type: 'text/markdown' });
+    const image = new File(['png'], 'example.png', { type: 'image/png' });
+    const filePending = { selectionId: 'copied-file', name: file.name, mediaType: file.type, sizeBytes: file.size };
+    const imagePending = { selectionId: 'dropped-image', name: image.name, mediaType: image.type, sizeBytes: image.size };
+    const stageFiles = vi.fn().mockResolvedValueOnce([filePending]).mockResolvedValueOnce([imagePending]);
+    mockAttachmentApi({ stageFiles });
+    const onSend = vi.fn(async () => true);
+    render(<Composer placeholder="发送消息" onSend={onSend} attachmentsEnabled />);
+    const input = screen.getByRole('textbox', { name: '发送消息' });
+    fireEvent.paste(input, { clipboardData: { files: [file], types: ['Files'] } });
+    await screen.findByText(file.name);
+    fireEvent.drop(input, { dataTransfer: { files: [image], types: ['Files'] } });
+    await screen.findByAltText(image.name);
+    expect(stageFiles).toHaveBeenNthCalledWith(1, [file], 10);
+    expect(stageFiles).toHaveBeenNthCalledWith(2, [image], 9);
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('', [filePending, imagePending]));
+  });
+
   it('discards a pasted screenshot if the conversation changes while staging', async () => {
     const pending = { selectionId: 'pasted-image', name: '截图.png', mediaType: 'image/png', sizeBytes: 1 };
     let finish!: (value: typeof pending) => void;

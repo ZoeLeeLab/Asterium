@@ -329,6 +329,9 @@
 .project-files-panel__chevron[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .project-files-panel .studio-side-card__body { padding: 0 14px 14px; }
 .project-files-list { max-height: 260px; padding-right: 2px; overflow-x: hidden; overflow-y: auto; scrollbar-color: transparent transparent; scrollbar-gutter: stable; scrollbar-width: thin; }
+.project-files-list .project-tree { min-width: 0; }
+.project-files-list .project-tree button { width: 100%; }
+.project-files-list .project-tree button > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .project-files-list::-webkit-scrollbar { width: 6px; }
 .project-files-list::-webkit-scrollbar-track { background: transparent; }
 .project-files-list::-webkit-scrollbar-thumb { border-radius: var(--radius-sm); background: transparent; }

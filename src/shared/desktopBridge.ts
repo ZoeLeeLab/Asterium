@@ -217,6 +217,8 @@ export interface AsteriumArtifactsApi {
 
 export interface AsteriumAttachmentsApi {
   stageClipboardImage?: (bytes: Uint8Array) => Promise<PendingMessageAttachment>;
+  stageFiles?: (files: File[], remaining: number) => Promise<PendingMessageAttachment[]>;
+  pasteFiles?: (remaining: number) => Promise<PendingMessageAttachment[]>;
   choose: (remaining: number, filter?: 'cyberboss_images') => Promise<PendingMessageAttachment[]>;
   discard: (selectionIds: string[]) => Promise<void>;
   commit: (conversationId: string, selectionIds: string[], messageId: string) => Promise<MessageAttachment[]>;
@@ -294,6 +296,7 @@ export interface AsteriumProjectsApi {
 export interface AsteriumStudioApi {
   syncRoom: (room: StudioRoomMetadata) => Promise<StudioRoomSnapshot>;
   getRoom: (roomId: string) => Promise<StudioRoomSnapshot | undefined>;
+  retryProjectUploads?: (roomId: string) => Promise<void>;
   exportMarkdown?: (request: StudioRoomMarkdownExportRequest) => Promise<boolean>;
   removeRoom: (roomId: string) => Promise<void>;
   setMuted: (request: StudioSetMutedRequest) => Promise<StudioRoomSnapshot>;

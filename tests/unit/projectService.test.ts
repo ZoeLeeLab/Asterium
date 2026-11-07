@@ -1,5 +1,5 @@
 import { testRm as rm } from '../helpers/autoTest.mjs';
-import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -516,6 +516,10 @@ describe('ProjectService', () => {
     await value.bindings.activate(workspaceBinding.bindingId, 'thread-workspace');
     const marker = path.join(value.workspace.rootPath, 'user-file.txt');
     await writeFile(marker, 'keep', 'utf8');
+    const legacyDir = path.join(value.workspace.rootPath, 'deliverables');
+    await mkdir(legacyDir);
+    const legacyFile = path.join(legacyDir, 'legacy.md');
+    await writeFile(legacyFile, 'existing delivery', 'utf8');
 
     await value.service.removeProject('project-a', []);
 
@@ -533,7 +537,7 @@ describe('ProjectService', () => {
     expect((await value.executions.snapshot('project-a')).attempts).toEqual([]);
     expect(value.notebooks.archiveProject).toHaveBeenCalledWith('project-a', '项目 A');
     expect(await readFile(marker, 'utf8')).toBe('keep');
-    expect(await readdir(value.workspace.rootPath)).toContain('deliverables');
+    expect(await readFile(legacyFile, 'utf8')).toBe('existing delivery');
     await expect(value.service.syncRoom({
       roomId: 'room-late', projectId: 'project-a', name: '迟到房间同步', memberIds: ['partner-a'],
     })).rejects.toThrow('PROJECT_REMOVED');

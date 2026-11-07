@@ -39,7 +39,7 @@ describe('file delivery failure characteristics', () => {
     await unlink(source);
 
     await expect(delivery.deliver({ artifactId: 'artifact-result', projectId: 'project-one', source: 'partner' })).rejects.toThrow('ARTIFACT_SOURCE_MISSING');
-    expect(await readdir(path.join(root, 'visible-project', 'deliverables'))).toEqual([]);
+    expect((await readdir(path.join(root, 'visible-project'))).sort()).toEqual(['design-guide.md', 'progress.md', 'project-plan.md']);
   });
 
   it('does not create an internal backup when the project destination is unavailable', async () => {
@@ -102,7 +102,7 @@ describe('file delivery failure characteristics', () => {
     await workspaces.create({ projectId: 'project-one', name: '项目一', selectedRoot: path.join(root, 'visible-project') });
     const result = await delivery.deliver({ artifactId: 'artifact-result', projectId: 'project-one', source: 'partner' });
     expect(result.relativePath).toBe('result.md');
-    expect(await readdir(path.join(root, 'visible-project', 'deliverables'))).toEqual([]);
+    expect((await readdir(path.join(root, 'visible-project'))).sort()).toEqual(['design-guide.md', 'progress.md', 'project-plan.md', 'result.md']);
   });
 
   it('does not overwrite a current project file from a changed external source without matching canonical identity', async () => {
