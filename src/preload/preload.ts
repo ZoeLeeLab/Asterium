@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { MAX_MESSAGE_ATTACHMENT_BYTES } from '../shared/contracts/attachments';
 import type { ApiModelSummary, ApiPartnerConnection, CancelRunCommand, ChangeLocalThreadLifecycleRequest, ClaudeDetectionResult, ClaudeSessionImport, CodexDetectionResult, CodexRuntimeInfo, CodexThreadSummary, ConversationAttachmentInfo, CredentialStatus, ExistingThreadConnection, ExistingThreadConnectionStatus, LocalThreadLifecycleRequest, MessageAttachment, NativeThreadLifecycleResult, PartnerProfileSeed, PartnerProfileSnapshot, PartnerProfilesSyncResult, PartnerWorkspaceState, PendingMessageAttachment, RendererAgentEvent, ResolveAuthorizationCommand, ResolveUserInputCommand, ResumeSessionCommand, SendGuidanceCommand, SendGuidanceResult, SendMessageCommand, SendMessageReceipt, WorkspaceGrant } from '../shared/agentProtocol';
 import type { StudioAnnouncementRequest, StudioCancelRoundRequest, StudioPrepareTurnRequest, StudioPreparedTurn, StudioResolveDiscussionRequest, StudioRoomMarkdownExportRequest, StudioRoomMetadata, StudioRoomSnapshot, StudioSetMutedRequest, StudioSetSettingsRequest, StudioStartRoundRequest } from '../shared/studioRuntime';
 import type { SaveStudioNoteRequest, StudioNote, StudioNoteStatus } from '../shared/studioNotes';
@@ -172,6 +173,34 @@ contextBridge.exposeInMainWorld('asteriumArtifacts', {
 
 contextBridge.exposeInMainWorld('asteriumAttachments', {
   stageClipboardImage: (bytes: Uint8Array): Promise<PendingMessageAttachment> => ipcRenderer.invoke(AGENT_IPC.attachmentStageClipboardImage, bytes),
+  stageFiles: async (files: File[], remaining: number): Promise<PendingMessageAttachment[]> => {
+    if (!files.length || files.length > remaining || files.length > 10) throw new Error('ATTACHMENT_COUNT_LIMIT');
+    const entries = files.map((file) => ({ file, path: webUtils.getPathForFile(file) }));
+    for (const entry of entries) {
+      if (entry.file.size > MAX_MESSAGE_ATTACHMENT_BYTES) throw new Error('ATTACHMENT_TOO_LARGE');
+      if (!entry.path && entry.file.type !== 'image/png') throw new Error('ATTACHMENT_NOT_FILE');
+    }
+    const paths = entries.flatMap((entry) => entry.path ? [entry.path] : []);
+    const staged: PendingMessageAttachment[] = paths.length ? await ipcRenderer.invoke(AGENT_IPC.attachmentStageFiles, paths) : [];
+    try {
+      let index = 0;
+      const ordered: PendingMessageAttachment[] = [];
+      for (const entry of entries) {
+        if (entry.path) {
+          ordered.push(staged[index++]);
+        } else {
+          const image: PendingMessageAttachment = await ipcRenderer.invoke(AGENT_IPC.attachmentStageClipboardImage, new Uint8Array(await entry.file.arrayBuffer()));
+          staged.push(image);
+          ordered.push(image);
+        }
+      }
+      return ordered;
+    } catch (error) {
+      if (staged.length) await ipcRenderer.invoke(AGENT_IPC.attachmentDiscard, staged.map(item => item.selectionId)).catch(() => undefined);
+      throw error;
+    }
+  },
+  pasteFiles: (remaining: number): Promise<PendingMessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentPasteFiles, remaining),
   choose: (remaining: number, filter?: 'cyberboss_images'): Promise<PendingMessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentChoose, { remaining, filter }),
   discard: (selectionIds: string[]): Promise<void> => ipcRenderer.invoke(AGENT_IPC.attachmentDiscard, selectionIds),
   commit: (conversationId: string, selectionIds: string[], messageId: string): Promise<MessageAttachment[]> => ipcRenderer.invoke(AGENT_IPC.attachmentCommit, { conversationId, selectionIds, messageId }),
@@ -287,6 +316,7 @@ contextBridge.exposeInMainWorld('asteriumProjects', {
 contextBridge.exposeInMainWorld('asteriumStudio', {
   syncRoom: (room: StudioRoomMetadata): Promise<StudioRoomSnapshot> => ipcRenderer.invoke(AGENT_IPC.studioSyncRoom, room),
   getRoom: (roomId: string): Promise<StudioRoomSnapshot | undefined> => ipcRenderer.invoke(AGENT_IPC.studioGetRoom, roomId),
+  retryProjectUploads: (roomId: string): Promise<void> => ipcRenderer.invoke(AGENT_IPC.studioRetryProjectUploads, roomId),
   exportMarkdown: (request: StudioRoomMarkdownExportRequest): Promise<boolean> => ipcRenderer.invoke(AGENT_IPC.studioExportMarkdown, request),
   removeRoom: (roomId: string): Promise<void> => ipcRenderer.invoke(AGENT_IPC.studioRemoveRoom, roomId),
   setMuted: (request: StudioSetMutedRequest): Promise<StudioRoomSnapshot> => ipcRenderer.invoke(AGENT_IPC.studioSetMuted, request),

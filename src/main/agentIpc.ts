@@ -30,6 +30,7 @@ import { REVIEW_MARKDOWN_MAX_BYTES } from '../shared/existingPartnerReview';
 import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { app, BrowserWindow, clipboard, dialog, safeStorage, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { createAttachmentThumbnail } from './security/attachmentThumbnail';
@@ -366,7 +367,11 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     legacyIndexPath: () => path.join(app.getPath('userData'), 'message-attachments.v1.json'),
   });
   const singleChatMessages = new SingleChatMessageStore(() => path.join(app.getPath('userData'), 'single-chat-messages.v1.json'));
-  const studioAttachments = new StudioAttachments(messageAttachments);
+  const studioAttachments = new StudioAttachments(messageAttachments, {
+    workspaces: projectWorkspaces,
+    rooms: studioRooms,
+    onArchived: (projectId) => projectFileDelivery.publish(projectId),
+  });
   const partnerMemories = new PartnerMemoryService(partnerProfiles, { ready: prepareMemoryStorage });
   const partnerMemoryBriefings = new PartnerMemoryBriefingService(partnerMemories);
   const sessionBootstraps = new SessionBootstrapService(partnerProfiles, partnerMemoryBriefings, nativeBindings, studioRooms, apiSessions);
@@ -1384,6 +1389,17 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return studioRooms.getRoom(roomId);
   });
 
+  ipcMain.handle(AGENT_IPC.studioRetryProjectUploads, async (event, roomId: unknown) => {
+    requireSender(event);
+    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
+    await projectCoordinator.run(async () => {
+      const current = await studioRooms.getRoom(roomId);
+      if (!current || current.metadata.archived) return;
+      projectCoordinator.assertProjectActive(current.metadata.projectId);
+      await studioAttachments.archivePublished(current);
+    });
+  });
+
   ipcMain.handle(AGENT_IPC.studioExportMarkdown, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.roomId !== 'string' || !value.roomId.trim()
@@ -1600,6 +1616,22 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (result.canceled) return [];
     if (result.filePaths.length > remaining) throw new Error('ATTACHMENT_COUNT_LIMIT');
     return messageAttachments.stage(result.filePaths);
+  });
+  ipcMain.handle(AGENT_IPC.attachmentStageFiles, async (event, value: unknown) => {
+    requireSender(event);
+    if (!Array.isArray(value) || !value.every((file) => typeof file === 'string' && path.isAbsolute(file))) throw new Error('ATTACHMENT_NOT_FILE');
+    return messageAttachments.stage(value);
+  });
+  ipcMain.handle(AGENT_IPC.attachmentPasteFiles, async (event, remaining: unknown) => {
+    requireSender(event);
+    if (typeof remaining !== 'number' || !Number.isSafeInteger(remaining) || remaining < 1 || remaining > MAX_MESSAGE_ATTACHMENTS) throw new Error('ATTACHMENT_COUNT_LIMIT');
+    const mimeType = 'text/uri-list';
+    const item = (await clipboard.read()).find((entry) => entry.types.includes(mimeType));
+    const payload = await item?.getType(mimeType);
+    if (!(payload instanceof Blob)) return [];
+    const urls = (await payload.text()).split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('file://'));
+    if (urls.length > remaining) throw new Error('ATTACHMENT_COUNT_LIMIT');
+    return urls.length ? messageAttachments.stage(urls.map((url) => fileURLToPath(url))) : [];
   });
   ipcMain.handle(AGENT_IPC.attachmentStageClipboardImage, async (event, value: unknown) => {
     requireSender(event);

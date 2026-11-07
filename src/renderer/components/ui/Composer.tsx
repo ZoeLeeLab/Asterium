@@ -2,7 +2,8 @@ import { CYBERBOSS_CHAT_IMAGE_HINT, CYBERBOSS_CHAT_IMAGE_LIMIT, CYBERBOSS_CHAT_I
 import { parseSessionCommand, type SessionCommandName } from '../../../shared/sessionCommands';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
 import { isMessageSendKey } from '../../app/sendShortcut';
-import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useAttachmentTransfer } from './useAttachmentTransfer';
 import { Bot, Check, File, Flame, Hand, Image as ImageIcon, ListTodo, LockKeyhole, Mic, Paperclip, Send, Square, X } from 'lucide-react';
 import { MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentCapabilities, type PendingMessageAttachment, type PermissionMode, type PlanMode } from '../../../shared/agentProtocol';
 import type { MessageQuote } from '../../types/domain';
@@ -172,20 +173,8 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
     );
   };
 
-  const pasteImage = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const stage = window.asteriumAttachments?.stageClipboardImage;
-    if (!stage || compact || !attachmentsEnabled || disabled || busy) return;
-    const image = Array.from(event.clipboardData.files ?? []).find(file => file.type === 'image/png');
-    if (!image) return;
-    event.preventDefault();
-    if (addingAttachments.current || sending.current) return;
-    const maxImageBytes = cyberBossChat ? cyberBossFileCapabilities?.maxImageBytes ?? CYBERBOSS_CHAT_IMAGE_MAX_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
-    if (image.size > maxImageBytes) {
-      setAttachmentError(`截图大小不能超过 ${maxImageBytes / (1024 * 1024)} MiB。`);
-      return;
-    }
-    void addAttachments(async () => [await stage(new Uint8Array(await image.arrayBuffer()))], '未能粘贴截图，请重新截图后再试。');
-  };
+  const maxImageBytes = cyberBossChat ? cyberBossFileCapabilities?.maxImageBytes ?? CYBERBOSS_CHAT_IMAGE_MAX_BYTES : MAX_MESSAGE_ATTACHMENT_BYTES;
+  const { draggingFiles, onPaste, onDragOver, onDragLeave, onDrop } = useAttachmentTransfer(attachmentsEnabled && !disabled && !busy, addAttachments, maxImageBytes, setAttachmentError);
 
   const removeAttachment = (selectionId: string) => {
     updateAttachments(attachmentsRef.current.filter((item) => item.selectionId !== selectionId));
@@ -199,7 +188,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
     event.currentTarget.form?.requestSubmit();
   };
 
-  const editor = <textarea ref={inputRef} rows={compact ? 1 : 2} value={value} onChange={(event) => { const next = event.target.value; setValue(next); if (draftKey) composerDrafts.set(draftKey, next); }} onKeyDown={handleKeyDown} onPaste={pasteImage} placeholder={placeholder} aria-label={placeholder} disabled={disabled && !onSessionCommand} autoFocus={!disabled} />;
+  const editor = <textarea ref={inputRef} rows={compact ? 1 : 2} value={value} onChange={(event) => { const next = event.target.value; setValue(next); if (draftKey) composerDrafts.set(draftKey, next); }} onKeyDown={handleKeyDown} onPaste={onPaste} placeholder={placeholder} aria-label={placeholder} disabled={disabled && !onSessionCommand} autoFocus={!disabled} />;
   const attachmentButton = <button className={compact ? 'round-button' : 'composer-tool-button'} type="button" disabled={disabled || busy || preparingAttachments || !attachmentsEnabled || attachments.length >= attachmentLimit} title={attachmentsEnabled ? attachmentLabel : attachmentDisabledReason} aria-label={attachmentLabel} onClick={() => void chooseAttachments()}>
     <Paperclip size={compact ? 19 : 18} />
     {compact ? <span className="sr-only">{attachmentLabel}</span> : <span>{cyberBossImagesOnly ? '图片' : '附件'}</span>}
@@ -232,7 +221,7 @@ export function Composer({ placeholder, onSend, draftKey, compact = false, busy 
   );
 
   return (
-    <form className={`composer ${compact ? 'composer--compact' : ''}`} onSubmit={submit}>
+    <form className={`composer ${compact ? 'composer--compact' : ''}${draggingFiles ? ' attachment-drop-active' : ''}`} onSubmit={submit} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       {!compact && pendingGuidance && <section className={`composer-guidance composer-guidance--${pendingGuidance.state}`} aria-label="待发送的中途消息">
         <div className="composer-guidance__body"><small>{pendingGuidance.state === 'deferred' ? '等待当前回复结束后自动发送' : pendingGuidance.state === 'sending' ? '正在发送' : busy ? '已暂存 · 点击后发送' : '当前回复已结束 · 可作为下一轮发送'}</small>{pendingGuidance.quote && <MessageQuoteCard quote={pendingGuidance.quote} className="message-quote-card--guidance" />}<strong>{pendingGuidance.content}</strong>{pendingGuidance.error && <em>{pendingGuidance.error}</em>}</div>
         <div className="composer-guidance__actions">

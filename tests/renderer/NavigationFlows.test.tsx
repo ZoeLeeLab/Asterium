@@ -1273,36 +1273,52 @@ describe('navigation shell interactions', () => {
     expect(screen.getByRole('menuitem', { name: '删除文件' })).toBeInTheDocument();
   });
 
-  it('keeps project files inside a stable scroll region and removes the duplicate folder action', () => {
+  it('shows the real project tree, previews a nested file and keeps registered delivery actions', async () => {
     const state = createTestState();
     const project = state.projects.find((item) => item.id === state.activeProjectId)!;
-    project.workspace = { status: 'ready', rootPath: 'C:\\Projects\\demo', deliverablesPath: 'C:\\Projects\\demo\\deliverables' };
-    project.files = Array.from({ length: 12 }, (_, index) => ({
-      id: `project-file-${index}`,
-      fileId: `project-file-${index}`,
-      name: `交付-${index}.md`,
-      meta: '伙伴交付',
-      kind: 'document' as const,
-      relativePath: `deliverables\\交付-${index}.md`,
-      availability: 'available' as const,
-    }));
+    project.workspace = { status: 'ready', rootPath: 'C:\\Projects\\demo' };
+    project.files = [{
+      id: 'project-file', fileId: 'project-file', name: 'final.md', meta: '伙伴交付', kind: 'document',
+      relativePath: 'output\\final.md', availability: 'available',
+    }];
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
 
-    const view = withProvider(
-      <Routes><Route path="/studio/:mode" element={<StudioPage />} /></Routes>,
-      '/studio/discussion',
-    );
+    const browse = vi.fn(async (request: import('../../src/shared/projectBrowser').ProjectBrowseRequest) => {
+      if (request.action === 'directory') return { entries: request.path === 'output'
+        ? [{ path: 'output/final.md', name: 'final.md', directory: false }, { path: 'output/manual.md', name: 'manual.md', directory: false }]
+        : [{ path: 'output', name: 'output', directory: true }, { path: 'manual.txt', name: 'manual.txt', directory: false }] };
+      return { content: { path: 'output/final.md', name: 'final.md', info: { previewKind: 'text' as const }, text: 'synthetic delivery' } };
+    });
+    const previous = window.asteriumProjects;
+    window.asteriumProjects = { ...previous, browse, syncMembers: vi.fn(async () => []) } as NonNullable<typeof previous>;
+    try {
+      const view = withProvider(
+        <Routes><Route path="/studio/:mode" element={<StudioPage />} /></Routes>,
+        '/studio/discussion',
+      );
 
-    const list = screen.getByLabelText('项目文件列表');
-    Object.defineProperty(list, 'getBoundingClientRect', { configurable: true, value: () => ({ right: 300 }) });
-    fireEvent.pointerMove(list, { clientX: 286 });
-    expect(list).toHaveClass('project-files-list--scrollbar');
-    fireEvent.pointerLeave(list);
-    expect(list).not.toHaveClass('project-files-list--scrollbar');
-    expect(screen.queryByRole('button', { name: '打开全部文件' })).not.toBeInTheDocument();
-    expect(view.container.querySelector('.project-files-list')).toBe(list);
-    fireEvent.contextMenu(screen.getByRole('button', { name: /交付-0\.md/ }));
-    expect(screen.getByRole('menuitem', { name: '删除文件' })).toBeInTheDocument();
+      const tree = within(screen.getByRole('tree', { name: '项目文件交付目录' }));
+      expect(await tree.findByRole('button', { name: 'manual.txt' })).toBeInTheDocument();
+      fireEvent.click(tree.getByRole('button', { name: 'output' }));
+      const delivered = await tree.findByRole('button', { name: 'final.md' });
+      fireEvent.click(tree.getByRole('button', { name: 'manual.md' }));
+      await waitFor(() => expect(browse).toHaveBeenCalledWith({ projectId: project.id, action: 'file', path: 'output/manual.md' }));
+      fireEvent.click(delivered);
+      await waitFor(() => expect(browse).toHaveBeenCalledWith({ projectId: project.id, action: 'file', fileId: 'project-file' }));
+      fireEvent.contextMenu(delivered);
+      expect(screen.getByRole('menuitem', { name: '删除文件' })).toBeInTheDocument();
+
+      const list = screen.getByLabelText('项目文件交付列表');
+      Object.defineProperty(list, 'getBoundingClientRect', { configurable: true, value: () => ({ right: 300 }) });
+      fireEvent.pointerMove(list, { clientX: 286 });
+      expect(list).toHaveClass('project-files-list--scrollbar');
+      fireEvent.pointerLeave(list);
+      expect(list).not.toHaveClass('project-files-list--scrollbar');
+      expect(screen.queryByRole('button', { name: '打开全部文件' })).not.toBeInTheDocument();
+      expect(view.container.querySelector('.project-files-list')).toBe(list);
+    } finally {
+      window.asteriumProjects = previous;
+    }
   });
 
   it('deletes a project from Asterium while keeping a confirmation boundary', async () => {

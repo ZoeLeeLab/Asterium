@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, 
 import type { StudioMention } from '../../../shared/studioRuntime';
 import { Avatar } from '../ui/Avatar';
 import { PendingAttachmentCard } from '../ui/Composer';
-import type { PendingMessageAttachment } from '../../../shared/agentProtocol';
+import { MAX_MESSAGE_ATTACHMENT_BYTES, type PendingMessageAttachment } from '../../../shared/agentProtocol';
+import { useAttachmentTransfer } from '../ui/useAttachmentTransfer';
 
 export interface StudioMentionOption {
   partnerId: string;
@@ -49,6 +50,7 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   const [attachmentError, setAttachmentError] = useState('');
   const [sending, setSending] = useState(false);
   const [choosing, setChoosing] = useState(false);
+  const choosingRef = useRef(false);
   const attachmentsRef = useRef(attachments);
   const mounted = useRef(false);
   const sendingRef = useRef(false);
@@ -57,18 +59,32 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
     mounted.current = true;
     return () => { mounted.current = false; const ids = attachmentsRef.current.map(item => item.selectionId); if (ids.length) void window.asteriumAttachments?.discard(ids).catch(() => undefined); };
   }, []);
-  const chooseAttachments = async () => {
-    if (!window.asteriumAttachments || choosing || disabled || busy || sendingRef.current) return;
+  const addAttachments = async (load: (remaining: number) => Promise<PendingMessageAttachment[]>, fallbackError: string) => {
+    const api = window.asteriumAttachments;
+    if (!api || choosingRef.current || disabled || busy || sendingRef.current) return;
+    choosingRef.current = true;
     setChoosing(true); setAttachmentError('');
     try {
-      const selected = await window.asteriumAttachments.choose(10 - attachments.length);
-      if (!mounted.current) { await window.asteriumAttachments.discard(selected.map(item => item.selectionId)); return; }
-      setAttachments(current => [...current, ...selected]);
+      const remaining = 10 - attachmentsRef.current.length;
+      if (remaining < 1) throw new Error('ATTACHMENT_COUNT_LIMIT');
+      const selected = await load(remaining);
+      if (!mounted.current) { await api.discard(selected.map(item => item.selectionId)); return; }
+      const next = [...attachmentsRef.current, ...selected];
+      attachmentsRef.current = next;
+      setAttachments(next);
     } catch (error) {
       const detail = String(error);
-      if (mounted.current) setAttachmentError(detail.includes('ATTACHMENT_TOO_LARGE') ? '单个附件不能超过 20MB。' : detail.includes('ATTACHMENT_COUNT_LIMIT') ? '一次最多发送 10 个附件。' : '未能添加附件，请重试。');
-    } finally { if (mounted.current) setChoosing(false); }
+      if (mounted.current) setAttachmentError(detail.includes('ATTACHMENT_TOO_LARGE') ? '单个附件不能超过 20MB。' : detail.includes('ATTACHMENT_COUNT_LIMIT') ? '一次最多发送 10 个附件。' : fallbackError);
+    } finally {
+      choosingRef.current = false;
+      if (mounted.current) setChoosing(false);
+    }
   };
+  const chooseAttachments = () => {
+    const api = window.asteriumAttachments;
+    if (api) return addAttachments((remaining) => api.choose(remaining), '未能添加附件，请重试。');
+  };
+  const { draggingFiles, onPaste, onDragOver, onDragLeave, onDrop } = useAttachmentTransfer(!disabled && !busy && !sending, addAttachments, MAX_MESSAGE_ATTACHMENT_BYTES, setAttachmentError);
   const highlightsRef = useRef<HTMLDivElement>(null);
 
   const syncHighlights = () => {
@@ -141,7 +157,7 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = value.trim();
-    if ((!text && !attachments.length) || disabled || busy || choosing || sendingRef.current) return;
+    if ((!text && !attachments.length) || disabled || busy || choosingRef.current || sendingRef.current) return;
     const leading = value.indexOf(text);
     const selected = (mentionsEnabled ? mentions : [])
       .filter((mention) => mention.start !== undefined && mention.end !== undefined && mention.start >= leading && mention.end <= leading + text.length)
@@ -183,7 +199,7 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
     event.currentTarget.form?.requestSubmit();
   };
 
-  return <form className="studio-composer" onSubmit={submit}>
+  return <form className={`studio-composer${draggingFiles ? ' attachment-drop-active' : ''}`} onSubmit={submit} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
     {attachments.length > 0 && <div className="composer-attachments">{attachments.map(attachment => <PendingAttachmentCard key={attachment.selectionId} attachment={attachment} disabled={sending || choosing} onRemove={() => {
       if (sending || choosing) return;
       setAttachments(current => current.filter(item => item.selectionId !== attachment.selectionId));
@@ -207,6 +223,7 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
           if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) refreshQuery(value, event.currentTarget.selectionStart, mentions);
         }}
         onKeyDown={handleKeyDown}
+        onPaste={onPaste}
       />
       {query && <div className="studio-mention-picker" role="listbox" aria-label="选择要提到的伙伴">
         <header><AtSign size={14} /><span>{query.value ? '匹配的群聊成员' : '选择群聊成员'}</span></header>

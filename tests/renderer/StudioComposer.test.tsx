@@ -28,6 +28,29 @@ it('uploads attachment-only messages, preserves selections on failure and releas
   expect(discard).toHaveBeenCalledWith([attachment.selectionId]);
 });
 
+it('stages a dropped file and a pasted screenshot in the group draft without changing text paste', async () => {
+  const file = new File(['sample'], 'upload.txt', { type: 'text/plain' });
+  const image = new File(['png'], 'screenshot.png', { type: 'image/png' });
+  const stageFiles = vi.fn(async (files: File[]) => files.map((item) => ({
+    selectionId: item.name, name: item.name, mediaType: item.type, sizeBytes: item.size,
+  })));
+  window.asteriumAttachments = { stageFiles, discard: vi.fn(async () => undefined), thumbnail: vi.fn(async () => '') } as never;
+  const onSend = vi.fn(async () => true);
+  render(<StudioComposer placeholder="附件测试" members={members} onSend={onSend} />);
+  const input = screen.getByRole('textbox', { name: '附件测试' });
+  expect(fireEvent.paste(input, { clipboardData: { files: [], types: ['text/plain'] } })).toBe(true);
+  expect(stageFiles).not.toHaveBeenCalled();
+  fireEvent.drop(input, { dataTransfer: { files: [file], types: ['Files'] } });
+  await screen.findByText(file.name);
+  fireEvent.paste(input, { clipboardData: { files: [image], types: ['Files'] } });
+  await screen.findByText(image.name);
+  expect(onSend).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await waitFor(() => expect(onSend).toHaveBeenCalledWith('', [], [
+    expect.objectContaining({ name: file.name }), expect.objectContaining({ name: image.name }),
+  ]));
+});
+
 it('retains a failed attachment draft, reports limits and discards pending files when switching rooms', async () => {
   const attachment = { selectionId: 'pending-attachment-two', name: 'test.txt', sizeBytes: 40, mediaType: 'text/plain' };
   const choose = vi.fn().mockRejectedValueOnce(new Error('ATTACHMENT_TOO_LARGE')).mockResolvedValue([attachment]);

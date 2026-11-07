@@ -22,7 +22,7 @@
 - [运行状态、项目与协作工具](entries/runtime-tools.md)（含接回伙伴 Markdown 复核及宿主接线契约）
 - [外部伙伴群聊 MCP](entries/studio-mcp.md)（含接入凭据复制）
 - [星丛 Wake 通知与参考 SDK](entries/studio-wake.md)
-- [工作室与群聊](entries/studio.md)
-- [文件、命令与交付](entries/workspace-tools.md)（含单聊截图粘贴）
+- [工作室与群聊](entries/studio.md)（含项目群上传归档与项目文件交付）
+- [文件、命令与交付](entries/workspace-tools.md)（含聊天附件拖放与粘贴）
 
 维护见 [条目规范](schema.md)、[模板](template.md) 和根目录 [AGENTS.md](../../AGENTS.md)。本轮代码／脚本提交和各阶段验收归属见 [五阶段记录](../development-data-isolation-progress.md)。

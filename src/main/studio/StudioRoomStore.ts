@@ -259,7 +259,7 @@ export class StudioRoomStore {
         authorId: automation ? 'system' : ASTERIUM_USER_ID,
         ...(automation ? { automation } : {}),
         content: request.content.trim(),
-        ...(request.attachments?.length ? { attachments: request.attachments.map(item => ({ ...item })) } : {}),
+        ...(request.attachments?.length ? { attachments: request.attachments.map(item => ({ ...item })), ...(!automation ? { projectUploadPending: true as const } : {}) } : {}),
         createdAt: now,
         status: 'completed',
         externalParticipantIds: external,
@@ -279,6 +279,20 @@ export class StudioRoomStore {
         updatedAt: now,
       };
       room.rotationOffset = (room.rotationOffset + 1) % Math.max(1, room.metadata.memberIds.length);
+      await this.writeUnlocked(data);
+      return publicSnapshot(room);
+    });
+    this.notify(snapshot);
+    return snapshot;
+  }
+
+  async completeProjectUploads(roomId: string, messageIds: string[]) {
+    const snapshot = await this.mutate(async () => {
+      const data = await this.readUnlocked();
+      const room = requireRoom(data, roomId);
+      for (const message of room.messages) {
+        if (message.projectUploadPending && messageIds.includes(message.messageId)) delete message.projectUploadPending;
+      }
       await this.writeUnlocked(data);
       return publicSnapshot(room);
     });

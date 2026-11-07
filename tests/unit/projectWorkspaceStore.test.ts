@@ -39,7 +39,7 @@ describe('ProjectWorkspaceStore', () => {
     expect(project.rootPath).toContain('Asterium Projects');
     expect(project.templateFiles.map((item) => item.name)).toEqual(['project-plan.md', 'progress.md', 'design-guide.md']);
     expect(await readFile(path.join(project.rootPath, 'project-plan.md'), 'utf8')).toContain('为十月旅行整理路线。');
-    expect(await readdir(project.rootPath)).toEqual(expect.arrayContaining(['project-plan.md', 'progress.md', 'design-guide.md', 'deliverables']));
+    expect((await readdir(project.rootPath)).sort()).toEqual(['design-guide.md', 'progress.md', 'project-plan.md']);
 
     await writeFile(path.join(project.rootPath, 'project-plan.md'), '# 用户已经修改', 'utf8');
     await store.create({ projectId: 'project-autumn-12345678', name: '秋季示例项目 B', description: '新的描述不应覆盖文件。' });
@@ -103,7 +103,7 @@ describe('ProjectWorkspaceStore', () => {
     await store.remove(project.projectId);
 
     expect(await store.get(project.projectId)).toBeUndefined();
-    expect(await readdir(project.rootPath)).toEqual(expect.arrayContaining(['project-plan.md', 'progress.md', 'design-guide.md', 'deliverables']));
+    expect(await readdir(project.rootPath)).toEqual(expect.arrayContaining(['project-plan.md', 'progress.md', 'design-guide.md']));
     expect(JSON.parse(await readFile(index, 'utf8')).projects).toEqual([]);
   });
 
@@ -119,7 +119,7 @@ describe('ProjectWorkspaceStore', () => {
     expect(await store.get('project-index-failure')).toBeUndefined();
     const [preservedDirectory] = await readdir(path.join(root, 'projects'));
     expect(await readdir(path.join(root, 'projects', preservedDirectory))).toEqual(expect.arrayContaining([
-      'project-plan.md', 'progress.md', 'design-guide.md', 'deliverables',
+      'project-plan.md', 'progress.md', 'design-guide.md',
     ]));
   });
 

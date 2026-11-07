@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   PROJECT_TEMPLATE_FILES,
@@ -52,9 +53,6 @@ export class ProjectWorkspaceStore {
       await mkdir(rootPath, { recursive: true });
       const rootStats = await lstat(rootPath);
       if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) throw new Error('PROJECT_DIRECTORY_REJECTED');
-      const deliverablesPath = path.join(rootPath, 'deliverables');
-      await mkdir(deliverablesPath, { recursive: true });
-      await assertContainedDirectory(rootPath, deliverablesPath);
 
       const templates = projectTemplates(name, description);
       for (const template of templates) await writeOnce(path.join(rootPath, template.name), template.content);
@@ -65,7 +63,7 @@ export class ProjectWorkspaceStore {
         projectId: input.projectId,
         name,
         rootPath,
-        deliverablesPath,
+        ...(existing?.deliverablesPath ? { deliverablesPath: existing.deliverablesPath } : {}),
         templateFiles: PROJECT_TEMPLATE_FILES.map((item) => ({ name: item.name, label: item.label, relativePath: item.name })),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -86,6 +84,42 @@ export class ProjectWorkspaceStore {
   async get(projectId: string): Promise<ProjectWorkspaceSnapshot | undefined> {
     await this.load();
     return this.projects.has(projectId) ? structuredClone(this.projects.get(projectId)) : undefined;
+  }
+
+  archiveUpload(projectId: string, sourcePath: string, name: string) {
+    return this.mutate(async () => {
+      await this.load();
+      const workspace = this.projects.get(projectId);
+      if (!workspace) throw new Error('PROJECT_WORKSPACE_NOT_READY');
+      const rootStats = await lstat(workspace.rootPath);
+      if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) throw new Error('PROJECT_DIRECTORY_REJECTED');
+      const root = await realpath(workspace.rootPath);
+      const uploads = path.join(root, 'uploads');
+      await mkdir(uploads, { recursive: true });
+      const stats = await lstat(uploads);
+      if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error('PROJECT_DIRECTORY_REJECTED');
+      await assertContainedDirectory(root, uploads);
+
+      const parsed = path.parse(path.basename(name));
+      const stem = safeSegment(parsed.name, 'attachment');
+      const extension = safeSegment(parsed.ext, '');
+      let bytes: Buffer | undefined;
+      for (let index = 1; index <= 1000; index++) {
+        const suffix = index === 1 ? '' : ` (${index})`;
+        const target = path.join(uploads, stem + suffix + extension);
+        try {
+          await copyFile(sourcePath, target, constants.COPYFILE_EXCL);
+          return;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        }
+        const occupied = await lstat(target);
+        if (!occupied.isFile() || occupied.isSymbolicLink()) continue;
+        bytes ??= await readFile(sourcePath);
+        if (occupied.size === bytes.length && bytes.equals(await readFile(target))) return;
+      }
+      throw new Error('PROJECT_UPLOAD_TARGET_CONFLICT');
+    });
   }
 
   async remove(projectId: string): Promise<void> {

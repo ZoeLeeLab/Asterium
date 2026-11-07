@@ -25,7 +25,7 @@ export class StudioOrchestrator {
     private readonly runtime: StudioRuntimeLifecyclePort,
     private readonly projectMutations?: StudioProjectMutationPort,
     private readonly executionPolicies?: Pick<ProjectExecutionPolicyStore, 'getOrCreate'>,
-    private readonly attachments?: Pick<StudioAttachments, 'prepareMessage' | 'published'>,
+    private readonly attachments?: Pick<StudioAttachments, 'prepareMessage' | 'published' | 'archivePublished'>,
   ) {}
 
   handleSnapshot(snapshot: StudioRoomSnapshot) {
@@ -90,7 +90,7 @@ export class StudioOrchestrator {
       throw error;
     }
     await this.attachments?.published(publicRequest);
-    return published;
+    return this.attachments ? this.attachments.archivePublished(published) : published;
   }
 
   async cancelRound(roomId: string) {
