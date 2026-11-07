@@ -20,6 +20,7 @@ export interface ArtifactInfo {
   createdAt: string;
   partnerId?: string;
   conversationId?: string;
+  localSourceKey?: string;
 }
 
 export interface ArtifactRegistrationContext {
@@ -607,7 +608,10 @@ function sanitizeFileName(value: string) {
 
 function publicInfo(item: RegisteredArtifact): ArtifactInfo {
   const { id, name, extension, mediaType, sizeBytes, previewKind, sourceKind, registrationMethod, availability, cached, createdAt, partnerId, conversationId } = item;
-  return { id, name, extension, mediaType, sizeBytes, previewKind, sourceKind, registrationMethod, availability, cached, createdAt, partnerId, conversationId };
+  const localSourceKey = item.source.kind === 'local_path'
+    ? sha256(Buffer.from(JSON.stringify([conversationId ?? '', localPathKey(item.source.path)])))
+    : undefined;
+  return { id, name, extension, mediaType, sizeBytes, previewKind, sourceKind, registrationMethod, availability, cached, createdAt, partnerId, conversationId, ...(localSourceKey ? { localSourceKey } : {}) };
 }
 
 function sha256(bytes: Buffer) { return createHash('sha256').update(bytes).digest('hex'); }

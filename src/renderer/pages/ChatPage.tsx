@@ -55,7 +55,7 @@ import { MarkdownContent } from '../components/chat/MarkdownContent';
 import { MessageQuoteCard } from '../components/chat/MessageQuoteCard';
 import { TurnTimeline } from '../components/chat/TurnTimeline';
 import { FilePreviewPane, type PreviewTab } from '../components/chat/FilePreviewPane';
-import type { Conversation, Message, MessageQuote } from '../types/domain';
+import type { Conversation, ConversationArtifact, Message, MessageQuote } from '../types/domain';
 import type { DelegationBatchView } from '../../main/runtime/PartnerDelegation';
 import type { ConversationAttachmentInfo, PendingMessageAttachment } from '../../shared/agentProtocol';
 import { assistantMessageText, formatMessageWithQuote } from '../app/messageQuote';
@@ -202,6 +202,8 @@ export function ChatPage() {
   const [userAttachments, setUserAttachments] = useState<ConversationAttachmentInfo[]>([]);
   const [expandedAttachmentSources, setExpandedAttachmentSources] = useState<Record<string, boolean>>({});
   const attachmentGroups = useMemo(() => groupUserAttachments(userAttachments), [userAttachments]);
+  const deliveryRecords = activeConversation?.artifacts;
+  const visibleDeliveries = useMemo(() => latestDeliveriesBySource(deliveryRecords ?? []), [deliveryRecords]);
   const turnMessages = useMemo(() => activeConversation?.messages.filter((message) => isAsteriumUser(message.authorId)) ?? [], [activeConversation]);
   const participatingProjects = useMemo(() => state.projects.filter((project) => activePartner && project.memberIds.includes(activePartner.id)), [activePartner, state.projects]);
   const latestUserMessage = [...(activeConversation?.messages ?? [])].reverse().find((message) => isAsteriumUser(message.authorId));
@@ -514,7 +516,7 @@ export function ChatPage() {
       for (const artifact of activeConversation.artifacts ?? []) {
         void window.asteriumArtifacts?.inspect(artifact.artifactRef).then((info) => info ? addConversationArtifact(activeConversation.id, {
           ...artifact, name: info.name, mediaType: info.mediaType, sizeBytes: info.sizeBytes,
-          sourceKind: info.sourceKind, registrationMethod: info.registrationMethod, availability: info.availability, cached: info.cached,
+          sourceKind: info.sourceKind, registrationMethod: info.registrationMethod, availability: info.availability, cached: info.cached, localSourceKey: info.localSourceKey,
         }) : removeConversationArtifact(activeConversation.id, artifact.artifactRef)).catch(() => undefined);
       }
     };
@@ -1096,11 +1098,18 @@ export function ChatPage() {
             onPointerMove={(event) => setArtifactScrollbarVisible(event.currentTarget.getBoundingClientRect().right - event.clientX <= 20)}
             onPointerLeave={() => setArtifactScrollbarVisible(false)}
           >
-            {(activeConversation?.artifacts ?? []).map((file) => <div className="artifact-row" key={file.id} onContextMenu={(event) => { event.preventDefault(); setArtifactMenu({ id: file.id, x: event.clientX, y: event.clientY }); }}>
-              <button className="artifact-main" type="button" disabled={file.availability === 'missing' || file.availability === 'unavailable'} onClick={() => void openArtifact(file.id)} title={`预览 ${file.name}`}><span className="resource-icon">{file.mediaType?.startsWith('image/') ? <FileImage /> : <FileText />}</span><span><strong>{file.name}</strong><small className={file.availability === 'missing' ? 'artifact-missing' : ''}>{file.availability === 'missing' ? '原文件已删除，引用已失效' : `${file.registrationMethod === 'manual' ? '历史手动添加' : artifactSourceLabel(file.sourceKind, file.cached)} · ${formatBytes(file.sizeBytes)}`}</small></span></button>
+            {visibleDeliveries.map((file) => <div className="artifact-row" key={file.id} onContextMenu={(event) => { event.preventDefault(); setArtifactMenu({ id: file.id, x: event.clientX, y: event.clientY }); }}>
+              <button className="artifact-main" type="button" disabled={file.availability === 'missing' || file.availability === 'unavailable'} onClick={() => void openArtifact(file.id)} title={`预览 ${file.name}`}>
+                <span className="resource-icon">{file.mediaType?.startsWith('image/') ? <FileImage /> : <FileText />}</span>
+                <span>
+                  <strong>{file.name}</strong>
+                  <small className={file.availability === 'missing' ? 'artifact-missing' : ''}>{file.availability === 'missing' ? '原文件已删除，引用已失效' : `${file.registrationMethod === 'manual' ? '历史手动添加' : artifactSourceLabel(file.sourceKind, file.cached)} · ${formatBytes(file.sizeBytes)}`}</small>
+                  {Number.isFinite(Date.parse(file.createdAt)) && <small><time dateTime={file.createdAt} title="最近一次交付">更新于 {formatAttachmentTime(file.createdAt)}</time></small>}
+                </span>
+              </button>
               <span className="artifact-actions"><button type="button" disabled={file.availability !== 'available'} onClick={() => void window.asteriumArtifacts?.open(file.artifactRef)} title="用系统应用打开"><ExternalLink size={14} /></button><button type="button" disabled={file.availability !== 'available'} onClick={() => void window.asteriumArtifacts?.reveal(file.artifactRef)} title="打开所在文件夹"><FolderOpen size={14} /></button></span>
             </div>)}
-            {!activeConversation?.artifacts?.length && <p className="resource-empty">这段对话还没有生成文件</p>}
+            {!visibleDeliveries.length && <p className="resource-empty">这段对话还没有生成文件</p>}
           </div>}
         </section>
         <section className={`side-section${collapsedResourceSections.attachments ? ' side-section--collapsed' : ''}`}>
@@ -1247,6 +1256,16 @@ function formatBytes(value?: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function latestDeliveriesBySource(artifacts: ConversationArtifact[]) {
+  const latest = new Map<string, ConversationArtifact>();
+  for (const artifact of artifacts) {
+    const key = artifact.sourceKind === 'local_path' && artifact.localSourceKey ? `local:${artifact.localSourceKey}` : `record:${artifact.id}`;
+    const previous = latest.get(key);
+    if (!previous || artifact.createdAt >= previous.createdAt) latest.set(key, artifact);
+  }
+  return [...latest.values()];
 }
 
 function groupUserAttachments(attachments: ConversationAttachmentInfo[]) {

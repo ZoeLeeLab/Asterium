@@ -9,6 +9,7 @@ import { ChatPage } from '../../src/renderer/pages/ChatPage';
 import { StudioPage } from '../../src/renderer/pages/StudioPage';
 import { AGENT_PROTOCOL_VERSION, type RendererAgentEvent } from '../../src/shared/agentProtocol';
 import type { ProjectRecord } from '../../src/shared/projectDomain';
+import type { ArtifactInfo } from '../../src/shared/desktopBridge';
 import type { ProjectWorkflowGenerationStartRequest } from '../../src/shared/projectWorkflowGeneration';
 import type { StudioRoomSnapshot } from '../../src/shared/studioRuntime';
 
@@ -78,6 +79,41 @@ function AttachmentProbeHarness({ conversationId, attachmentId }: { conversation
 }
 
 describe('navigation shell interactions', () => {
+  it('groups saved local delivery records by source and opens the newest entry for each path', async () => {
+    const state = createTestState();
+    const conversation = state.conversations.find((item) => item.id === state.activeConversationId)!;
+    const file = (id: string, sizeBytes: number, createdAt: string): ArtifactInfo => ({
+      id, name: 'summary.md', extension: '.md', mediaType: 'text/markdown', previewKind: 'markdown',
+      sourceKind: 'local_path', registrationMethod: 'deliver_tool', availability: 'available', cached: false,
+      createdAt, sizeBytes, localSourceKey: id === 'other-path' ? 'other-source' : 'same-source',
+    });
+    const latest = file('latest-delivery', 300, '2026-11-07T10:01:00.000Z');
+    const older = file('old-delivery', 100, '2026-11-07T10:00:00.000Z');
+    const other = file('other-path', 500, '2026-11-07T10:02:00.000Z');
+    const deliveries = [latest, older, other];
+    conversation.artifacts = deliveries.map(({ id, name, sizeBytes, createdAt }) => ({ id, artifactRef: id, name, sizeBytes, createdAt }));
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    const inspect = vi.fn(async (id: string) => deliveries.find((item) => item.id === id) ?? null);
+    const read = vi.fn(async () => ({ info: latest, text: '最新交付的内容' }));
+    const previous = window.asteriumArtifacts;
+    window.asteriumArtifacts = { ...previous, inspect, read } as NonNullable<typeof previous>;
+    try {
+      withProvider(<ChatPage />, '/chat');
+      const sidebar = within(screen.getByLabelText('交付文件'));
+      await waitFor(() => expect(sidebar.getAllByTitle('预览 summary.md')).toHaveLength(2));
+      expect(sidebar.queryByText(/100 B/)).not.toBeInTheDocument();
+      expect(sidebar.getByText(/500 B/)).toBeInTheDocument();
+      const newestRow = sidebar.getByText(/300 B/).closest('button')!;
+      expect(within(newestRow).getByText(/^更新于/)).toHaveAttribute('datetime', latest.createdAt);
+      expect(sidebar.getAllByText(/^更新于/).map((time) => time.getAttribute('datetime'))).not.toContain(older.createdAt);
+      fireEvent.click(newestRow);
+      expect(await screen.findByText('最新交付的内容')).toBeInTheDocument();
+      expect(read).toHaveBeenCalledWith('latest-delivery');
+    } finally {
+      window.asteriumArtifacts = previous;
+    }
+  });
+
   it('searches visible bodies in the current chat, highlights matches and clears the query when switching chats', async () => {
     const state = createTestState();
     state.conversations[0].messages[0].content = '第一条含 **Al**pha 和 alpha。';

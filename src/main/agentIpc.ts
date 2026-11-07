@@ -1942,7 +1942,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         sizeBytes: registered.delivery.sizeBytes,
       });
     }
-    return { ...event, source: undefined, artifactId: info.id, artifactRef: info.id, name: info.name, mediaType: info.mediaType, sizeBytes: info.sizeBytes, sourceKind: info.sourceKind, registrationMethod: info.registrationMethod, availability: info.availability, cached: info.cached };
+    return { ...event, source: undefined, artifactId: info.id, artifactRef: info.id, name: info.name, mediaType: info.mediaType, sizeBytes: info.sizeBytes, sourceKind: info.sourceKind, registrationMethod: info.registrationMethod, availability: info.availability, cached: info.cached, localSourceKey: info.localSourceKey };
   };
   const runCoordinator = new RunCoordinator(host, {
     prepare: async (command) => {

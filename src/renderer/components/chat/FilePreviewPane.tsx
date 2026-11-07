@@ -32,7 +32,7 @@ export function FilePreviewPane({ tabs, activeId, onActive, onClose, onMinimize 
     <header className="preview-tabs" role="tablist">
       {tabs.map((tab) => <button className={tab.id === active.id ? 'active' : ''} type="button" role="tab" aria-selected={tab.id === active.id} key={tab.id} onClick={() => onActive(tab.id)}><span>{tab.name}</span><i role="button" tabIndex={0} aria-label={`关闭 ${tab.name}`} onClick={(event) => { event.stopPropagation(); onClose(tab.id); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.stopPropagation(); onClose(tab.id); } }}><X size={13} /></i></button>)}
     </header>
-    <div className="preview-content scroll-region">{active.error ? <PreviewFallback tab={active} message={active.error} /> : !active.content ? <div className="preview-loading">正在读取文件…</div> : <PreviewContent key={active.id} tab={active} />}</div>
+    <div className="preview-content">{active.error ? <PreviewFallback tab={active} message={active.error} /> : !active.content ? <div className="preview-loading">正在读取文件…</div> : <PreviewContent key={active.id} tab={active} />}</div>
   </section>;
 }
 

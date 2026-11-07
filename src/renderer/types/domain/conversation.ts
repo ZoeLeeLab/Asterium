@@ -79,6 +79,7 @@ export interface ConversationArtifact {
   registrationMethod?: ArtifactRegistrationMethod;
   availability?: ArtifactAvailability;
   cached?: boolean;
+  localSourceKey?: string;
 }
 
 export interface Conversation {

@@ -309,6 +309,8 @@ export interface FileProducedEvent extends AdapterEventBase {
   registrationMethod?: ArtifactRegistrationMethod;
   availability?: ArtifactAvailability;
   cached?: boolean;
+  /** Opaque local file identity assigned by Main for the delivery list. */
+  localSourceKey?: string;
 }
 
 export interface ReasoningStartedEvent extends AdapterEventBase {

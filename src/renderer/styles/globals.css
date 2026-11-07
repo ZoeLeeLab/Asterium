@@ -708,7 +708,8 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .preview-tabs span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-tabs i { display: grid; flex: 0 0 auto; width: 18px; height: 18px; place-items: center; border-radius: 4px; }
 .preview-tabs i:hover { background: var(--surface-hover); }
-.preview-content { flex: 1; min-height: 0; overflow: auto; color: var(--text); }
+.preview-content { flex: 1; min-height: 0; overflow: auto; color: var(--text); scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.preview-content:hover, .preview-content:focus-within { scrollbar-color: color-mix(in srgb,var(--accent) 45%,transparent) transparent; }
 .preview-markdown h1, .preview-markdown h2, .preview-markdown h3 { color: var(--text-strong); }
 .preview-markdown, .preview-text { padding: 24px; }
 .preview-text { margin: 0; color: var(--text); font: calc(12px * var(--ui-font-scale,1))/1.65 Consolas,monospace; white-space: pre-wrap; }

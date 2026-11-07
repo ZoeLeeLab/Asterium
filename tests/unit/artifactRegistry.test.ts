@@ -1,5 +1,5 @@
 import { testRm as rm } from '../helpers/autoTest.mjs';
-import { mkdtemp, readFile, rename, truncate, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, truncate, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -41,11 +41,21 @@ describe('ArtifactRegistry', () => {
 
     const automatic = await registry.register({ kind: 'local_path', path: file }, { id: 'automatic-file', runId: 'run-1', conversationId: 'conversation-1', method: 'automatic' });
     const explicit = await registry.register({ kind: 'local_path', path: file }, { id: 'explicit-delivery', runId: 'run-1', conversationId: 'conversation-1', method: 'deliver_tool' });
-    const nextRun = await registry.register({ kind: 'local_path', path: file }, { id: 'next-run-delivery', runId: 'run-2', conversationId: 'conversation-1', method: 'deliver_tool' });
+    const nextRun = await registry.register({ kind: 'local_path', path: 'final.md' }, { id: 'next-run-delivery', baseDirectory: root, runId: 'run-2', conversationId: 'conversation-1', method: 'deliver_tool' });
+    const otherDirectory = path.join(root, 'other');
+    await mkdir(otherDirectory);
+    const otherFile = path.join(otherDirectory, 'final.md');
+    await writeFile(otherFile, '# separate delivery', 'utf8');
+    const sameName = await registry.register({ kind: 'local_path', path: otherFile }, { id: 'same-name', runId: 'run-2', conversationId: 'conversation-1', method: 'deliver_tool' });
 
     expect(explicit.id).toBe(automatic.id);
     expect(nextRun.id).toBe('next-run-delivery');
-    expect(await registry.listConversation('conversation-1')).toHaveLength(2);
+    expect(automatic.localSourceKey).toMatch(/^[a-f0-9]{64}$/);
+    expect(nextRun.localSourceKey).toBe(automatic.localSourceKey);
+    expect(sameName.localSourceKey).not.toBe(automatic.localSourceKey);
+    const restored = new ArtifactRegistry({ storePath: path.join(root, '.state', 'artifacts.json') });
+    expect(await restored.inspect('automatic-file')).toMatchObject({ localSourceKey: nextRun.localSourceKey });
+    expect(await restored.listConversation('conversation-1')).toHaveLength(3);
   });
 
   it('keeps delivery history when the original local file moves', async () => {

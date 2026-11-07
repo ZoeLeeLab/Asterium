@@ -192,6 +192,7 @@ export interface ArtifactInfo {
   createdAt: string;
   partnerId?: string;
   conversationId?: string;
+  localSourceKey?: string;
 }
 
 export interface ArtifactReadResult {
