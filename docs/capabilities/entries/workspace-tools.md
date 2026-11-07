@@ -17,6 +17,7 @@
     "src/main/api/extensions/ExtensionLaunchBackend.ts",
     "src/main/security/PartnerWorkspaceStore.ts",
     "src/main/security/ArtifactRegistry.ts",
+    "src/main/security/ArtifactBrowserLink.ts",
     "src/main/execution/ExecutionBackendRouter.ts",
     "src/main/execution/NativeCommandApproval.ts",
     "src/main/execution/SandboxExtensionLaunchBackend.ts",
@@ -41,6 +42,7 @@
     "tests/unit/executionPermissions.test.ts",
     "tests/unit/partnerWorkspaceStore.test.ts",
     "tests/unit/artifactRegistry.test.ts",
+    "tests/unit/artifactBrowserLink.test.ts",
     "tests/unit/executionBackendRouter.test.ts",
     "tests/unit/sandboxCommand.test.ts",
     "tests/unit/sandboxProcessProtocol.test.ts",
@@ -69,7 +71,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "106b5506be670d43f97ef85ff8c4d3d424834a55"
+  "lastVerifiedCommit": "3200c9d4b7fbd4942029504c90bff4d3b15cd560"
 }
 ---
 
@@ -85,7 +87,7 @@
 
 当前开发源码支持右键单聊里的交付文件、工具生成图片入口、预览图片或标签页，也可右键交付列表。菜单可另存为、打开所在文件夹、用默认浏览器打开或保存到项目。聊天和预览入口可展开右栏，滚动到「文件与交付」对应条目。同路径的旧交付定位到当前最新一条。文件在本机时定位原文件，远端或内联文件定位星丛缓存。
 
-浏览器入口由桌面主进程按已登记的交付 ID 解析文件，只向本机回环地址提供带随机令牌的单文件只读链接，两分钟后停止接受请求。常见图片、PDF 和纯文本可在浏览器中显示，HTML、Office 和其他格式以下载方式提供。本段对应待绑定的开发源码，核验使用合成文件和模拟桥接，安装版验收单独记录。
+浏览器入口由桌面主进程按已登记的交付 ID 解析文件，只向本机回环地址提供带随机令牌的单文件只读链接，两分钟后停止接受请求。常见图片、PDF 和纯文本可在浏览器中显示，HTML、Office 和其他格式以下载方式提供。Beta.5 代码基线通过合成文件和模拟桥接检查。交付菜单按打开与定位、保存、删除分组。安装版验收单独记录。
 
 ## 聊天附件拖放与粘贴
 
