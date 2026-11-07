@@ -103,49 +103,67 @@ function ActionGroup({ rows, partnerName, onOpenArtifact }: {
   partnerName: string;
   onOpenArtifact: (artifactId: string) => void;
 }) {
-  const mcpRows = rows.filter((row): row is ActionRow => row.kind !== 'file'
-    && actionCategory(row) === 'mcp');
-  const fileActionRows = rows.filter((row): row is ActionRow => row.kind !== 'file'
-    && ['file_read', 'file_write'].includes(actionCategory(row)));
-  if (mcpRows.length || fileActionRows.length) return <>
-    {rows.filter((row) => !mcpRows.includes(row as ActionRow)).map((row) => <TimelineRow key={row.id} row={row} partnerName={partnerName} onResolveAuthorization={() => undefined} onResolveUserInput={() => undefined} onOpenArtifact={onOpenArtifact} />)}
-    {mcpRows.length > 0 && <McpOperationGroup rows={mcpRows} partnerName={partnerName} onOpenArtifact={onOpenArtifact} />}
+  const renderRow = (row: ActionClusterRow) => <TimelineRow key={row.id} row={row} partnerName={partnerName}
+    onResolveAuthorization={() => undefined} onResolveUserInput={() => undefined} onOpenArtifact={onOpenArtifact} />;
+  const actions = rows.filter((row): row is ActionRow => row.kind !== 'file');
+  const groups = actions.map(actionGroupCategory);
+  const repeated = actions.length === 3 && groups.every(group => group.key === groups[0].key);
+  if (actions.length <= 3 && !repeated) return <>{rows.map(renderRow)}</>;
+
+  const counts = new Map<string, number>();
+  for (const { label } of groups) counts.set(label, (counts.get(label) ?? 0) + 1);
+  const label = [...counts].map(([name, count]) => `${name} ${count} 次`).join(' · ');
+  const running = actions.filter(row => row.state === 'running').length;
+  const failed = actions.filter(row => row.state === 'failure').length;
+  const state = running ? 'running' : failed ? 'failure' : 'success';
+
+  return <>
+    <details className={`timeline-tool-group state-${state}`}>
+      <summary>
+        <span>
+          {label}
+          {running > 0 && <span className="timeline-tool-group__running"> · 正在执行 {running} 条</span>}
+          {failed > 0 && <span className="timeline-tool-group__failure"> · {failed} 次失败</span>}
+        </span>
+        <OutcomeIcon state={state} /><ChevronDown size={12} />
+      </summary>
+      <div className="timeline-tool-group__body">{actions.map(renderRow)}</div>
+    </details>
+    {rows.filter(row => row.kind === 'file').map(renderRow)}
   </>;
-  if (rows.length === 1) return <TimelineRow row={rows[0]} partnerName={partnerName} onResolveAuthorization={() => undefined} onResolveUserInput={() => undefined} onOpenArtifact={onOpenArtifact} />;
-  const running = rows.some((row) => row.state === 'running');
-  const failed = rows.some((row) => row.state === 'failure');
-  const state = failed ? 'failure' : running ? 'running' : 'success';
-  const tools = rows.filter((row) => row.kind !== 'file').length;
-  const files = rows.length - tools;
-  const label = [tools ? `${tools} 个工具` : '', files ? `${files} 个文件` : ''].filter(Boolean).join(' · ');
-  return <details className={`timeline-tool-group state-${state}`} open={running}>
-    <summary><span>{label}</span><OutcomeIcon state={state} /><ChevronDown size={12} /></summary>
-    <div className="timeline-tool-group__body">
-      {rows.map((row) => <TimelineRow key={row.id} row={row} partnerName={partnerName} onResolveAuthorization={() => undefined} onResolveUserInput={() => undefined} onOpenArtifact={onOpenArtifact} />)}
-    </div>
-  </details>;
 }
 
-function McpOperationGroup({ rows, partnerName, onOpenArtifact }: {
-  rows: ActionRow[];
-  partnerName: string;
-  onOpenArtifact: (artifactId: string) => void;
-}) {
-  const running = rows.some((row) => row.state === 'running');
-  const failed = rows.some((row) => row.state === 'failure');
-  const state = failed ? 'failure' : running ? 'running' : 'success';
-  const label = running
-    ? `${partnerName}正在使用工具…`
-    : failed
-      ? '工具使用失败'
-      : '工具使用完成';
+const actionGroupLabels: Record<ToolSemantic, string> = {
+  generic: '其他工具',
+  file_read: '读取文件',
+  file_write: '写入文件',
+  directory_list: '查看目录',
+  local_search: '搜索文件',
+  delete: '删除内容',
+  command: '电脑操作',
+  web: '查资料',
+  computer: '电脑操作',
+  image_generation: '画图',
+  collaboration: '协作',
+  delegate_dispatch: '派出小弟',
+  delegate_wait: '等待汇报',
+  extension: '扩展能力',
+  message_send: '发送消息',
+  reminder_create: '创建提醒',
+  notebook: '项目笔记',
+  task_contract: '项目任务',
+  automation: '自动化任务',
+  mcp_install: '配置 MCP',
+  skill_run: '运行脚本',
+  workspace: '工作区设置',
+};
 
-  return <details className={`timeline-tool-group timeline-tool-group--mcp state-${state}`} open={running}>
-    <summary><span>{label}</span><OutcomeIcon state={state} /><ChevronDown size={12} /></summary>
-    <div className="timeline-tool-group__body">
-      {rows.map((row) => <TimelineRow key={row.id} row={row} partnerName={partnerName} onResolveAuthorization={() => undefined} onResolveUserInput={() => undefined} onOpenArtifact={onOpenArtifact} />)}
-    </div>
-  </details>;
+function actionGroupCategory(row: ActionRow) {
+  const { category, semantic } = actionPresentation(row);
+  const label = actionGroupLabels[semantic];
+  if (semantic !== 'generic') return { label, key: label };
+  const name = row.kind === 'tool' ? row.presentationName ?? row.toolName : undefined;
+  return { label: category === 'mcp' ? 'MCP 工具' : label, key: name?.toLowerCase() || row.toolCallId };
 }
 
 function OutcomeIcon({ state }: { state: 'running' | 'success' | 'failure' }) {

@@ -247,15 +247,61 @@ describe('user-facing runtime presentation', () => {
       onOpenArtifact={vi.fn()}
     />);
 
-    const summary = screen.getByText('工具使用完成').closest('summary');
-    const details = summary?.closest('details');
-    expect(details).not.toHaveAttribute('open');
-    fireEvent.click(summary!);
-    expect(details).toHaveAttribute('open');
     expect(screen.queryByText(/ombre_brain|remember/)).not.toBeInTheDocument();
     expect(screen.queryByText(/mail|send_message/)).not.toBeInTheDocument();
-    expect(screen.getByText('本地伙伴把消息发出去了')).toBeInTheDocument();
-    expect(screen.getByText('本地伙伴冲浪回来了')).toBeInTheDocument();
+    expect(screen.getByText('本地伙伴把消息发出去了')).toBeVisible();
+    expect(screen.getByText('本地伙伴冲浪回来了')).toBeVisible();
+  });
+
+  it('folds three repeated operations while keeping a separate short mixed segment inline', () => {
+    const timeline: NonNullable<Message['timeline']> = [
+      ...['first', 'second', 'third'].map((id, sequence) => ({
+        id, sequence, kind: 'tool' as const, toolCallId: id, toolName: 'commandExecution', summary: '运行命令', state: 'success' as const,
+      })),
+      { id: 'text', sequence: 3, kind: 'text', text: '继续检查。' },
+      { id: 'read', sequence: 4, kind: 'tool', toolCallId: 'read', toolName: 'Read', summary: '读取文件', state: 'success' },
+      { id: 'web', sequence: 5, kind: 'tool', toolCallId: 'web', toolName: 'web_search', summary: '查资料', state: 'success' },
+      { id: 'image', sequence: 6, kind: 'tool', toolCallId: 'image', toolName: 'imageGeneration', summary: '画图', state: 'success' },
+    ];
+    render(<TurnTimeline message={{ ...baseMessage, timeline }} partnerName="测试伙伴"
+      onResolveAuthorization={vi.fn()} onResolveUserInput={vi.fn()} onOpenArtifact={vi.fn()} />);
+    const summary = screen.getByText('电脑操作 3 次').closest('summary')!;
+    expect(summary.parentElement).not.toHaveAttribute('open');
+    expect(screen.getByText('测试伙伴看完 文件 了')).toBeVisible();
+    expect(screen.getByText('测试伙伴冲浪回来了')).toBeVisible();
+    expect(screen.getByText('测试伙伴把图片画好了')).toBeVisible();
+    fireEvent.click(summary);
+    expect(summary.parentElement).toHaveAttribute('open');
+    expect(within(summary.parentElement!).getAllByText('测试伙伴从电脑里忙完回来了')).toHaveLength(3);
+  });
+
+  it('keeps a long mixed segment collapsed through progress while exposing failures and file deliveries', () => {
+    const timeline: NonNullable<Message['timeline']> = [
+      { id: 'read', sequence: 1, kind: 'tool', toolCallId: 'read', toolName: 'read_file', summary: '读取文件', state: 'success' },
+      { id: 'web', sequence: 2, kind: 'tool', toolCallId: 'web', toolName: 'mcp__fixture__web_search', summary: '查资料', state: 'success' },
+      { id: 'command', sequence: 3, kind: 'tool', toolCallId: 'command', toolName: 'Bash', summary: '运行命令', state: 'failure' },
+      { id: 'image', sequence: 4, kind: 'tool', toolCallId: 'image', toolName: 'imageGeneration', summary: '画图', state: 'running' },
+      { id: 'delivery', sequence: 5, kind: 'file', artifactId: 'output', name: '结果.md', summary: '交付文件', state: 'success' },
+    ];
+    const props = { partnerName: '测试伙伴', onResolveAuthorization: vi.fn(), onResolveUserInput: vi.fn(), onOpenArtifact: vi.fn() };
+    const view = render(<TurnTimeline {...props} message={{ ...baseMessage, timeline }} />);
+    const summary = screen.getByText('读取文件 1 次 · 查资料 1 次 · 电脑操作 1 次 · 画图 1 次').closest('summary')!;
+    const details = summary.parentElement!;
+    expect(details).not.toHaveAttribute('open');
+    expect(within(summary).getByText(/正在执行 1 条/)).toBeVisible();
+    expect(within(summary).getByText(/1 次失败/)).toBeVisible();
+    expect(screen.getByRole('button', { name: /结果\.md/ })).toBeVisible();
+
+    fireEvent.click(summary);
+    expect([...details.querySelectorAll('.timeline-operation > span')].map(row => row.textContent)).toEqual([
+      '测试伙伴看完 文件 了', '测试伙伴冲浪回来了', '电脑操作没有完成', '测试伙伴正在画图…',
+    ]);
+    view.rerender(<TurnTimeline {...props} message={{ ...baseMessage, timeline: [...timeline,
+      { id: 'image-end', sequence: 6, kind: 'tool', toolCallId: 'image', summary: '画图结束', state: 'success' },
+    ] }} />);
+    expect(details).toHaveAttribute('open');
+    expect(within(summary).queryByText(/正在执行/)).not.toBeInTheDocument();
+    expect(within(summary).getByText(/1 次失败/)).toBeVisible();
   });
 
   it('hides status tools and turns deliver_file into only the independent delivery card', () => {
