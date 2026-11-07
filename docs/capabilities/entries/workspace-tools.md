@@ -31,7 +31,9 @@
     "src/main/project/ProjectWorkspaceStore.ts",
     "src/main/settings/projectDirectory.ts",
     "src/preload/preload.ts",
-    "src/renderer/components/ui/useAttachmentTransfer.ts"
+    "src/renderer/components/ui/useAttachmentTransfer.ts",
+    "src/renderer/pages/ChatPage.tsx",
+    "src/renderer/components/chat/FilePreviewPane.tsx"
   ],
   "tests": [
     "tests/unit/apiAgentTools.test.ts",
@@ -53,7 +55,9 @@
     "tests/unit/projectWorkspaceStore.test.ts",
     "tests/unit/generalSettings.test.ts",
     "tests/renderer/StorageSettings.test.tsx",
-    "tests/renderer/StudioComposer.test.tsx"
+    "tests/renderer/StudioComposer.test.tsx",
+    "tests/renderer/NavigationFlows.test.tsx",
+    "tests/renderer/FilePreviewPane.test.tsx"
   ],
   "docs": [
     "docs/release-status.md",
@@ -65,7 +69,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "efeb5445bf93510e2d3871aaee831aadfccad880"
+  "lastVerifiedCommit": "0f6ddd63142ab219c3d0c453f74fe6ef3dc50131"
 }
 ---
 
@@ -77,7 +81,7 @@
 
 ## 单聊文件与交付
 
-右侧「文件与交付」在当前单聊内按本地文件路径归组，显示同一路径最近一次交付及交付时间。不同路径的同名文件仍分开显示。聊天里的交付记录按原轮次保留，本地交付仍预览原文件当前内容。此项显示规则在工作区核验，`lastVerifiedCommit` 仍指向已提交的能力基线。
+右侧「文件与交付」在当前单聊内按本地文件路径归组，显示同一路径最近一次交付及交付时间。不同路径的同名文件仍分开显示。聊天里的交付记录按原轮次保留，本地交付仍预览原文件当前内容。文件预览固定预留滚动条宽度。交付分组与时间使用合成数据验证，预览区在 Chromium 中实测正文布局稳定。
 
 ## 聊天附件拖放与粘贴
 
