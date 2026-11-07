@@ -54,7 +54,7 @@
     "docs/studio-attachments.md",
     "docs/existing-partner-review-v1.md"
   ],
-  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
+  "lastVerifiedCommit": "f701024065c07f8da6146cb518e8666448079965"
 }
 ---
 
