@@ -40,7 +40,7 @@
     "docs/claude-cli-compatibility.md",
     "docs/claude-cli-release-blocker.md"
   ],
-  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
+  "lastVerifiedCommit": "106b5506be670d43f97ef85ff8c4d3d424834a55"
 }
 ---
 
