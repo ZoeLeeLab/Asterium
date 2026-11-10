@@ -67,6 +67,7 @@ import { friendlyRuntimeErrorMessage } from '../app/runtimeErrorPresentation';
 import type { FileDeletionInspection } from '../../shared/projectWorkspace';
 
 type ChatOverlay = 'new-chat' | 'rename-chat' | 'archive-chat' | 'archive-partner' | 'save-artifact' | 'diary' | null;
+const emptyDelegationBatches: DelegationBatchView[] = [];
 
 export function ChatPage() {
   const rails = useCollapsibleRails('chat');
@@ -129,7 +130,8 @@ export function ChatPage() {
   const [partnerArchiveTargetId, setPartnerArchiveTargetId] = useState('');
   const activeConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
   const activeConversationId = activeConversation?.id;
-  const [delegationBatches, setDelegationBatches] = useState<DelegationBatchView[]>([]);
+  const [delegationSnapshot, setDelegationSnapshot] = useState<{ conversationId: string; batches: DelegationBatchView[] }>();
+  const delegationBatches = delegationSnapshot && delegationSnapshot.conversationId === activeConversationId ? delegationSnapshot.batches : emptyDelegationBatches;
   const [delegationError, setDelegationError] = useState('');
   const chatRows = useMemo(() => buildChatRows(activeConversation, delegationBatches), [activeConversation, delegationBatches]);
   useEffect(() => {
@@ -137,12 +139,19 @@ export function ChatPage() {
     if (!activeConversationId || !bridge) return;
     let disposed = false;
     let reading = false;
+    let previousSignature: string | undefined;
     const refresh = async () => {
       if (reading) return;
       reading = true;
       try {
         const batches = await bridge.list(activeConversationId);
-        if (!disposed) setDelegationBatches(batches);
+        if (disposed) return;
+        // IPC returns a new array even if the displayed records haven't changed.
+        const signature = JSON.stringify(batches);
+        if (signature !== previousSignature) {
+          previousSignature = signature;
+          setDelegationSnapshot((current) => !current && !batches.length ? current : { conversationId: activeConversationId, batches });
+        }
       } catch {
         if (!disposed) setDelegationError('委派记录暂时无法读取。');
       } finally {
