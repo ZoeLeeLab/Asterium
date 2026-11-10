@@ -23,6 +23,8 @@
     "src/main/main.ts",
     "src/renderer/app/sendShortcut.ts",
     "src/renderer/components/chat/ConversationSearch.tsx",
+    "src/renderer/components/chat/TurnNavigator.tsx",
+    "src/renderer/components/chat/MarkdownContent.tsx",
     "src/renderer/components/layout/AppNavigation.tsx",
     "src/renderer/pages/ChatPage.tsx",
     "src/main/settings/DesktopNotifications.ts",
@@ -62,6 +64,7 @@
     "tests/general-settings-smoke.mjs",
     "tests/renderer/SendShortcut.test.tsx",
     "tests/renderer/NavigationFlows.test.tsx",
+    "tests/long-chat-browser.mjs",
     "tests/unit/desktopNotifications.test.ts",
     "tests/renderer/DesktopNotificationNavigation.test.tsx",
     "tests/unit/executionBackendRouter.test.ts",
@@ -96,7 +99,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
+  "lastVerifiedCommit": "491c09e4e30e53b3dc80f179a79025c192ba3e40"
 }
 ---
 
@@ -111,6 +114,14 @@
 单聊顶部的放大镜可搜索当前对话中渲染的消息正文。搜索栏按匹配消息计数，高亮关键词，支持用上下箭头按钮或 Enter、Shift+Enter 跳转。Esc 可关闭搜索栏。切换单聊时清空关键词。左栏的聊天记录搜索按对话筛选，工具卡、引用卡和附件名不计入当前正文搜索。
 
 当前搜索核验绑定代码提交 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。67 项相关渲染层测试通过。另用独立 Chromium 环境确认跨 Markdown 行内格式高亮、定位和键盘操作。当前单聊搜索随 Beta.3 安装包交付。
+
+## 浏览单聊回合
+
+当前开发源码的单聊回合刻度在消息区左边独立滚动，隐藏滚动条。打开长聊天时从最近回合附近开始，滚轮或触控板可查看更早的回合，鼠标悬停可看摘要。点击或用方向键、Enter 选中刻度可以跳到对应消息。
+
+`node tests/long-chat-browser.mjs` 使用生产构建的渲染器和 300 轮合成对话，验证刻度高度、独立滚动、悬停摘要、点击与键盘跳转，以及回复中跳到旧回合后不会被拉回底部。测试同时确认委派记录实际变化时仍更新界面，并检查空闲、流式回复中和 Chromium 中文组字输入。委派快照内容未变时跳过刷新，旧消息的 Markdown 内容不变时复用渲染。中文组字通过浏览器注入，未做 Windows 原生输入法或安装包人工验收。
+
+本轮核验绑定已存在的代码提交 `491c09e4e30e53b3dc80f179a79025c192ba3e40`。最终浏览器样本中，三种输入场景都未出现达到 50 毫秒的主线程长任务，回复样本期间收到 68 个合成片段。81 项相关渲染层测试、类型检查及改动范围的 lint 通过。
 
 ## 截图快捷键
 

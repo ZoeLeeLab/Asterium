@@ -16,7 +16,7 @@
 - [OpenAI Responses](entries/api-responses.md)
 - [API 会话与手动压缩](entries/api-sessions.md)
 - [通用自动化](entries/automations.md)
-- [桌面通用设置](entries/desktop-settings.md)（含截图快捷键和当前单聊搜索）
+- [桌面通用设置](entries/desktop-settings.md)（含截图快捷键、当前单聊搜索和回合导航）
 - [伙伴记忆](entries/memory.md)（含旧对话文本导入）
 - [伙伴接入](entries/partners.md)（含本机 Codex 单聊模型切换和 CyberBoss 单聊附件）
 - [运行状态、项目与协作工具](entries/runtime-tools.md)（含接回伙伴 Markdown 复核及宿主接线契约）
