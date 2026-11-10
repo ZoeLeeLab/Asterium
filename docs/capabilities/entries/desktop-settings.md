@@ -24,6 +24,8 @@
     "src/renderer/app/sendShortcut.ts",
     "src/renderer/components/chat/ConversationSearch.tsx",
     "src/main/conversation/SingleChatHistoryStore.ts",
+    "src/main/conversation/SingleChatHistoryIndex.ts",
+    "src/renderer/app/useSingleChatTimeline.ts",
     "src/renderer/components/chat/TurnNavigator.tsx",
     "src/renderer/components/chat/MarkdownContent.tsx",
     "src/renderer/components/layout/AppNavigation.tsx",
@@ -68,6 +70,7 @@
     "tests/long-chat-browser.mjs",
     "tests/renderer/SingleChatHistoryCutover.test.tsx",
     "tests/single-chat-history-electron.mjs",
+    "tests/unit/singleChatHistoryIndex.test.ts",
     "tests/unit/desktopNotifications.test.ts",
     "tests/renderer/DesktopNotificationNavigation.test.tsx",
     "tests/unit/executionBackendRouter.test.ts",
@@ -87,6 +90,7 @@
   "docs": [
     "docs/release-status.md",
     "docs/single-chat-storage-stage-2.md",
+    "docs/single-chat-storage-stage-3.md",
     "docs/data-isolation.md",
     "docs/development-and-validation.md",
     "docs/releases/0.1.0-beta.1-r1.md",
@@ -103,7 +107,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "3861b7aa80b6411bf718d50fd4224c647f836877"
+  "lastVerifiedCommit": "36831b1bdf2fce3e70fc19532fc6d12db27ba3c0"
 }
 ---
 
@@ -189,4 +193,4 @@ lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已�
 
 ## 单聊分页和历史搜索（当前工作区）
 
-桌面用可重建的本地 SQLite 索引定位会话历史。启动只加载当前会话的近期正文，旧页可按需翻阅，支持中文历史搜索和跳转。左侧刻度仍可滚动和点选。代码与验收边界见 [第三阶段记录](../../single-chat-storage-stage-3.md)。结构化来源保留已经核验的第二阶段提交。
+桌面用可重建的本地 SQLite 索引定位会话历史。启动只加载当前会话的近期正文，旧页可按需翻阅，支持中文历史搜索和跳转。左侧刻度仍可滚动和点选。代码与验收边界见 [第三阶段记录](../../single-chat-storage-stage-3.md)。结构化来源绑定已经核验的第三阶段提交。
