@@ -25,6 +25,8 @@
     "src/renderer/components/chat/ConversationSearch.tsx",
     "src/main/conversation/SingleChatHistoryStore.ts",
     "src/main/conversation/SingleChatHistoryIndex.ts",
+    "src/main/conversation/SingleChatToolOutputs.ts",
+    "src/renderer/components/chat/TurnTimeline.tsx",
     "src/renderer/app/useSingleChatTimeline.ts",
     "src/renderer/components/chat/TurnNavigator.tsx",
     "src/renderer/components/chat/MarkdownContent.tsx",
@@ -71,6 +73,7 @@
     "tests/renderer/SingleChatHistoryCutover.test.tsx",
     "tests/single-chat-history-electron.mjs",
     "tests/unit/singleChatHistoryIndex.test.ts",
+    "tests/unit/singleChatHistoryStore.test.ts",
     "tests/unit/desktopNotifications.test.ts",
     "tests/renderer/DesktopNotificationNavigation.test.tsx",
     "tests/unit/executionBackendRouter.test.ts",
@@ -91,6 +94,7 @@
     "docs/release-status.md",
     "docs/single-chat-storage-stage-2.md",
     "docs/single-chat-storage-stage-3.md",
+    "docs/single-chat-storage-stage-4.md",
     "docs/data-isolation.md",
     "docs/development-and-validation.md",
     "docs/releases/0.1.0-beta.1-r1.md",
@@ -107,7 +111,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "36831b1bdf2fce3e70fc19532fc6d12db27ba3c0"
+  "lastVerifiedCommit": "bc819887e1a2703101b60f92a78ee30e084994d4"
 }
 ---
 
@@ -195,6 +199,6 @@ lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已�
 
 桌面用可重建的本地 SQLite 索引定位会话历史。启动只加载当前会话的近期正文，旧页可按需翻阅，支持中文历史搜索和跳转。左侧刻度仍可滚动和点选。代码与验收边界见 [第三阶段记录](../../single-chat-storage-stage-3.md)。结构化来源绑定已经核验的第三阶段提交。
 
-## 大型单聊工具输出（第四阶段工作区）
+## 大型单聊工具输出（第四阶段）
 
-大型工具详情在星丛当前资料目录按单聊保存。聊天日志和 SQLite 只保存展示信息及引用，展开后才按段读取。保存失败沿用聊天历史的重试和错误提示，删除单聊会清理它的输出文件。核验来源仍为已经提交的第三阶段，第四阶段范围见 [实施与验证记录](../../single-chat-storage-stage-4.md)。
+大型工具详情在星丛当前资料目录按单聊保存。聊天日志和 SQLite 只保存展示信息及引用，展开后才按段读取。保存失败沿用聊天历史的重试和错误提示，删除单聊会清理它的输出文件。核验来源为已存在的第四阶段代码提交，实施范围见 [实施与验证记录](../../single-chat-storage-stage-4.md)。

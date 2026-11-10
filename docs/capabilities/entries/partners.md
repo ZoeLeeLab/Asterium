@@ -18,6 +18,7 @@
   "codeEntries": [
     "src/main/adapters/CodexCliAdapter.ts",
     "src/renderer/app/nativeCodexHistory.ts",
+    "src/shared/codexHistory.ts",
     "src/main/adapters/ClaudeCodeAdapter.ts",
     "src/main/adapters/ExistingThreadAdapter.ts",
     "src/main/adapters/CyberBossBridgeClient.ts",
@@ -29,6 +30,8 @@
   "tests": [
     "tests/unit/codexCliAdapter.test.ts",
     "tests/unit/nativeCodexHistory.test.ts",
+    "tests/renderer/SingleChatHistoryCutover.test.tsx",
+    "tests/unit/apiAgentRuntime.test.ts",
     "tests/long-chat-browser.mjs",
     "tests/unit/claudeCodeAdapter.test.ts",
     "tests/unit/existingThreadAdapter.test.ts",
@@ -41,10 +44,11 @@
   "docs": [
     "docs/capabilities/schema.md",
     "docs/single-chat-storage-stage-1.md",
+    "docs/single-chat-storage-stage-4.md",
     "docs/claude-cli-compatibility.md",
     "docs/claude-cli-release-blocker.md"
   ],
-  "lastVerifiedCommit": "323cfab7f9c0d95569b1b0c252027cae6c9f4db8"
+  "lastVerifiedCommit": "bc819887e1a2703101b60f92a78ee30e084994d4"
 }
 ---
 
@@ -87,6 +91,6 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 
 在单聊右侧伙伴卡的「选择模型」和「思考强度」中调整 Codex。模型列表由该伙伴已绑定的运行环境提供。选择按对话保存，从下一条消息起使用，并在同一个原生线程续聊。正在运行的轮次保留开始时的选择，计划修订和确认执行沿用这份选择。
 
-## 本机 Codex 原线程搜索（第四阶段工作区）
+## 本机 Codex 原线程搜索（第四阶段）
 
-当前单聊搜索可查找只在已绑定 Codex 原线程中的消息，并定位到命中的历史页。搜索通过所选本机运行时只读分页，继续校验单聊绑定和工作区授权。原线程暂不可读时可切换到星丛记录。核验提交仍沿用已有记录，第四阶段范围见 [实施与验证记录](../../single-chat-storage-stage-4.md)。
+当前单聊搜索可查找只在已绑定 Codex 原线程中的消息，并定位到命中的历史页。搜索通过所选本机运行时只读分页，继续校验单聊绑定和工作区授权。原线程暂不可读时可切换到星丛记录。核验来源为已存在的第四阶段代码提交，实施范围见 [实施与验证记录](../../single-chat-storage-stage-4.md)。
