@@ -12,13 +12,11 @@ export function useSingleChatTimeline(conversation: Conversation | undefined, re
   const partnerId = conversation?.partnerId;
   const [timeline, setWindow] = useState<TimelineWindow>();
   const [busyId, setBusyId] = useState<string>();
-  const [failedId, setFailedId] = useState<string>();
   const [windowId, setWindowId] = useState(id);
   if (windowId !== id) {
     setWindowId(id);
     setWindow(undefined);
     setBusyId(undefined);
-    setFailedId(undefined);
   }
   const activeId = useRef(id);
   const requestNumber = useRef(0);
@@ -50,14 +48,12 @@ export function useSingleChatTimeline(conversation: Conversation | undefined, re
     const token = ++requestNumber.current;
     pending.current = true;
     setBusyId(id);
-    setFailedId(undefined);
     try {
       const page = await read({ conversationId: id, ...anchor });
       if (activeId.current !== id || requestNumber.current !== token) return false;
       if (!page || !apply(page)) return false;
       return true;
     } catch {
-      if (activeId.current === id && requestNumber.current === token) setFailedId(id);
       return false;
     } finally {
       if (activeId.current === id && requestNumber.current === token) {
@@ -127,15 +123,14 @@ export function useSingleChatTimeline(conversation: Conversation | undefined, re
     requestNumber.current++;
     pending.current = false;
     setBusyId(undefined);
-    setFailedId(undefined);
     setWindow(undefined);
   }, []);
 
   return {
     conversation: displayed, hasOlder, hasNewer, detached,
+    loadOlder, loadNewer, showAround, returnToLatest,
     turnOffset: current?.turnOffset ?? (recentPage?.turnOffset ?? 0)
       + (conversation?.messages.slice(0, localHidden).filter(message => isAsteriumUser(message.authorId)).length ?? 0), loading: Boolean(id && busyId === id),
-    failed: Boolean(id && failedId === id), loadOlder, loadNewer, showAround, returnToLatest,
   };
 }
 

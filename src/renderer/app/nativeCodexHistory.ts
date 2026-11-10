@@ -4,6 +4,8 @@ import { ASTERIUM_USER_ID, isAsteriumUser } from '../../shared/identity';
 import type { Conversation, Message, Partner, TurnTimelineItem } from '../types/domain';
 import { visibleAssistantText } from './messageQuote';
 
+const MAX_VISIBLE_TURNS = 120;
+
 interface HistoryState {
   key: string;
   turns: CodexHistoryTurn[];
@@ -78,7 +80,6 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
       return false;
     }
   }, [key, request]);
-  const [errorKey, setErrorKey] = useState('');
   const [olderKey, setOlderKey] = useState('');
   const olderPending = useRef(new Set<string>());
   const active = Boolean(conversation?.activeRun || conversation?.awaitingFirstResponse);
@@ -95,14 +96,11 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
       try {
         const page = await read(request);
         if (cancelled) return;
-        setErrorKey('');
         setHistory(previous => mergePage(previous, key, page, false));
       } catch (error) {
         if (cancelled) return;
         if (retryBinding && String(error).includes('CODEX_HISTORY_BINDING_UNAVAILABLE')) {
           retry = setTimeout(() => { void refresh(false); }, 300);
-        } else {
-          setErrorKey(key);
         }
       } finally {
         pending = false;
@@ -116,7 +114,7 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
 
   const detached = located?.key === key;
   const current = detached ? located : !browsingLocal && history?.key === key ? history : undefined;
-  const loadOlder = useCallback(async () => {
+  const loadOlder = useCallback(async (beforeApply?: () => void) => {
     const read = window.asteriumAgents?.readCodexHistory;
     const cursor = current?.nextCursor;
     if (!read || !request || !cursor || olderPending.current.has(key)) return;
@@ -126,16 +124,20 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
     try {
       const page = await read({ ...request, cursor });
       if (liveKey.current !== key || revealVersion.current !== version) return;
-      if (detached) setLocated(previous => previous?.key === key && previous.nextCursor === cursor ? { key, ...page } : previous);
-      else setHistory(previous => previous?.key === key && previous.nextCursor === cursor ? mergePage(previous, key, page, true) : previous);
-      setErrorKey(previous => previous === key ? '' : previous);
+      beforeApply?.();
+      const merged = mergePage(current, key, page, true);
+      if (detached || merged.turns.length > MAX_VISIBLE_TURNS) {
+        setLocated({ ...merged, turns: merged.turns.slice(-MAX_VISIBLE_TURNS) });
+      } else {
+        setHistory(previous => previous?.key === key && previous.nextCursor === cursor ? mergePage(previous, key, page, true) : previous);
+      }
     } catch {
-      setErrorKey(key);
+      // The next scroll can retry the same cursor.
     } finally {
       olderPending.current.delete(key);
       setOlderKey(previous => previous === key ? '' : previous);
     }
-  }, [current?.nextCursor, detached, key, request]);
+  }, [current, detached, key, request]);
 
   const visible = useMemo(() => conversation && current?.turns.length
     ? { ...conversation, messages: mergeNativeCodexMessages(detached ? { ...conversation, activeRun: undefined, messages: [] } : conversation, current.turns) }
@@ -143,7 +145,7 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
 
   return {
     conversation: visible, loadOlder, hasOlder: Boolean(current?.nextCursor), loadingOlder: Boolean(key && olderKey === key),
-    unavailable: Boolean(key && errorKey === key), detached, returnToLatest, reveal, search: request && searchBridge ? search : undefined,
+    detached, returnToLatest, reveal, search: request && searchBridge ? search : undefined,
   };
 }
 

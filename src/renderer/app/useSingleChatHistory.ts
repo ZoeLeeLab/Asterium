@@ -61,20 +61,26 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
   const selected = frame.state.activeConversationId;
   const selectedPage = frame.recentPages?.[selected];
   const needsRecent = Boolean(frame.recentPages && selected && !selectedPage);
-  const [recentFailedId, setRecentFailedId] = useState('');
-  const [recentAttempt, setRecentAttempt] = useState(0);
   const readPage = window.asteriumConversations?.readHistoryPage;
 
   useEffect(() => {
     if (!generation || !needsRecent || !readPage) return;
     let live = true;
-    void readPage({ conversationId: selected }).then(page => {
-      if (!live) return;
-      setRecentFailedId('');
-      dispatch({ type: 'historyRecentLoaded', conversationId: selected, page: page ?? { messages: [], hasOlder: false, hasNewer: false } });
-    }).catch(() => { if (live) setRecentFailedId(selected); });
-    return () => { live = false; };
-  }, [generation, needsRecent, readPage, recentAttempt, selected]);
+    let loading = false;
+    const load = () => {
+      if (loading) return;
+      loading = true;
+      void readPage({ conversationId: selected }).then(page => {
+        if (!live) return;
+        dispatch({ type: 'historyRecentLoaded', conversationId: selected, page: page ?? { messages: [], hasOlder: false, hasNewer: false } });
+      }).catch(() => {
+        // Retry on focus while this conversation still has no page.
+      }).finally(() => { loading = false; });
+    };
+    load();
+    window.addEventListener('focus', load);
+    return () => { live = false; window.removeEventListener('focus', load); };
+  }, [generation, needsRecent, readPage, selected]);
 
   useEffect(() => {
     if (!bridge || generation) return;
@@ -131,12 +137,11 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
   }, []);
   const retryStartup = useCallback(() => { setStartupFailed(false); setStartupAttempt(attempt => attempt + 1); }, []);
   const retryWrite = useCallback(() => { setWriteFailed(false); setSendSaveFailed(false); }, []);
-  const retryRecent = useCallback(() => { setRecentFailedId(''); setRecentAttempt(attempt => attempt + 1); }, []);
 
   return {
     state: frame.state, dispatch, managed: Boolean(bridge), ready: !bridge || Boolean(generation), pending: pending.length > 0,
     startupFailed, writeFailed, sendSaveFailed, retryStartup, retryWrite, saveProfile, saveBeforeSend,
-    selectedPage, needsRecent, recentFailed: Boolean(selected && recentFailedId === selected), retryRecent,
+    selectedPage, needsRecent,
   };
 }
 

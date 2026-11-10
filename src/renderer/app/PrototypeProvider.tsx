@@ -1185,8 +1185,6 @@ interface PrototypeContextValue {
   selectConversation: (conversationId: string) => void;
   chatHistoryPage?: import('../../shared/singleChatHistory').SingleChatPageBounds;
   chatHistoryLoading?: boolean;
-  chatHistoryLoadFailed?: boolean;
-  retryChatHistory?: () => void;
   selectProject: (projectId: string) => void;
   refreshProfiles: () => Promise<import('../../shared/agentProtocol').PartnerProfilesSyncResult | undefined>;
   addPartner: (partner: Partner, alreadySaved?: boolean) => void;
@@ -1919,8 +1917,6 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     selectConversation: (conversationId) => dispatch({ type: 'selectConversation', conversationId }),
     chatHistoryPage: chatHistory.selectedPage,
     chatHistoryLoading: chatHistory.needsRecent,
-    chatHistoryLoadFailed: chatHistory.recentFailed,
-    retryChatHistory: chatHistory.retryRecent,
     selectProject: (projectId) => dispatch({ type: 'selectProject', projectId }),
     addPartner: (partner, alreadySaved = false) => {
       if (!alreadySaved && !partner.isPrototype) void window.asteriumAgents?.savePartnerProfile?.(partnerProfileSeed(partner)).catch(() => undefined);
@@ -2492,7 +2488,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       });
     },
     addProjectMember: (projectId, partnerId) => dispatch({ type: 'addProjectMember', projectId, partnerId }),
-  }), [chatHistory.managed, chatHistory.needsRecent, chatHistory.recentFailed, chatHistory.retryRecent, chatHistory.saveBeforeSend, chatHistory.selectedPage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
+  }), [chatHistory.managed, chatHistory.needsRecent, chatHistory.saveBeforeSend, chatHistory.selectedPage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
   return <PrototypeContext.Provider value={value}>
     {conversationAuthorityReady ? children : null}

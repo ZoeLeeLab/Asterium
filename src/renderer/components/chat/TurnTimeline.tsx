@@ -33,7 +33,6 @@ interface DelegationReceipt {
 
 interface TurnTimelineProps {
   message: Message;
-  conversationId?: string;
   delegationReceipts?: DelegationReceipt[];
   partnerName: string;
   pendingAuthorization?: Conversation['pendingAuthorization'];
@@ -60,7 +59,7 @@ type TimelineBlock =
   | { kind: 'delegation'; receipt: DelegationReceipt }
   | { kind: 'entry'; id: string; row: Exclude<ProcessItem, ActionItem | ReasoningItem | FileItem> };
 
-export function TurnTimeline({ message, conversationId, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
+export function TurnTimeline({ message, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
   const timeline = message.timeline ?? [];
   if (!timeline.length) return <div className="turn-timeline">
     {delegationReceipts.map(receipt => <Fragment key={receipt.id}>{receipt.card}</Fragment>)}
@@ -83,7 +82,7 @@ export function TurnTimeline({ message, conversationId, delegationReceipts = [],
       }
       if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} partnerName={partnerName} />;
       if (block.kind === 'delegation') return <Fragment key={block.receipt.id}>{block.receipt.card}</Fragment>;
-      if (block.kind === 'actions') return <ActionGroup key={block.id} rows={block.rows} partnerName={partnerName} onOpenArtifact={onOpenArtifact} conversationId={conversationId} />;
+      if (block.kind === 'actions') return <ActionGroup key={block.id} rows={block.rows} partnerName={partnerName} onOpenArtifact={onOpenArtifact} />;
       return <TimelineRow key={block.id} row={block.row} partnerName={partnerName} pendingAuthorization={pendingAuthorization} pendingUserInput={pendingUserInput} onResolveAuthorization={onResolveAuthorization} onResolveUserInput={onResolveUserInput} onOpenArtifact={onOpenArtifact} />;
     })}
   </div>;
@@ -104,13 +103,12 @@ function QuoteableText({ children, className = '', onQuoteSelection }: { childre
   return <div className={`assistant-quote-source ${className}`.trim()} onContextMenu={handleContextMenu}>{children}</div>;
 }
 
-function ActionGroup({ rows, partnerName, onOpenArtifact, conversationId }: {
-  conversationId?: string;
+function ActionGroup({ rows, partnerName, onOpenArtifact }: {
   rows: ActionClusterRow[];
   partnerName: string;
   onOpenArtifact: (artifactId: string) => void;
 }) {
-  const renderRow = (row: ActionClusterRow) => <TimelineRow key={row.id} row={row} partnerName={partnerName} conversationId={conversationId}
+  const renderRow = (row: ActionClusterRow) => <TimelineRow key={row.id} row={row} partnerName={partnerName}
     onResolveAuthorization={() => undefined} onResolveUserInput={() => undefined} onOpenArtifact={onOpenArtifact} />;
   const actions = rows.filter((row): row is ActionRow => row.kind !== 'file');
   const groups = actions.map(actionGroupCategory);
@@ -179,9 +177,8 @@ function OutcomeIcon({ state }: { state: 'running' | 'success' | 'failure' }) {
   return <Check className="timeline-outcome" size={15} />;
 }
 
-function TimelineRow({ row, partnerName = '伙伴', pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, conversationId }: {
+function TimelineRow({ row, partnerName = '伙伴', pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact }: {
   row: ProcessRow;
-  conversationId?: string;
   partnerName?: string;
   pendingAuthorization?: Conversation['pendingAuthorization'];
   pendingUserInput?: Conversation['pendingUserInput'];
@@ -197,7 +194,7 @@ function TimelineRow({ row, partnerName = '伙伴', pendingAuthorization, pendin
   if (row.kind === 'user_input') return <UserInputRow key={row.requestId} row={row} active={pendingUserInput?.requestId === row.requestId} onResolve={(answers, customAnswers) => onResolveUserInput(answers, customAnswers, row.requestId)} />;
   if (row.kind === 'plan') return <details className={`timeline-entry timeline-entry--plan state-${row.state}`} open={row.state === 'running'}><summary><ListTodo size={15} /><span>{row.summary}</span>{row.detail && <ChevronDown size={13} />}</summary>{row.detail && <pre>{row.detail}</pre>}</details>;
   if (row.kind === 'reasoning') return <ReasoningRow row={row} partnerName={partnerName} />;
-  if (row.kind === 'tool' || row.kind === 'computer') return <OperationRow row={row} partnerName={partnerName} onOpenArtifact={onOpenArtifact} conversationId={conversationId} />;
+  if (row.kind === 'tool' || row.kind === 'computer') return <OperationRow row={row} partnerName={partnerName} onOpenArtifact={onOpenArtifact} />;
   if (row.kind === 'error') return <div className="timeline-entry timeline-entry--error state-failure"><CircleAlert size={15} /><span>{friendlyErrorLabel(row.summary, partnerName)}</span></div>;
   return <div className={`timeline-entry timeline-entry--status state-${row.state}`}><OutcomeIcon state={row.state} /><span>{friendlyStatusLabel(row.summary, row.state, partnerName)}</span></div>;
 }
@@ -265,7 +262,7 @@ function ReasoningDetails({ row, label, detail }: { row: ReasoningItem; label: s
   </details>;
 }
 
-function OperationRow({ row, partnerName, onOpenArtifact, conversationId }: { row: ActionRow; partnerName: string; onOpenArtifact: (artifactId: string) => void; conversationId?: string }) {
+function OperationRow({ row, partnerName, onOpenArtifact }: { row: ActionRow; partnerName: string; onOpenArtifact: (artifactId: string) => void }) {
   const category = actionCategory(row);
   const presentation = actionPresentation(row);
   const meta = categoryMeta(category);
@@ -274,45 +271,13 @@ function OperationRow({ row, partnerName, onOpenArtifact, conversationId }: { ro
   const fileWriteKind = category === 'file_write' ? operationFileWriteKind(row) : undefined;
   const label = runtimeOperationLabel(category, presentation.semantic, row.state, partnerName, fileNames, fileWriteKind, operationDetailValue(row.detail, 'action'));
   const previewFile = row.files.length === 1 ? row.files[0] : undefined;
-  return <><div className={`timeline-operation timeline-operation--plain timeline-operation--${category} state-${row.state}`}>
+  return <div className={`timeline-operation timeline-operation--plain timeline-operation--${category} state-${row.state}`}>
     <Icon size={13} />
     {previewFile
       ? <button className="timeline-operation__label-button" type="button" data-artifact-id={previewFile.artifactId} onClick={() => onOpenArtifact(previewFile.artifactId)} title={`预览 ${previewFile.name}`}>{label}</button>
       : <span>{label}</span>}
     <OutcomeIcon state={row.state} />
     {row.files.length > 1 && <div className="timeline-operation__previews">{row.files.map((file) => <button className="timeline-operation__preview" key={file.artifactId} type="button" data-artifact-id={file.artifactId} onClick={() => onOpenArtifact(file.artifactId)} title={`预览 ${file.name}`}>预览</button>)}</div>}
-  </div>
-  {conversationId && row.detailRef && <ToolOutput key={row.detailRef.id} conversationId={conversationId} outputId={row.detailRef.id} />}
-  </>;
-}
-
-function ToolOutput({ conversationId, outputId }: { conversationId: string; outputId: string }) {
-  const [page, setPage] = useState<import('../../../shared/singleChatHistory').SingleChatToolOutputPage>();
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const read = window.asteriumConversations?.readToolOutput;
-  if (!read) return null;
-  const load = async (offset: number) => {
-    setPending(true);
-    setFailed(false);
-    try {
-      const result = await read({ conversationId, outputId, offset });
-      if (result) setPage(result);
-      else setFailed(true);
-    } catch {
-      setFailed(true);
-    } finally {
-      setPending(false);
-    }
-  };
-  return <div className="timeline-tool-output">
-    {!page && <button className="text-button" type="button" disabled={pending} onClick={() => void load(0)}>查看工具输出</button>}
-    {page && <>
-      <pre>{page.text}</pre>
-      <button className="text-button" type="button" disabled={pending} onClick={() => { setPage(undefined); setFailed(false); }}>收起输出</button>
-      {page.nextOffset !== undefined && <button className="text-button" type="button" disabled={pending} onClick={() => void load(page.nextOffset!)}>下一段输出</button>}
-    </>}
-    {failed && <span role="status">无法读取工具输出，可重试。</span>}
   </div>;
 }
 
@@ -454,7 +419,6 @@ function coalesceActionEvents(timeline: TurnTimelineItem[]) {
       id: previous.id,
       sequence: previous.sequence,
       detail: mergedActionDetail(previous, item),
-      detailRef: item.detailRef ?? previous.detailRef,
     } as TurnTimelineItem;
   }
   return merged;

@@ -59,34 +59,29 @@ function findMatches(root: HTMLElement, query: string): MessageMatch[] {
   return Array.from(messages, ([message, ranges]) => ({ message, ranges }));
 }
 
-type SearchHistory = (query: string, after?: string) => Promise<{ messageIds: string[]; hasMore: boolean; nextCursor?: string }>;
+type SearchHistory = (query: string, after?: string) => Promise<{ messageIds: string[]; hasMore: boolean; nextCursor?: string; native?: boolean }>;
 type RevealMessage = (messageId: string) => Promise<boolean>;
 
-export function ConversationSearch({ listRef, onNavigate, onClose, searchIndexed, onReveal, searchNative, onRevealNative }: {
+export function ConversationSearch({ listRef, onNavigate, onClose, searchIndexed: search, onReveal: reveal }: {
   listRef: RefObject<HTMLDivElement | null>;
   onNavigate: () => void;
   onClose: () => void;
   searchIndexed?: SearchHistory;
   onReveal?: RevealMessage;
-  searchNative?: SearchHistory;
-  onRevealNative?: RevealMessage;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<MessageMatch[]>();
   const [selection, setSelection] = useState(0);
   const [composing, setComposing] = useState(false);
-  const [source, setSource] = useState<'local' | 'native'>(searchNative ? 'native' : 'local');
-  const native = source === 'native' && Boolean(searchNative);
-  const search = native ? searchNative : searchIndexed;
-  const reveal = native ? onRevealNative : onReveal;
-  const [indexed, setIndexed] = useState<{ term: string; native: boolean; ids: string[]; more: boolean; cursor?: string; failed?: boolean }>();
+  const [indexed, setIndexed] = useState<{ term: string; native?: boolean; ids: string[]; more: boolean; cursor?: string; failed?: boolean }>();
+  const moreRequest = useRef(0);
   const [morePending, setMorePending] = useState(false);
   const [revealFailedId, setRevealFailedId] = useState('');
   const term = composing ? '' : query.trim();
-  const result = indexed?.term === term && indexed.native === native ? indexed : undefined;
+  const result = indexed?.term === term ? indexed : undefined;
   const local = new Map((matches ?? []).map(match => [match.message.id.replace(/^chat-message-/, ''), match]));
-  const includeRenderedMatches = !native && (!searchNative || !searchIndexed);
+  const includeRenderedMatches = !result?.native;
   const ids = [...new Set([...(result?.ids ?? []), ...(includeRenderedMatches ? local.keys() : [])])];
   const matchCount = ids.length;
   const index = matchCount ? selection % matchCount : 0;
@@ -99,22 +94,26 @@ export function ConversationSearch({ listRef, onNavigate, onClose, searchIndexed
     let live = true;
     const timer = window.setTimeout(() => {
       void search(term).then(response => {
-        if (live) setIndexed({ term, native, ids: response.messageIds, more: response.hasMore, cursor: response.nextCursor });
-      }).catch(() => { if (live) setIndexed({ term, native, ids: [], more: false, failed: true }); });
-    }, native ? 300 : 100);
+        if (live) setIndexed({ term, native: response.native, ids: response.messageIds, more: response.hasMore, cursor: response.nextCursor });
+      }).catch(() => { if (live) setIndexed({ term, ids: [], more: false, failed: true }); });
+    }, 100);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [native, search, term]);
+  }, [search, term]);
 
   const loadMore = () => {
     const after = result?.cursor ?? result?.ids.at(-1);
-    if (!search || !after || morePending) return;
+    if (!search || !result || !after || morePending) return;
+    const version = ++moreRequest.current;
     setMorePending(true);
     void search(term, after).then(response => {
-      setIndexed(current => current && current === result
-        ? { term, native, ids: [...current.ids, ...response.messageIds], more: response.hasMore, cursor: response.nextCursor } : current);
+      if (version !== moreRequest.current) return;
+      const nextIds = [...new Set([...result.ids, ...response.messageIds])];
+      setIndexed(current => current === result
+        ? { term, native: result.native, ids: nextIds, more: response.hasMore, cursor: response.nextCursor } : current);
+      if (nextIds.length > result.ids.length) setSelection(result.ids.length);
     }).catch(() => {
-      setIndexed(current => current && current === result ? { ...current, failed: true } : current);
-    }).finally(() => setMorePending(false));
+      if (version === moreRequest.current) setIndexed(current => current === result ? { ...result, failed: true } : current);
+    }).finally(() => { if (version === moreRequest.current) setMorePending(false); });
   };
 
   useEffect(() => {
@@ -187,7 +186,12 @@ export function ConversationSearch({ listRef, onNavigate, onClose, searchIndexed
   }, [active, listRef, onNavigate]);
 
   const move = (direction: number) => {
-    if (matchCount) setSelection((current) => (current + direction + matchCount) % matchCount);
+    if (morePending || !matchCount) return;
+    if (direction > 0 && index === matchCount - 1 && result?.more) {
+      loadMore();
+      return;
+    }
+    setSelection((current) => (current + direction + matchCount) % matchCount);
   };
 
   return <div id="conversation-search" className="conversation-search" role="search" aria-label="当前对话搜索" onKeyDown={(event) => {
@@ -208,29 +212,21 @@ export function ConversationSearch({ listRef, onNavigate, onClose, searchIndexed
       if (value.trim() !== term) {
         setMatches(undefined);
         setIndexed(undefined);
+        moreRequest.current++;
+        setMorePending(false);
         requestedId.current = undefined;
         setRevealFailedId('');
         setSelection(0);
       }
       setQuery(value);
     }} />
-    {searchNative && <button type="button" className="text-button"
-      aria-label={native ? '切换到星丛记录' : '切换到 Codex 原线程'} onClick={() => {
-        setSource(native ? 'local' : 'native');
-        setIndexed(undefined);
-        requestedId.current = undefined;
-        setRevealFailedId('');
-        setSelection(0);
-      }}>{native ? 'Codex 原线程' : '星丛记录'}</button>}
     <span role="status" className="conversation-search__count">{term && (
-      search && !result ? '查找中…' : activeId && revealFailedId === activeId ? '无法跳转'
+      search && (!result || morePending) ? '查找中…' : activeId && revealFailedId === activeId ? '无法跳转'
         : matchCount ? (index + 1) + ' / ' + matchCount + (result?.more ? '+' : '')
-          : result?.failed ? (native ? '原线程暂不可读，可切换到星丛记录' : '历史搜索暂不可用') : matches || result ? '无匹配' : '查找中…'
+          : result?.failed ? '历史搜索暂不可用' : matches || result ? '无匹配' : '查找中…'
     )}</span>
-    {result?.failed && matchCount > 0 && <span role="status">{native ? '更多原线程结果暂不可读' : '更多历史结果暂不可读'}</span>}
-    {result?.more && <button className="text-button" type="button" disabled={morePending} onClick={loadMore}>更多匹配</button>}
     <button className="icon-button" type="button" disabled={matchCount < 2} onClick={() => move(-1)} aria-label="上一条匹配" title="上一条匹配"><ChevronUp size={16} /></button>
-    <button className="icon-button" type="button" disabled={matchCount < 2} onClick={() => move(1)} aria-label="下一条匹配" title="下一条匹配"><ChevronDown size={16} /></button>
+    <button className="icon-button" type="button" disabled={morePending || (matchCount < 2 && !result?.more)} onClick={() => move(1)} aria-label="下一条匹配" title="下一条匹配"><ChevronDown size={16} /></button>
     <button className="icon-button" type="button" onClick={onClose} aria-label="关闭当前对话搜索" title="关闭（Esc）"><X size={16} /></button>
   </div>;
 }

@@ -142,12 +142,8 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
   expect(screen.queryByText('这一段只在内存')).not.toBeInTheDocument();
   expect(restarted.send).not.toHaveBeenCalled();
   expect(window.asteriumConversations?.readToolOutput).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '查看工具输出' }));
-  expect(await screen.findByText(/^合成工具输出开始/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '下一段输出' }));
-  expect(await screen.findByText(/合成工具输出结尾$/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '收起输出' }));
-  expect(screen.queryByText(/合成工具输出结尾$/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '查看工具输出' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/合成工具输出开始|合成工具输出结尾/)).not.toBeInTheDocument();
 });
 
 it('leaves a draft in place if the pre-send disk write fails', async () => {
@@ -199,13 +195,16 @@ it('reveals a native-only search result without replacing the latest local conve
   connect(path.join(autoTestOutput(), 'native-search'));
   const read = vi.fn(async (request: CodexHistoryRequest) => ({
     turns: request.aroundTurnId ? [{
-      id: 'original-turn', state: 'completed' as const,
-      items: [{ id: 'answer', kind: 'assistant' as const, text: '仅在原线程的旧记录' }],
+      id: request.aroundTurnId, state: 'completed' as const,
+      items: [{ id: 'answer', kind: 'assistant' as const, text: request.aroundTurnId === 'older-turn' ? '原线程的下一条旧记录' : '仅在原线程的旧记录' }],
     }] : [],
   }));
-  const search = vi.fn<(request: CodexHistorySearchRequest) => Promise<import('../../src/shared/codexHistory').CodexHistorySearchPage>>(async () => ({
+  const search = vi.fn<(request: CodexHistorySearchRequest) => Promise<import('../../src/shared/codexHistory').CodexHistorySearchPage>>(async request => request.after ? {
+    hits: [{ turnId: 'older-turn', messageId: 'codex-history:older-turn:assistant', pageCursor: 'next-fixture-cursor' }],
+  } : {
     hits: [{ turnId: 'original-turn', messageId: 'codex-history:original-turn:assistant', pageCursor: 'older-fixture-cursor' }],
-  }));
+    next: { pageCursor: 'next-fixture-cursor', index: 0 },
+  });
   Object.assign(window.asteriumAgents!, { readCodexHistory: read, searchCodexHistory: search });
   mount();
   expect(await screen.findByText('星丛本地当前记录')).toBeInTheDocument();
@@ -217,11 +216,18 @@ it('reveals a native-only search result without replacing the latest local conve
   expect(search).toHaveBeenCalledWith(expect.objectContaining({ conversationId: id, threadId: chat.sessionId, query: '旧记录' }));
   expect(read).toHaveBeenCalledWith(expect.objectContaining({ threadId: chat.sessionId, cursor: 'older-fixture-cursor', aroundTurnId: 'original-turn' }));
 
+  expect(screen.queryByRole('button', { name: '切换到星丛记录' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '更多匹配' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '下一条匹配' }));
+  expect(await screen.findByText('原线程的下一条旧记录', {}, { timeout: 5000 })).toBeInTheDocument();
+  expect(search).toHaveBeenCalledWith(expect.objectContaining({ after: { pageCursor: 'next-fixture-cursor', index: 0 } }));
+  fireEvent.click(screen.getByRole('button', { name: '回到底部' }));
+  expect(await screen.findByText('星丛本地当前记录')).toBeInTheDocument();
+
+  fireEvent.change(input, { target: { value: '仅在原线程' } });
+  expect(await screen.findByText('仅在原线程的旧记录', {}, { timeout: 5000 })).toBeInTheDocument();
   search.mockRejectedValueOnce(new Error('CODEX_HISTORY_UNAVAILABLE'));
   fireEvent.change(input, { target: { value: '本地当前记录' } });
-  expect(await screen.findByText('原线程暂不可读，可切换到星丛记录', {}, { timeout: 5000 })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '切换到星丛记录' }));
-  expect(await screen.findByText('星丛本地当前记录')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '回到最新消息' }));
-  expect(screen.getByText('星丛本地当前记录')).toBeInTheDocument();
+  expect(await screen.findByText('星丛本地当前记录', {}, { timeout: 5000 })).toBeInTheDocument();
+  expect(screen.queryByText('仅在原线程的旧记录')).not.toBeInTheDocument();
 });

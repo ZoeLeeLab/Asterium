@@ -115,18 +115,25 @@ await runAutoTest(async () => {
     await list.getByText(/独有检索词/).waitFor();
     await page.waitForFunction(() => document.getElementById('chat-message-fixture-message-0')?.classList.contains('is-reference-target'));
     await page.getByRole('button', { name: '关闭当前对话搜索' }).click();
-    await page.getByRole('button', { name: '回到最新消息', exact: true }).click();
+    await page.getByRole('button', { name: '回到底部', exact: true }).click();
     await list.getByText('原线程恢复的末尾。', { exact: true }).waitFor();
 
-    await page.getByRole('button', { name: '加载更早消息', exact: true }).click();
-    await page.waitForFunction(() => document.querySelectorAll('.message-list > .message-row').length >= 160);
-    await viewport.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    assert.equal(await page.getByRole('button', { name: '加载更早消息', exact: true }).count(), 0);
+    await list.evaluate(element => element.scrollTop = 0);
+    await list.hover();
+    await page.mouse.wheel(0, -600);
+    await page.waitForFunction(() => document.querySelectorAll('.message-list > .message-row').length >= 120);
+    await marks.last().focus();
+    await page.waitForFunction(() => {
+      const rail = document.querySelector('.turn-navigator__viewport');
+      return rail.scrollHeight - rail.clientHeight - rail.scrollTop <= 80;
+    });
     const rail = await viewport.evaluate((element) => ({
       height: element.clientHeight, scrollHeight: element.scrollHeight, scrollTop: element.scrollTop,
       width: getComputedStyle(element).scrollbarWidth, markHeight: getComputedStyle(element.firstElementChild, '::before').height,
     }));
-    assert.ok(await marks.count() >= 80 && await marks.count() < turns);
-    assert.ok(rail.height <= 200 && rail.scrollHeight > rail.height && rail.scrollHeight - rail.height - rail.scrollTop <= 80);
+    assert.ok(await marks.count() >= 60 && await marks.count() < turns);
+    assert.ok(rail.height <= 200 && rail.scrollHeight > rail.height && rail.scrollTop > 40, JSON.stringify(rail));
     assert.equal(rail.width, 'none');
     assert.equal(rail.markHeight, '3px');
 
@@ -141,9 +148,12 @@ await runAutoTest(async () => {
     const targetIndex = Number((await marks.nth(markIndex).getAttribute('aria-label')).match(/示例提问 (\d+)/)[1]);
     await marks.nth(markIndex).click();
     await page.waitForFunction(index => {
-      const target = document.getElementById('chat-message-fixture-message-' + index).getBoundingClientRect();
+      const target = [...document.querySelectorAll('.message-list [data-turn-id]')].find(row =>
+        Number(row.querySelector('.message-content--user')?.textContent?.trim().split(' ')[1]) === index);
+      if (!target) return false;
+      const { top } = target.getBoundingClientRect();
       const listTop = document.querySelector('.message-list').getBoundingClientRect().top;
-      return target.top >= listTop && target.top < listTop + 150;
+      return top >= listTop && top < listTop + 150;
     }, targetIndex);
     await page.getByRole('button', { name: '回到底部', exact: true }).click();
 
@@ -227,10 +237,11 @@ await runAutoTest(async () => {
     assert.equal(recorded?.timeline?.filter(item => item.kind === 'tool' && item.state === 'success').length, 2);
     assert.equal(importCount, 1);
     for (let pageNumber = 0; pageNumber < 3; pageNumber++) {
-      const older = page.getByRole('button', { name: '加载更早消息', exact: true });
-      if (!await older.count()) break;
-      await older.click();
-      await older.waitFor({ state: 'visible' }).catch(() => undefined);
+      const reads = await page.evaluate(() => window.__longChat.historyReads.length);
+      await list.evaluate(element => element.scrollTop = 0);
+      await list.hover();
+      await page.mouse.wheel(0, -600);
+      await page.waitForFunction(count => window.__longChat.historyReads.length > count, reads);
     }
     assert.ok(await list.locator('.message-row').count() <= 240);
     await page.reload();
