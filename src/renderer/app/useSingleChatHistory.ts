@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { AsteriumConversationsApi } from '../../shared/desktopBridge';
-import type { SingleChatHistoryChange, SingleChatProfile } from '../../shared/singleChatHistory';
+import type { SingleChatHistoryChange, SingleChatHistoryPage, SingleChatPageBounds, SingleChatProfile } from '../../shared/singleChatHistory';
 import type { Conversation, Message, PrototypeAction, PrototypeState } from '../types/domain';
 import { createInitialState } from '../data/initialState';
 import {
-  loadPrototypeState, prepareSingleChatMessage, prepareSingleChatMetadata, readLegacySingleChatHistory, restoreSingleChatHistory,
+  loadPrototypeState, prepareSingleChatMessage, prepareSingleChatMetadata, readLegacySingleChatHistory, restoreSingleChatHistory, restoreSingleChatPageMessages,
 } from './persistence';
 
 type DesktopHistory = Required<Pick<AsteriumConversationsApi, 'openHistory' | 'migrateHistory' | 'writeHistory'>>;
 type PendingWrite = { id: number; changes: SingleChatHistoryChange[]; profile?: SingleChatProfile };
-type Frame = { state: PrototypeState; generation?: string; nextId: number; pending: PendingWrite[] };
+type RecentPages = Record<string, SingleChatPageBounds>;
+type Frame = { state: PrototypeState; generation?: string; nextId: number; pending: PendingWrite[]; recentPages?: RecentPages };
 type HistoryAction = PrototypeAction
-  | { type: 'historyHydrated'; state: PrototypeState; generation: string }
+  | { type: 'historyHydrated'; state: PrototypeState; generation: string; recentPages?: RecentPages }
+  | { type: 'historyRecentLoaded'; conversationId: string; page: SingleChatHistoryPage }
   | { type: 'historySaved'; id: number }
   | { type: 'historySaveProfile'; profile: SingleChatProfile };
 
@@ -24,7 +26,21 @@ function desktopHistory(): DesktopHistory | undefined {
 export function useSingleChatHistory(reducer: (state: PrototypeState, action: PrototypeAction) => PrototypeState) {
   const bridge = desktopHistory();
   const [frame, dispatch] = useReducer((current: Frame, action: HistoryAction): Frame => {
-    if (action.type === 'historyHydrated') return { ...current, state: action.state, generation: action.generation };
+    if (action.type === 'historyHydrated') return { ...current, state: action.state, generation: action.generation, recentPages: action.recentPages };
+    if (action.type === 'historyRecentLoaded') {
+      const { conversationId, page } = action;
+      return {
+        ...current,
+        recentPages: { ...current.recentPages, [conversationId]: { hasOlder: page.hasOlder, hasNewer: page.hasNewer, turnOffset: page.turnOffset } },
+        state: { ...current.state, conversations: current.state.conversations.map(conversation => {
+          if (conversation.id !== conversationId) return conversation;
+          const messages = new Map(restoreSingleChatPageMessages(conversation.partnerId, page.messages, Boolean(page.interrupted))
+            .map(message => [message.id, message]));
+          for (const message of conversation.messages) messages.set(message.id, message);
+          return { ...conversation, messages: [...messages.values()] };
+        }) },
+      };
+    }
     if (action.type === 'historySaved') return { ...current, pending: current.pending.filter(item => item.id > action.id) };
     if (action.type === 'historySaveProfile') return queue(current, { changes: [], profile: action.profile });
     const state = reducer(current.state, action);
@@ -42,24 +58,42 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
   const startupPending = useRef<ReturnType<DesktopHistory['openHistory']> | undefined>(undefined);
   const generation = frame.generation;
   const pending = frame.pending;
+  const selected = frame.state.activeConversationId;
+  const selectedPage = frame.recentPages?.[selected];
+  const needsRecent = Boolean(frame.recentPages && selected && !selectedPage);
+  const [recentFailedId, setRecentFailedId] = useState('');
+  const [recentAttempt, setRecentAttempt] = useState(0);
+  const readPage = window.asteriumConversations?.readHistoryPage;
+
+  useEffect(() => {
+    if (!generation || !needsRecent || !readPage) return;
+    let live = true;
+    void readPage({ conversationId: selected }).then(page => {
+      if (!live) return;
+      setRecentFailedId('');
+      dispatch({ type: 'historyRecentLoaded', conversationId: selected, page: page ?? { messages: [], hasOlder: false, hasNewer: false } });
+    }).catch(() => { if (live) setRecentFailedId(selected); });
+    return () => { live = false; };
+  }, [generation, needsRecent, readPage, recentAttempt, selected]);
 
   useEffect(() => {
     if (!bridge || generation) return;
     let active = true;
     const start = async () => {
-      const existing = await bridge.openHistory();
-      return existing ?? bridge.migrateHistory(readLegacySingleChatHistory());
+      const windowed = Boolean(readPage);
+      const existing = await bridge.openHistory(windowed);
+      return existing ?? bridge.migrateHistory(readLegacySingleChatHistory(), windowed);
     };
     const operation = startupPending.current ?? (startupPending.current = start());
     void operation.then(history => {
       if (!active || !history) return;
-      dispatch({ type: 'historyHydrated', state: restoreSingleChatHistory(history), generation: history.generation });
+      dispatch({ type: 'historyHydrated', state: restoreSingleChatHistory(history), generation: history.generation, recentPages: history.recentPages });
     }).catch(() => {
       if (startupPending.current === operation) startupPending.current = undefined;
       if (active) setStartupFailed(true);
     });
     return () => { active = false; };
-  }, [bridge, generation, startupAttempt]);
+  }, [bridge, generation, readPage, startupAttempt]);
 
   useEffect(() => {
     const id = pending.at(-1)?.id;
@@ -97,10 +131,12 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
   }, []);
   const retryStartup = useCallback(() => { setStartupFailed(false); setStartupAttempt(attempt => attempt + 1); }, []);
   const retryWrite = useCallback(() => { setWriteFailed(false); setSendSaveFailed(false); }, []);
+  const retryRecent = useCallback(() => { setRecentFailedId(''); setRecentAttempt(attempt => attempt + 1); }, []);
 
   return {
     state: frame.state, dispatch, managed: Boolean(bridge), ready: !bridge || Boolean(generation), pending: pending.length > 0,
     startupFailed, writeFailed, sendSaveFailed, retryStartup, retryWrite, saveProfile, saveBeforeSend,
+    selectedPage, needsRecent, recentFailed: Boolean(selected && recentFailedId === selected), retryRecent,
   };
 }
 

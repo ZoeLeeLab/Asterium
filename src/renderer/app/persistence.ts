@@ -457,33 +457,39 @@ export function restoreSingleChatHistory(history: import('../../shared/singleCha
   const interrupted = new Set(history.interruptedConversationIds ?? []);
   const state = normalizeState({
     ...history.profile,
-    conversations: history.conversations.map(conversation => {
-      const messages = conversation.messages.map(message => {
-        if (message.runState === 'running' || message.runState === 'waiting_authorization' || message.runState === 'waiting_user_input') {
-          const timeline = (message.timeline ?? []).map(item => 'state' in item && item.state === 'running' ? { ...item, state: 'failure' as const } : item);
-          return { ...message, runState: 'cancelled' as const, isStreaming: false, timeline: [
-            ...timeline, interruptionNotice(message.id, (timeline.at(-1)?.sequence ?? 0) + 1),
-          ] };
-        }
-        if (message.status !== 'sending') return message;
-        return {
-          ...message, status: 'failed' as const,
-          error: { code: 'SINGLE_CHAT_SEND_UNCERTAIN', message: '退出前的发送结果待确认。', stage: 'transport' as const, retryable: false },
-        };
-      });
-      const user = messages.at(-1);
-      if (interrupted.has(conversation.id) && user && normalizeAsteriumUserAuthorId(user.authorId) === ASTERIUM_USER_ID) {
-        const id = user.id + ':interrupted';
-        messages.push({
-          id, authorId: conversation.partnerId, content: '', createdAt: user.createdAt,
-          runState: 'cancelled', timeline: [interruptionNotice(id, 1)],
-        });
-      }
-      return { ...conversation, messages };
-    }),
+    conversations: history.conversations.map(conversation => ({
+      ...conversation, messages: restoreSingleChatPageMessages(conversation.partnerId, conversation.messages, interrupted.has(conversation.id)),
+    })),
   });
   if (!state) throw new Error('SINGLE_CHAT_HISTORY_INVALID_PROFILE');
   return state;
+}
+
+export function restoreSingleChatPageMessages(
+  partnerId: string, source: PrototypeState['conversations'][number]['messages'], interrupted: boolean,
+): PrototypeState['conversations'][number]['messages'] {
+  const messages = source.map(message => {
+    if (message.runState === 'running' || message.runState === 'waiting_authorization' || message.runState === 'waiting_user_input') {
+      const timeline = (message.timeline ?? []).map(item => 'state' in item && item.state === 'running' ? { ...item, state: 'failure' as const } : item);
+      return { ...message, runState: 'cancelled' as const, isStreaming: false, timeline: [
+        ...timeline, interruptionNotice(message.id, (timeline.at(-1)?.sequence ?? 0) + 1),
+      ] };
+    }
+    if (message.status !== 'sending') return message;
+    return {
+      ...message, status: 'failed' as const,
+      error: { code: 'SINGLE_CHAT_SEND_UNCERTAIN', message: '退出前的发送结果待确认。', stage: 'transport' as const, retryable: false },
+    };
+  });
+  const user = messages.at(-1);
+  if (interrupted && user && normalizeAsteriumUserAuthorId(user.authorId) === ASTERIUM_USER_ID) {
+    const id = user.id + ':interrupted';
+    messages.push({
+      id, authorId: partnerId, content: '', createdAt: user.createdAt,
+      runState: 'cancelled', timeline: [interruptionNotice(id, 1)],
+    });
+  }
+  return messages;
 }
 
 function interruptionNotice(id: string, sequence: number) {

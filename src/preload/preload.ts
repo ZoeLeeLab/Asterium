@@ -223,8 +223,10 @@ contextBridge.exposeInMainWorld('asteriumAttachments', {
 } satisfies AsteriumAttachmentsApi);
 
 contextBridge.exposeInMainWorld('asteriumConversations', {
-  openHistory: () => ipcRenderer.invoke(AGENT_IPC.conversationOpenHistory),
-  migrateHistory: (source: import('../shared/singleChatHistory').SingleChatHistoryImport) => ipcRenderer.invoke(AGENT_IPC.conversationMigrateHistory, source),
+  openHistory: (recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationOpenHistory, recent),
+  migrateHistory: (source: import('../shared/singleChatHistory').SingleChatHistoryImport, recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationMigrateHistory, source, recent),
+  readHistoryPage: (request: import('../shared/singleChatHistory').SingleChatPageRequest) => ipcRenderer.invoke(AGENT_IPC.conversationReadHistoryPage, request),
+  searchHistory: (request: import('../shared/singleChatHistory').SingleChatSearchRequest) => ipcRenderer.invoke(AGENT_IPC.conversationSearchHistory, request),
   writeHistory: (request: import('../shared/singleChatHistory').SingleChatHistoryWrite) => ipcRenderer.invoke(AGENT_IPC.conversationWriteHistory, request),
   delete: (request: ConversationDeleteRequest): Promise<ConversationDeleteResult> => ipcRenderer.invoke(AGENT_IPC.conversationDelete, request),
   listDeleted: (): Promise<string[]> => ipcRenderer.invoke(AGENT_IPC.conversationListDeleted),

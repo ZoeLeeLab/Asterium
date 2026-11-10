@@ -109,6 +109,15 @@ await runAutoTest(async () => {
       const snapshot = await first.page.evaluate(() => window.asteriumConversations.openHistory());
       generation = snapshot.generation;
       assert.equal(snapshot.conversations.find(chat => chat.id === conversationId).messages[0].id, original.messages[0].id);
+      const pageAndSearch = await first.page.evaluate(async id => {
+        const bridge = window.asteriumConversations;
+        return {
+          page: await bridge.readHistoryPage({ conversationId: id, around: 'main-projection-only' }),
+          search: await bridge.searchHistory({ conversationId: id, query: '投影补回' }),
+        };
+      }, conversationId);
+      assert.ok(pageAndSearch.page.messages.some(message => message.id === 'main-projection-only'));
+      assert.deepEqual(pageAndSearch.search.messageIds, ['main-projection-only']);
       const editor = first.page.getByRole('textbox', { name: /给 测试伙伴 A 发送消息/ });
       await editor.fill('强退前已保存的合成消息');
       await first.page.getByRole('button', { name: '发送', exact: true }).click();

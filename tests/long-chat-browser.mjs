@@ -20,11 +20,13 @@ await runAutoTest(async () => {
     const history = new SingleChatHistoryStore(autoTestOutput());
     let importCount = 0;
     await context.exposeBinding('fixtureChatHistory', async (_, operation, value) => {
-      if (operation === 'open') return history.open();
+      if (operation === 'open') return history.openRecent();
       if (operation === 'write') return history.write(value);
+      if (operation === 'page') return history.readPage(value);
+      if (operation === 'search') return history.search(value);
       assert.equal(operation, 'migrate');
       await history.initialize(async () => { importCount++; return { ...value, deletedConversationIds: [] }; });
-      return history.open();
+      return history.openRecent();
     });
     const page = await context.newPage();
     const turns = 300;
@@ -34,7 +36,7 @@ await runAutoTest(async () => {
       const markdown = '## 示例回复\n\n这里有 **粗体**、列表和代码。\n\n- 项目一\n- 项目二\n\n| A | B |\n| --- | --- |\n| 示例 | 内容 |\n\n```ts\nconst value = 12;\n```';
       const messages = Array.from({ length: turnCount * 2 }, (_, index) => ({
         id: `fixture-message-${index}`, authorId: index % 2 ? partnerId : userId, createdAt, status: 'delivered',
-        content: index % 2 ? `${markdown}\n\n示例 ${index}` : `示例提问 ${index}`,
+        content: index % 2 ? `${markdown}\n\n示例 ${index}` : index === 0 ? '示例提问 0 独有检索词甲乙丙' : `示例提问 ${index}`,
         ...(index % 2 ? { runId: 'fixture-turn-' + Math.floor(index / 2), runState: 'completed' } : {}),
         ...(index === turnCount * 2 - 2 ? { clientMessageId: 'fixture-client-message' } : {}),
       }));
@@ -55,6 +57,8 @@ await runAutoTest(async () => {
         openHistory: () => window.fixtureChatHistory('open'),
         migrateHistory: input => window.fixtureChatHistory('migrate', input),
         writeHistory: input => window.fixtureChatHistory('write', input),
+        readHistoryPage: input => window.fixtureChatHistory('page', input),
+        searchHistory: input => window.fixtureChatHistory('search', input),
       };
       window.asteriumAgents = {
         onEvent: (listener) => { fixture.listener = listener; return () => { fixture.listener = undefined; }; },
@@ -98,35 +102,49 @@ await runAutoTest(async () => {
     const viewport = page.getByRole('navigation', { name: '快速选择对话回合' });
     const marks = viewport.getByRole('button');
     await viewport.waitFor();
+    const list = page.locator('.message-list');
+    await list.getByText('原线程恢复的末尾。', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.__longChat.historyReads[0].threadId), 'fixture-session');
+    assert.equal(await list.locator('.message-row').count(), 80);
+    assert.equal(await marks.count(), 40);
+    assert.match(await marks.first().getAttribute('aria-label'), /^第 261 轮/);
+    assert.equal(await list.getByText(/独有检索词/).count(), 0);
+
+    await page.getByRole('button', { name: '搜索当前对话', exact: true }).click();
+    await page.getByRole('searchbox', { name: '搜索当前对话正文' }).fill('独有检索词');
+    await list.getByText(/独有检索词/).waitFor();
+    await page.waitForFunction(() => document.getElementById('chat-message-fixture-message-0')?.classList.contains('is-reference-target'));
+    await page.getByRole('button', { name: '关闭当前对话搜索' }).click();
+    await page.getByRole('button', { name: '回到最新消息', exact: true }).click();
+    await list.getByText('原线程恢复的末尾。', { exact: true }).waitFor();
+
+    await page.getByRole('button', { name: '加载更早消息', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.message-list > .message-row').length >= 160);
+    await viewport.evaluate(element => { element.scrollTop = element.scrollHeight; });
     const rail = await viewport.evaluate((element) => ({
       height: element.clientHeight, scrollHeight: element.scrollHeight, scrollTop: element.scrollTop,
       width: getComputedStyle(element).scrollbarWidth, markHeight: getComputedStyle(element.firstElementChild, '::before').height,
     }));
-    assert.equal(await marks.count(), turns);
+    assert.ok(await marks.count() >= 80 && await marks.count() < turns);
     assert.ok(rail.height <= 200 && rail.scrollHeight > rail.height && rail.scrollHeight - rail.height - rail.scrollTop <= 80);
     assert.equal(rail.width, 'none');
     assert.equal(rail.markHeight, '3px');
 
-    const list = page.locator('.message-list');
-    await list.getByText('原线程恢复的末尾。', { exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => window.__longChat.historyReads[0].threadId), 'fixture-session');
     const bottom = await list.evaluate(element => element.scrollTop);
     await viewport.hover();
     await page.mouse.wheel(0, -1100);
-    await page.waitForFunction(initial => document.querySelector('.turn-navigator__viewport').scrollTop < initial - 500, rail.scrollTop);
+    await page.waitForFunction(initial => document.querySelector('.turn-navigator__viewport').scrollTop < initial - 40, rail.scrollTop);
     assert.equal(await list.evaluate(element => element.scrollTop), bottom, 'rail scroll must not move the chat');
     const markIndex = await viewport.evaluate(element => Math.ceil(element.scrollTop / element.firstElementChild.offsetHeight) + 4);
     await marks.nth(markIndex).hover();
     await page.locator('.turn-navigator__preview').waitFor({ state: 'visible' });
+    const targetIndex = Number((await marks.nth(markIndex).getAttribute('aria-label')).match(/示例提问 (\d+)/)[1]);
     await marks.nth(markIndex).click();
-    await page.waitForFunction((index) => {
-      const target = document.getElementById(`chat-message-fixture-message-${index * 2}`).getBoundingClientRect();
+    await page.waitForFunction(index => {
+      const target = document.getElementById('chat-message-fixture-message-' + index).getBoundingClientRect();
       const listTop = document.querySelector('.message-list').getBoundingClientRect().top;
       return target.top >= listTop && target.top < listTop + 150;
-    }, markIndex);
-    await page.keyboard.press('Home');
-    await page.keyboard.press('Enter');
-    await page.waitForFunction(() => document.querySelector('.message-list').scrollTop < 20);
+    }, targetIndex);
     await page.getByRole('button', { name: '回到底部', exact: true }).click();
 
     // The mock crosses the same serialization boundary on every poll. Changed receipts still appear and disappear.
@@ -171,7 +189,7 @@ await runAutoTest(async () => {
       await input();
       assert.equal(await editor.inputValue(), expected);
       const result = await page.evaluate(() => window.__longChat.stopSample());
-      assert.ok(before >= turns * 2 && result.polls > 0);
+      assert.ok(before >= 80 && before < turns * 2 && result.polls > 0);
       console.log(JSON.stringify({ scenario, ...result }));
       return result;
     };
@@ -188,7 +206,7 @@ await runAutoTest(async () => {
     await page.keyboard.press('Enter');
     const afterJump = await page.evaluate(() => window.__longChat.deltas);
     await page.waitForFunction(count => window.__longChat.deltas >= count + 3, afterJump);
-    assert.ok(await list.evaluate(element => element.scrollTop) < 20, 'streaming must not pull the reader away from the selected turn');
+    assert.ok(await list.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight) > 100, 'streaming must not pull the reader away from the selected turn');
     const phrase = '星丛中文输入测试';
     const composeChinese = async () => {
       for (const character of phrase) {
@@ -208,6 +226,13 @@ await runAutoTest(async () => {
     assert.equal(recorded?.runState, 'completed');
     assert.equal(recorded?.timeline?.filter(item => item.kind === 'tool' && item.state === 'success').length, 2);
     assert.equal(importCount, 1);
+    for (let pageNumber = 0; pageNumber < 3; pageNumber++) {
+      const older = page.getByRole('button', { name: '加载更早消息', exact: true });
+      if (!await older.count()) break;
+      await older.click();
+      await older.waitFor({ state: 'visible' }).catch(() => undefined);
+    }
+    assert.ok(await list.locator('.message-row').count() <= 240);
     await page.reload();
     await list.getByText(/片段 1。/).waitFor();
     assert.equal(importCount, 1, 'the legacy snapshot must not re-run the migration');

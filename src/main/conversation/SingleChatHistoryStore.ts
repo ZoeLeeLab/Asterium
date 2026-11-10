@@ -1,14 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, truncate, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { appendFile, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Conversation, Message } from '../../renderer/types/domain';
 import type { SingleChatHistoryChange, SingleChatHistorySnapshot, SingleChatHistoryWrite, SingleChatMetadata, SingleChatProfile } from '../../shared/singleChatHistory';
 import { AtomicJsonStore } from '../storage/AtomicJsonStore';
+import type { SingleChatHistoryPage, SingleChatPageRequest, SingleChatSearchRequest, SingleChatSearchResult } from '../../shared/singleChatHistory';
+import { SingleChatHistoryIndex } from './SingleChatHistoryIndex';
 
 type HistoryEvent =
   | { type: 'conversation.imported'; conversation: SingleChatMetadata }
   | { type: 'message.imported'; message: Message }
   | { type: 'checkpoint'; upsert: Message[]; remove: string[]; metadata?: SingleChatMetadata; busy?: boolean; order?: string[] };
+
+type LogTip = Omit<ReturnType<typeof replay>, 'messages'> & { messages?: Map<string, Message> };
 
 interface HistoryManifest {
   version: 2;
@@ -36,6 +41,7 @@ export class SingleChatHistoryStore {
   private mutation: Promise<unknown> = Promise.resolve();
   private readonly logs = new Map<string, ReturnType<typeof replay>>();
   private profileCache?: SingleChatProfile;
+  private indexedGeneration?: string;
   private readonly busy = new Set<string>();
   private readonly settings: AtomicJsonStore<SingleChatProfile>;
   private readonly manifests: AtomicJsonStore<HistoryManifest>;
@@ -121,20 +127,80 @@ export class SingleChatHistoryStore {
       const manifest = await this.readManifest();
       if (!manifest) return undefined;
       const profile = await this.readProfile();
-      const conversations = await this.readConversations(manifest);
-      return {
-        generation: manifest.generation, profile, conversations,
-        interruptedConversationIds: manifest.chats.filter(id => this.logs.get(id)?.pending && !this.busy.has(id)),
-      };
+      const conversations: Conversation[] = [];
+      const interruptedConversationIds: string[] = [];
+      for (const id of manifest.chats) {
+        const log = await this.readLog(id);
+        conversations.push(materialize(log));
+        if (log.pending && !this.busy.has(id)) interruptedConversationIds.push(id);
+      }
+      return { generation: manifest.generation, profile, conversations, interruptedConversationIds };
     });
   }
 
-  readProjection(conversationId?: string) {
+  openRecent() {
+    return this.exclusive(async (): Promise<SingleChatHistorySnapshot | undefined> => {
+      const manifest = await this.readManifest();
+      if (!manifest) return undefined;
+      const profile = await this.readProfile();
+      return this.withIndex(manifest.generation, async index => {
+        const conversations: Conversation[] = [];
+        const interruptedConversationIds: string[] = [];
+        const recentPages: NonNullable<SingleChatHistorySnapshot['recentPages']> = Object.create(null);
+        for (const id of manifest.chats) {
+          const marker = await this.ensureIndexed(index, id);
+          if (marker.pending && !this.busy.has(id)) interruptedConversationIds.push(id);
+          if (id === profile.activeConversationId) {
+            const { messages, hasOlder, hasNewer, turnOffset } = index.page({ conversationId: id });
+            recentPages[id] = { hasOlder, hasNewer, turnOffset };
+            conversations.push({ ...marker.metadata, messages });
+          } else {
+            conversations.push({ ...marker.metadata, messages: [] });
+          }
+        }
+        return { generation: manifest.generation, profile, conversations, interruptedConversationIds, recentPages };
+      });
+    });
+  }
+
+  readPage(request: SingleChatPageRequest) {
+    return this.exclusive(async (): Promise<SingleChatHistoryPage | undefined> => {
+      const manifest = await this.readManifest();
+      if (!manifest?.chats.includes(request.conversationId)) return undefined;
+      return this.withIndex(manifest.generation, async index => {
+        const marker = await this.ensureIndexed(index, request.conversationId);
+        return { ...index.page(request), interrupted: marker.pending && !this.busy.has(request.conversationId) };
+      });
+    });
+  }
+
+  search(request: SingleChatSearchRequest) {
+    return this.exclusive(async (): Promise<SingleChatSearchResult> => {
+      const manifest = await this.readManifest();
+      const id = request.conversationId;
+      if (!manifest || (id && !manifest.chats.includes(id))) return { conversationIds: [], messageIds: [], hasMore: false };
+      return this.withIndex(manifest.generation, async index => {
+        for (const chat of id ? [id] : manifest.chats) await this.ensureIndexed(index, chat);
+        const result = index.search(request);
+        const allowed = new Set(manifest.chats);
+        return { ...result, conversationIds: result.conversationIds.filter(chat => allowed.has(chat)) };
+      });
+    });
+  }
+
+  readProjection(conversationId?: string, includesPartner?: (partnerId: string) => boolean) {
     return this.exclusive(async () => {
       const manifest = await this.readManifest();
       if (!manifest) return undefined;
-      const conversations = conversationId === undefined ? await this.readConversations(manifest)
-        : manifest.chats.includes(conversationId) ? [materialize(await this.readLog(conversationId))] : [];
+      const ids = conversationId === undefined ? manifest.chats : manifest.chats.includes(conversationId) ? [conversationId] : [];
+      const conversations = await this.withIndex(manifest.generation, async index => {
+        const result: Conversation[] = [];
+        for (const id of ids) {
+          const marker = await this.ensureIndexed(index, id);
+          if (!includesPartner || includesPartner(marker.metadata.partnerId)) result.push({ ...marker.metadata, messages: index.projection(id) });
+        }
+        return result;
+      });
       return { conversations, profile: await this.readProfile(), busy: new Set(this.busy) };
     });
   }
@@ -159,7 +225,7 @@ export class SingleChatHistoryStore {
     return this.exclusive(async () => {
       const manifest = await this.readManifest();
       if (!manifest?.chats.includes(conversationId)) return false;
-      const log = await this.readLog(conversationId);
+      const log = await this.readTip(conversationId);
       if (log.metadata.partnerId !== partnerId) throw new Error('SINGLE_CHAT_HISTORY_WRONG_PARTNER');
       if (log.metadata.sessionId) return log.metadata.sessionId === sessionId;
       await this.append(conversationId, log, { type: 'checkpoint', upsert: [], remove: [],
@@ -175,9 +241,12 @@ export class SingleChatHistoryStore {
       if (!manifest) return false;
       if (manifest.deleted.includes(conversationId)) return true;
       if (!manifest.chats.includes(conversationId)) throw new Error('SINGLE_CHAT_HISTORY_UNKNOWN_CONVERSATION');
-      const current = await this.readLog(conversationId);
+      const current = await this.readTip(conversationId);
       if (current.metadata.partnerId !== partnerId) throw new Error('SINGLE_CHAT_HISTORY_WRONG_PARTNER');
-      const existing = current.messages.get(message.id);
+      const existing = current.messages
+        ? current.messages.get(message.id)
+        : await this.withIndex(manifest.generation, index => index.message(conversationId, message.id))
+          .catch(async () => (await this.readLog(conversationId)).messages.get(message.id));
       if (existing && !message.automation) return true;
       await this.append(conversationId, current, {
         type: 'checkpoint', upsert: [{ ...existing, ...message, automation: existing?.automation ?? message.automation }], remove: [],
@@ -197,6 +266,9 @@ export class SingleChatHistoryStore {
       }
       this.logs.delete(conversationId);
       this.busy.delete(conversationId);
+      if (this.indexedGeneration) {
+        await this.withIndex(manifest.generation, index => index.delete(conversationId)).catch(() => undefined);
+      }
       const directory = path.dirname(eventPath(this.root, conversationId));
       const files = await readdir(directory).catch(error => {
         if (isMissing(error)) return [];
@@ -206,6 +278,14 @@ export class SingleChatHistoryStore {
         if (name === 'events.jsonl' || name.startsWith('events.jsonl.incomplete-')) await rm(path.join(directory, name), { force: true });
       }
       return true;
+    });
+  }
+
+  readMetadata(conversationId: string) {
+    return this.exclusive(async () => {
+      const manifest = await this.readManifest();
+      if (!manifest?.chats.includes(conversationId)) return undefined;
+      return this.withIndex(manifest.generation, async index => (await this.ensureIndexed(index, conversationId)).metadata);
     });
   }
 
@@ -224,7 +304,7 @@ export class SingleChatHistoryStore {
       if (!manifest || manifest.generation !== request.generation || !manifest.chats.includes(request.conversationId)) {
         throw new Error('SINGLE_CHAT_HISTORY_STALE_GENERATION');
       }
-      const log = await this.readLog(request.conversationId);
+      const log = await this.readTip(request.conversationId);
       if (log.revision !== request.expectedRevision) throw new Error('SINGLE_CHAT_HISTORY_STALE_REVISION');
       const remove = request.remove ?? [];
       if (!request.upsert.every(validMessage) || !remove.every(validId)) throw new Error('SINGLE_CHAT_HISTORY_INVALID_CHECKPOINT');
@@ -239,12 +319,6 @@ export class SingleChatHistoryStore {
   private async readProfile() {
     this.profileCache ??= await this.settings.readNow();
     return this.profileCache;
-  }
-
-  private async readConversations(manifest: HistoryManifest) {
-    const conversations: Conversation[] = [];
-    for (const id of manifest.chats) conversations.push(materialize(await this.readLog(id)));
-    return conversations;
   }
 
   private async applyChange(manifest: HistoryManifest, change: SingleChatHistoryChange) {
@@ -264,20 +338,21 @@ export class SingleChatHistoryStore {
       const chats = [conversationId, ...manifest.chats];
       await this.manifests.writeNow({ ...manifest, chats });
       manifest.chats = chats;
-      this.logs.set(conversationId, verified);
+      this.cacheLog(conversationId, verified);
       return;
     }
 
-    const log = await this.readLog(conversationId);
+    const log = await this.readTip(conversationId);
     if (metadata && metadata.partnerId !== log.metadata.partnerId) throw new Error('SINGLE_CHAT_HISTORY_WRONG_PARTNER');
     await this.append(conversationId, log, {
       type: 'checkpoint', metadata: metadataOnCreateOnly ? undefined : metadata, upsert, remove, busy, order,
     });
   }
 
-  private async append(conversationId: string, log: ReturnType<typeof replay>, event: Extract<HistoryEvent, { type: 'checkpoint' }>) {
+  private async append(conversationId: string, log: LogTip, event: Extract<HistoryEvent, { type: 'checkpoint' }>) {
     const target = eventPath(this.root, conversationId);
     const serialized = JSON.stringify(event) + '\n';
+    const previousFingerprint = this.indexedGeneration ? await fingerprint(target) : undefined;
     try {
       if (log.tail.length) {
         await writeFile(target + '.incomplete-' + randomUUID(), log.tail, { flag: 'wx', flush: true, mode: 0o600 });
@@ -289,11 +364,55 @@ export class SingleChatHistoryStore {
       throw error;
     }
     log.metadata = event.metadata ?? log.metadata;
-    applyMessages(log.messages, event.upsert, event.remove, event.order);
+    if (log.messages) applyMessages(log.messages, event.upsert, event.remove, event.order);
+    else this.logs.delete(conversationId);
     log.pending = event.busy ?? log.pending;
     log.length += Buffer.byteLength(serialized);
     log.tail = Buffer.alloc(0);
     log.revision += 1;
+    const generation = this.indexedGeneration;
+    if (generation) {
+      // JSONL is already durable. A failed projection update is repaired on the next indexed read.
+      await this.withIndex(generation, async index => {
+        const indexed = index.marker(conversationId);
+        if (indexed?.revision !== log.revision - 1 || indexed.fingerprint !== previousFingerprint) return;
+        index.checkpoint({
+          metadata: log.metadata, pending: log.pending, revision: log.revision, length: log.length, fingerprint: await fingerprint(target),
+        }, event.upsert, event.remove, event.order);
+      }).catch(() => undefined);
+    }
+  }
+
+  private async ensureIndexed(index: SingleChatHistoryIndex, id: string) {
+    const target = eventPath(this.root, id);
+    const signature = await fingerprint(target);
+    const existing = index.marker(id);
+    if (existing?.fingerprint === signature) return existing;
+    const log = await scanLog(target, id);
+    const marker = { metadata: log.metadata, pending: log.pending, revision: log.revision, length: log.length, fingerprint: signature };
+    index.replace(marker, log.messages.values());
+    return marker;
+  }
+
+  private async withIndex<T>(generation: string, action: (index: SingleChatHistoryIndex) => T | Promise<T>): Promise<T> {
+    const file = path.join(this.root, 'history-index.v1.sqlite');
+    const run = async () => {
+      const index = new SingleChatHistoryIndex(file, generation);
+      try { return await action(index); } finally { index.close(); }
+    };
+    this.indexedGeneration = generation;
+    try {
+      return await run();
+    } catch (error) {
+      if (!isBrokenIndex(error)) throw error;
+      const damaged = file + '.invalid-' + randomUUID();
+      for (const suffix of ['', '-wal', '-shm', '-journal']) {
+        await rename(file + suffix, damaged + suffix).catch(failure => {
+          if (!isMissing(failure)) throw failure;
+        });
+      }
+      return run();
+    }
   }
 
   private async readManifest(): Promise<HistoryManifest | undefined> {
@@ -307,12 +426,38 @@ export class SingleChatHistoryStore {
     return this.manifests.readNow();
   }
 
+  private async readTip(conversationId: string): Promise<LogTip> {
+    const generation = this.indexedGeneration;
+    if (!generation || this.logs.has(conversationId)) return this.readLog(conversationId);
+    const marker = await this.withIndex(generation, index => this.ensureIndexed(index, conversationId)).catch(() => undefined);
+    if (!marker) return this.readLog(conversationId);
+    const size = Number(marker.fingerprint.split(':')[0]);
+    if (!Number.isSafeInteger(size) || !Number.isSafeInteger(marker.length) || marker.length < 0 || marker.length > size) {
+      return this.readLog(conversationId);
+    }
+    const tail = Buffer.alloc(size - marker.length);
+    if (tail.length) {
+      const file = await open(eventPath(this.root, conversationId), 'r');
+      try {
+        const { bytesRead } = await file.read(tail, 0, tail.length, marker.length);
+        if (bytesRead !== tail.length) throw new Error('SINGLE_CHAT_HISTORY_LOG_CHANGED');
+      } finally { await file.close(); }
+    }
+    return { ...marker, tail };
+  }
+
   private async readLog(conversationId: string) {
     const cached = this.logs.get(conversationId);
-    if (cached) return cached;
-    const log = replay(await readFile(eventPath(this.root, conversationId)), conversationId);
-    this.logs.set(conversationId, log);
+    const log = cached ?? await scanLog(eventPath(this.root, conversationId), conversationId);
+    this.cacheLog(conversationId, log);
     return log;
+  }
+
+  private cacheLog(conversationId: string, log: ReturnType<typeof replay>) {
+    this.logs.delete(conversationId);
+    this.logs.set(conversationId, log);
+    const oldest = this.logs.keys().next().value;
+    if (this.logs.size > 4 && oldest) this.logs.delete(oldest);
   }
 
   private exclusive<T>(operation: () => Promise<T>) {
@@ -322,41 +467,79 @@ export class SingleChatHistoryStore {
   }
 }
 
+async function fingerprint(target: string) {
+  const file = await stat(target, { bigint: true });
+  return String(file.size) + ':' + String(file.mtimeNs);
+}
+
+function isBrokenIndex(error: unknown) {
+  return error instanceof Error && /file is not a database|database disk image is malformed|SINGLE_CHAT_INDEX_INVALID_ROW|SINGLE_CHAT_INDEX_SCHEMA_UNSUPPORTED|malformed JSON|no such (?:table|column)/i.test(error.message);
+}
+
 function eventPath(root: string, conversationId: string) {
   return path.join(root, 'conversations', createHash('sha256').update(conversationId).digest('hex'), 'events.jsonl');
 }
 
+type Replay = { metadata?: SingleChatMetadata; messages: Map<string, Message>; pending: boolean; revision: number };
+
+function createReplay(): Replay {
+  return { messages: new Map(), pending: false, revision: 0 };
+}
+
+function acceptRecord(state: Replay, line: string, conversationId: string) {
+  const event: unknown = JSON.parse(line);
+  if (!isRecord(event)) throw new Error('SINGLE_CHAT_HISTORY_INVALID_EVENT');
+  if (state.revision === 0) {
+    if (event.type !== 'conversation.imported' || !validMetadata(event.conversation, conversationId)) throw new Error('SINGLE_CHAT_HISTORY_INVALID_HEADER');
+    state.metadata = event.conversation;
+  } else if (event.type === 'message.imported' && validMessage(event.message) && !state.messages.has(event.message.id)) {
+    state.messages.set(event.message.id, event.message);
+  } else if (event.type === 'checkpoint' && Array.isArray(event.remove) && event.remove.every(validId)
+    && Array.isArray(event.upsert) && event.upsert.every(validMessage)
+    && (event.metadata === undefined || (validMetadata(event.metadata, conversationId) && event.metadata.partnerId === state.metadata?.partnerId))
+    && (event.busy === undefined || typeof event.busy === 'boolean')
+    && (event.order === undefined || (Array.isArray(event.order) && event.order.every(validId)))) {
+    state.metadata = event.metadata ?? state.metadata;
+    state.pending = event.busy ?? state.pending;
+    applyMessages(state.messages, event.upsert, event.remove, event.order);
+  } else {
+    throw new Error('SINGLE_CHAT_HISTORY_INVALID_EVENT');
+  }
+  state.revision++;
+}
+
+function finishReplay(state: Replay, length: number, tail: Buffer) {
+  if (!state.metadata) throw new Error('SINGLE_CHAT_HISTORY_INVALID_HEADER');
+  return { ...state, metadata: state.metadata, length, tail };
+}
+
 function replay(file: Buffer, conversationId: string) {
+  const state = createReplay();
   const length = file.lastIndexOf(10) + 1;
-  const tail = file.subarray(length);
   const lines = file.subarray(0, length).toString('utf8').split('\n');
   lines.pop();
-  const [first, ...events] = lines;
-  const header = JSON.parse(first ?? 'null') as unknown;
-  if (!isRecord(header) || header.type !== 'conversation.imported' || !validMetadata(header.conversation, conversationId)) {
-    throw new Error('SINGLE_CHAT_HISTORY_INVALID_HEADER');
-  }
-  let metadata = header.conversation;
-  let pending = false;
-  const messages = new Map<string, Message>();
-  for (const line of events) {
-    const event: unknown = JSON.parse(line);
-    if (!isRecord(event)) throw new Error('SINGLE_CHAT_HISTORY_INVALID_EVENT');
-    if (event.type === 'message.imported' && validMessage(event.message) && !messages.has(event.message.id)) {
-      messages.set(event.message.id, event.message);
-    } else if (event.type === 'checkpoint' && Array.isArray(event.remove) && event.remove.every(validId)
-      && Array.isArray(event.upsert) && event.upsert.every(validMessage)
-      && (event.metadata === undefined || (validMetadata(event.metadata, conversationId) && event.metadata.partnerId === metadata.partnerId))
-      && (event.busy === undefined || typeof event.busy === 'boolean')
-      && (event.order === undefined || (Array.isArray(event.order) && event.order.every(validId)))) {
-      metadata = event.metadata ?? metadata;
-      pending = event.busy ?? pending;
-      applyMessages(messages, event.upsert, event.remove, event.order);
-    } else {
-      throw new Error('SINGLE_CHAT_HISTORY_INVALID_EVENT');
+  for (const line of lines) acceptRecord(state, line, conversationId);
+  return finishReplay(state, length, file.subarray(length));
+}
+
+async function scanLog(target: string, conversationId: string) {
+  const state = createReplay();
+  let fragments: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of createReadStream(target)) {
+    const buffer: Buffer = chunk;
+    let start = 0;
+    for (let end = buffer.indexOf(10); end !== -1; end = buffer.indexOf(10, start)) {
+      const segment = buffer.subarray(start, end);
+      const record = fragments.length ? Buffer.concat([...fragments, segment]) : segment;
+      acceptRecord(state, record.toString('utf8'), conversationId);
+      length += record.length + 1;
+      fragments = [];
+      start = end + 1;
     }
+    if (start < buffer.length) fragments.push(buffer.subarray(start));
   }
-  return { metadata, messages, pending, revision: lines.length, length, tail };
+  return finishReplay(state, length, Buffer.concat(fragments));
 }
 
 function materialize(log: ReturnType<typeof replay>): Conversation {
@@ -382,6 +565,20 @@ function applyMessages(messages: Map<string, Message>, upsert: Message[], remove
 function validMetadata(value: unknown, conversationId: string): value is SingleChatMetadata {
   return isRecord(value) && value.id === conversationId && validId(value.partnerId)
     && typeof value.title === 'string' && typeof value.updatedAt === 'string' && !('messages' in value);
+}
+
+export function assertHistoryPage(value: unknown): asserts value is SingleChatPageRequest {
+  if (!isRecord(value) || !validId(value.conversationId)) throw new Error('SINGLE_CHAT_HISTORY_INVALID_PAGE');
+  const anchors = [value.before, value.after, value.around].filter(id => id !== undefined);
+  if (anchors.length > 1 || !anchors.every(validId)) throw new Error('SINGLE_CHAT_HISTORY_INVALID_PAGE');
+}
+
+export function assertHistorySearch(value: unknown): asserts value is SingleChatSearchRequest {
+  if (!isRecord(value) || typeof value.query !== 'string' || value.query.length > 512
+    || (value.conversationId !== undefined && !validId(value.conversationId))
+    || (value.after !== undefined && (!validId(value.conversationId) || !validId(value.after)))) {
+    throw new Error('SINGLE_CHAT_HISTORY_INVALID_SEARCH');
+  }
 }
 
 export function assertHistoryImport(value: unknown): asserts value is import('../../shared/singleChatHistory').SingleChatHistoryImport {

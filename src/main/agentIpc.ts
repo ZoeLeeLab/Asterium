@@ -85,7 +85,7 @@ import { ProjectFileDeletionService } from './project/ProjectFileDeletionService
 import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
 import { ConversationDeletionService } from './conversation/ConversationDeletionService';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { assertHistoryImport, assertHistoryWrite, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
+import { assertHistoryImport, assertHistoryPage, assertHistorySearch, assertHistoryWrite, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
 import { mergeLegacySingleChats } from './conversation/singleChatHistoryProjection';
 import { assertSingleChatConversationSnapshots } from '../shared/singleChatMessages';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
@@ -1536,7 +1536,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         || !['local_cli', 'api_partner'].includes(String(item.source))) throw new Error('INVALID_SINGLE_BINDING_SYNC');
       if (await conversationDeletions.isDeleted(item.conversationId)) continue;
       if (await singleChatHistory.isActive()) {
-        const committed = (await singleChatHistory.readConversation(item.conversationId))?.conversation;
+        const committed = await singleChatHistory.readMetadata(item.conversationId);
         if (!committed || committed.partnerId !== item.partnerId || committed.sessionId !== item.nativeThreadId) continue;
       }
       await nativeBindings.registerSingle({
@@ -1768,18 +1768,20 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event);
     return conversationDeletions.listDeletedIds();
   });
-  const openSingleChatHistory = async () => {
-    const history = await singleChatHistory.open();
+  const openSingleChatHistory = async (recent: unknown) => {
+    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
+    const history = await (recent ? singleChatHistory.openRecent() : singleChatHistory.open());
     if (!history) return undefined;
     const deleted = new Set(await conversationDeletions.listDeletedIds());
     return { ...history, conversations: history.conversations.filter(conversation => !deleted.has(conversation.id)) };
   };
-  ipcMain.handle(AGENT_IPC.conversationOpenHistory, async event => {
+  ipcMain.handle(AGENT_IPC.conversationOpenHistory, async (event, recent: unknown) => {
     requireSender(event);
-    return openSingleChatHistory();
+    return openSingleChatHistory(recent);
   });
-  ipcMain.handle(AGENT_IPC.conversationMigrateHistory, async (event, value: unknown) => {
+  ipcMain.handle(AGENT_IPC.conversationMigrateHistory, async (event, value: unknown, recent: unknown) => {
     requireSender(event);
+    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
     await singleChatHistory.initialize(async () => {
       assertHistoryImport(value);
       const [projection, deletedConversationIds] = await Promise.all([singleChatMessages.listLegacy(), conversationDeletions.listDeletedIds()]);
@@ -1789,9 +1791,27 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         deletedConversationIds,
       };
     });
-    const history = await openSingleChatHistory();
+    const history = await openSingleChatHistory(recent);
     if (!history) throw new Error('SINGLE_CHAT_HISTORY_ACTIVATION_MISSING');
     return history;
+  });
+  ipcMain.handle(AGENT_IPC.conversationReadHistoryPage, async (event, value: unknown) => {
+    requireSender(event);
+    assertHistoryPage(value);
+    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
+    return singleChatHistory.readPage(value);
+  });
+  ipcMain.handle(AGENT_IPC.conversationSearchHistory, async (event, value: unknown) => {
+    requireSender(event);
+    assertHistorySearch(value);
+    const result = await singleChatHistory.search(value);
+    const deleted = new Set(await conversationDeletions.listDeletedIds());
+    return {
+      ...result,
+      conversationIds: result.conversationIds.filter(id => !deleted.has(id)),
+      messageIds: value.conversationId && deleted.has(value.conversationId) ? [] : result.messageIds,
+      hasMore: result.hasMore && (!value.conversationId || !deleted.has(value.conversationId)),
+    };
   });
   ipcMain.handle(AGENT_IPC.conversationWriteHistory, async (event, value: unknown) => {
     requireSender(event);

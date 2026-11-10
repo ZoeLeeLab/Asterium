@@ -5,12 +5,14 @@ interface TurnNavigatorProps {
   turns: Message[];
   messageListRef: RefObject<HTMLDivElement | null>;
   streaming: boolean;
+  turnOffset?: number;
   onJump: () => void;
 }
 
-export function TurnNavigator({ turns, messageListRef, streaming, onJump }: TurnNavigatorProps) {
+export function TurnNavigator({ turns, messageListRef, streaming, turnOffset = 0, onJump }: TurnNavigatorProps) {
   const viewportRef = useRef<HTMLElement>(null);
   const latestTurnId = turns.at(-1)?.id;
+  const firstTurnId = turns[0]?.id;
   const [activeTurnId, setActiveTurnId] = useState(latestTurnId);
   const [focusTurnId, setFocusTurnId] = useState<string>();
   const [preview, setPreview] = useState<{ text: string; y: number }>();
@@ -25,7 +27,7 @@ export function TurnNavigator({ turns, messageListRef, streaming, onJump }: Turn
     else if (top + button.offsetHeight > viewport.scrollTop + viewport.clientHeight) {
       viewport.scrollTop = top + button.offsetHeight - viewport.clientHeight;
     }
-  }, [currentTurnId]);
+  }, [currentTurnId, firstTurnId]);
 
   useEffect(() => {
     const root = messageListRef.current;
@@ -101,7 +103,7 @@ export function TurnNavigator({ turns, messageListRef, streaming, onJump }: Turn
     >
       {turns.map((turn, index) => {
         const summary = turn.content.trim().slice(0, 48);
-        const label = `第 ${index + 1} 轮${summary ? `：${summary}` : ''}`;
+        const label = `第 ${turnOffset + index + 1} 轮${summary ? `：${summary}` : ''}`;
         return <button
           key={turn.id}
           type="button"

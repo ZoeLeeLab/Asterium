@@ -8,6 +8,7 @@ export interface SingleChatHistorySnapshot {
   profile: SingleChatProfile;
   conversations: Conversation[];
   interruptedConversationIds?: string[];
+  recentPages?: Record<string, SingleChatPageBounds>;
 }
 
 export interface SingleChatHistoryImport {
@@ -29,4 +30,37 @@ export interface SingleChatHistoryWrite {
   generation: string;
   profile?: SingleChatProfile;
   changes: SingleChatHistoryChange[];
+}
+
+export const SINGLE_CHAT_PAGE_SIZE = 80;
+export const SINGLE_CHAT_SEARCH_SIZE = 100;
+
+export interface SingleChatPageBounds {
+  hasOlder: boolean;
+  hasNewer: boolean;
+  turnOffset?: number;
+}
+
+export interface SingleChatPageRequest {
+  conversationId: string;
+  before?: string;
+  after?: string;
+  around?: string;
+}
+
+export interface SingleChatHistoryPage extends SingleChatPageBounds {
+  messages: Message[];
+  interrupted?: boolean;
+}
+
+export interface SingleChatSearchRequest {
+  query: string;
+  conversationId?: string;
+  after?: string;
+}
+
+export interface SingleChatSearchResult {
+  conversationIds: string[];
+  messageIds: string[];
+  hasMore: boolean;
 }

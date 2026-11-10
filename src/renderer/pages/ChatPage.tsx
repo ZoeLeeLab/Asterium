@@ -1,4 +1,5 @@
 import { useNativeCodexHistory } from '../app/nativeCodexHistory';
+import { useSingleChatTimeline } from '../app/useSingleChatTimeline';
 import { supportsContextHandoff } from '../app/singleChatRuntime';
 import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
 import type { CyberBossChatFileCapabilities } from '../../shared/cyberBossChatAttachments';
@@ -78,6 +79,10 @@ export function ChatPage() {
     state,
     selectPartner,
     selectConversation,
+    chatHistoryPage,
+    chatHistoryLoading,
+    chatHistoryLoadFailed,
+    retryChatHistory,
     selectProject,
     createConversation,
     renameConversation,
@@ -115,6 +120,10 @@ export function ChatPage() {
   const messageListRef = useRef<HTMLDivElement>(null);
   const previousConversationIdRef = useRef<string | undefined>(undefined);
   const followLatestMessageRef = useRef(true);
+  const scrollAnchor = useRef<{ id: string; top: number } | undefined>(undefined);
+  const previousScrollTop = useRef(0);
+  const [historyJump, setHistoryJump] = useState<{ conversationId: string; messageId: string }>();
+  const appliedJump = useRef<typeof historyJump>(undefined);
   const conversationSearchTrigger = useRef<HTMLButtonElement>(null);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const stopFollowingLatest = useCallback(() => { followLatestMessageRef.current = false; }, []);
@@ -132,9 +141,38 @@ export function ChatPage() {
   const [partnerArchiveTargetId, setPartnerArchiveTargetId] = useState('');
   const storedConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
   const historyPartner = state.partners.find((partner) => partner.id === storedConversation?.partnerId);
-  const nativeHistory = useNativeCodexHistory(storedConversation, historyPartner, location.pathname === '/chat');
+  const historyWindow = useSingleChatTimeline(storedConversation, chatHistoryPage);
+  const nativeHistory = useNativeCodexHistory(historyWindow.conversation, historyPartner, location.pathname === '/chat' && !historyWindow.detached && !chatHistoryLoading);
   const activeConversation = nativeHistory.conversation;
   const activeConversationId = activeConversation?.id;
+  const searchHistory = window.asteriumConversations?.searchHistory;
+  const searchIndexed = useCallback((term: string, after?: string) => {
+    if (!activeConversationId || !searchHistory) return Promise.resolve({ messageIds: [], hasMore: false });
+    return searchHistory({ conversationId: activeConversationId, query: term, after });
+  }, [activeConversationId, searchHistory]);
+  const showAround = historyWindow.showAround;
+  const revealHistoryMessage = useCallback(async (messageId: string) => {
+    if (!activeConversationId) return false;
+    const requestJump = () => {
+      followLatestMessageRef.current = false;
+      setHistoryJump({ conversationId: activeConversationId, messageId });
+    };
+    const row = document.getElementById('chat-message-' + messageId);
+    if (row && messageListRef.current?.contains(row)) {
+      requestJump();
+      return true;
+    }
+    return showAround(messageId, requestJump);
+  }, [activeConversationId, showAround]);
+  const keepHistoryPosition = useCallback(() => {
+    const list = messageListRef.current;
+    if (!list) return;
+    const top = list.getBoundingClientRect().top;
+    const row = Array.from(list.querySelectorAll<HTMLElement>('.message-row'))
+      .find(message => message.getBoundingClientRect().bottom >= top);
+    followLatestMessageRef.current = false;
+    scrollAnchor.current = row ? { id: row.id, top: row.getBoundingClientRect().top } : undefined;
+  }, []);
   const [delegationSnapshot, setDelegationSnapshot] = useState<{ conversationId: string; batches: DelegationBatchView[] }>();
   const delegationBatches = delegationSnapshot && delegationSnapshot.conversationId === activeConversationId ? delegationSnapshot.batches : emptyDelegationBatches;
   const [delegationError, setDelegationError] = useState('');
@@ -248,7 +286,7 @@ export function ChatPage() {
   }, [activeConversationId, compaction, dismissChatCompaction]);
   const compacting = compaction?.state === 'running' || Boolean(activeConversation && chatMaintenanceRunning[activeConversation.id]);
   const nativeThreadUnavailable = activeConversation?.nativeThreadState === 'unavailable' || activeConversation?.nativeThreadState === 'deleted';
-  const canRegenerate = activePartner?.sourceMode !== 'existing_thread'
+  const canRegenerate = !historyWindow.detached && !chatHistoryLoading && activePartner?.sourceMode !== 'existing_thread'
     && !compacting
     && !activeConversation?.activeRun && !activeConversation?.isDisabled && !workspaceMismatch && !latestUserMessage?.isGuidance;
   const cyberBossChat = activePartner?.sourceMode === 'existing_thread';
@@ -314,6 +352,7 @@ export function ChatPage() {
       const sent = await sendChatMessage(activeConversation.id, content, prepared.attachments, prepared.messageId, workspaceDecision, quote, activeHandoff);
       if (!sent) return false;
       pendingSendRef.current = undefined;
+      historyWindow.returnToLatest();
       setPendingQuote(undefined);
       void window.asteriumAttachments?.list(activeConversation.id).then(setUserAttachments);
       return true;
@@ -424,24 +463,67 @@ export function ChatPage() {
     }
   };
 
-  const matchingConversationIds = useMemo(() => new Set(
+  const [indexedSidebar, setIndexedSidebar] = useState<{ query: string; ids: string[] }>();
+  useEffect(() => {
+    if (!normalizedQuery || !searchHistory) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void searchHistory({ query: normalizedQuery.slice(0, 512) }).then(result => {
+        if (live) setIndexedSidebar({ query: normalizedQuery, ids: result.conversationIds });
+      }).catch(() => { if (live) setIndexedSidebar({ query: normalizedQuery, ids: [] }); });
+    }, 120);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [normalizedQuery, searchHistory]);
+  const sidebarSearching = Boolean(searchHistory && normalizedQuery && indexedSidebar?.query !== normalizedQuery);
+  const matchingConversationIds = useMemo(() => {
+    const indexed = new Set(indexedSidebar?.query === normalizedQuery ? indexedSidebar.ids : []);
+    return new Set(
     state.conversations
       .filter((conversation) => !conversation.isArchived && (!normalizedQuery
+        || indexed.has(conversation.id)
         || conversation.title.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
         || conversation.messages.some((message) => message.content.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
           || message.quote?.text.toLocaleLowerCase('zh-CN').includes(normalizedQuery))))
       .map((conversation) => conversation.id),
-  ), [normalizedQuery, state.conversations]);
+    );
+  }, [indexedSidebar, normalizedQuery, state.conversations]);
 
   useLayoutEffect(() => {
     const root = messageListRef.current;
     if (!root || !activeConversationId) return;
     const switchedConversation = previousConversationIdRef.current !== activeConversationId;
     previousConversationIdRef.current = activeConversationId;
+    if (switchedConversation) {
+      scrollAnchor.current = undefined;
+      previousScrollTop.current = 0;
+    }
     if (!switchedConversation && !followLatestMessageRef.current) return;
     root.scrollTop = root.scrollHeight;
     followLatestMessageRef.current = true;
   }, [activeConversation, activeConversationId]);
+
+  useLayoutEffect(() => {
+    const list = messageListRef.current;
+    if (!list) return;
+    const anchor = scrollAnchor.current;
+    if (anchor) {
+      scrollAnchor.current = undefined;
+      const row = document.getElementById(anchor.id);
+      if (row && list.contains(row)) list.scrollTop += row.getBoundingClientRect().top - anchor.top;
+    }
+    if (!historyJump || historyJump.conversationId !== activeConversationId || appliedJump.current === historyJump) return;
+    const row = document.getElementById('chat-message-' + historyJump.messageId);
+    if (!row || !list.contains(row)) return;
+    appliedJump.current = historyJump;
+    row.scrollIntoView?.({ block: 'center' });
+    setHighlightedMessageId(historyJump.messageId);
+  }, [activeConversation, activeConversationId, historyJump]);
+
+  useEffect(() => {
+    if (!historyJump) return;
+    const timer = window.setTimeout(() => setHighlightedMessageId(value => value === historyJump.messageId ? '' : value), 1800);
+    return () => window.clearTimeout(timer);
+  }, [historyJump]);
 
   useEffect(() => {
     if (memorySourceTarget?.kind !== 'single_chat') return;
@@ -452,18 +534,17 @@ export function ChatPage() {
       selectConversation(conversation.id);
       return;
     }
+    if (chatHistoryLoading) return;
+    let live = true;
     const timer = window.setTimeout(() => {
-      const target = document.getElementById(`chat-message-${memorySourceTarget.messageId}`);
-      if (!target) return;
-      followLatestMessageRef.current = false;
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setHighlightedMessageId(memorySourceTarget.messageId);
-      const currentState = (location.state as MemorySourceNavigationState | null) ?? {};
-      navigate(location.pathname, { replace: true, state: { ...currentState, memorySourceTarget: undefined } satisfies MemorySourceNavigationState });
-      window.setTimeout(() => setHighlightedMessageId((current) => current === memorySourceTarget.messageId ? '' : current), 1800);
+      void revealHistoryMessage(memorySourceTarget.messageId).then(found => {
+        if (!found || !live) return;
+        const currentState = (location.state as MemorySourceNavigationState | null) ?? {};
+        navigate(location.pathname, { replace: true, state: { ...currentState, memorySourceTarget: undefined } satisfies MemorySourceNavigationState });
+      });
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, [activeConversationId, location.pathname, location.state, memorySourceTarget, navigate, selectConversation, state.conversations]);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [activeConversationId, chatHistoryLoading, location.pathname, location.state, memorySourceTarget, navigate, revealHistoryMessage, selectConversation, state.conversations]);
 
   useEffect(() => {
     const root = messageListRef.current;
@@ -485,8 +566,14 @@ export function ChatPage() {
 
   const trackMessageScroll = () => {
     const root = messageListRef.current;
-    if (!root || conversationSearchOpen) return;
-    followLatestMessageRef.current = root.scrollHeight - root.scrollTop - root.clientHeight <= 72;
+    if (!root) return;
+    const upward = root.scrollTop < previousScrollTop.current;
+    previousScrollTop.current = root.scrollTop;
+    if (conversationSearchOpen) return;
+    followLatestMessageRef.current = !historyWindow.detached && root.scrollHeight - root.scrollTop - root.clientHeight <= 72;
+    if (upward && root.scrollTop <= 56 && historyWindow.hasOlder && !historyWindow.loading) {
+      void historyWindow.loadOlder(keepHistoryPosition);
+    }
   };
 
   useEffect(() => {
@@ -927,7 +1014,7 @@ export function ChatPage() {
               </section>
             );
           })}
-          {normalizedQuery && matchingConversationIds.size === 0 && <div className="search-empty">没有找到相关聊天记录</div>}
+          {normalizedQuery && matchingConversationIds.size === 0 && <div className="search-empty">{sidebarSearching ? '查找历史中…' : '没有找到相关聊天记录'}</div>}
         </div>
         <button className="profile-row profile-row--button" type="button" onClick={() => navigate('/profile', { state: { from: '/chat' } })} title="编辑个人资料">
           <Avatar name={userProfile.displayName} src={userAvatar} accent="#91a9cf" size="sm" />
@@ -956,16 +1043,24 @@ export function ChatPage() {
           {activeConversation?.isDisabled && <div className="removed-partner-notice">伙伴配置来源已改变 · 这条旧会话已停用，请切换到自动创建的新对话</div>}
           {workspaceMismatch && <div className="removed-partner-notice">这条对话仍绑定原工作区「{activeConversation?.partnerRoot}」。你可以切回原工作区继续原 session；也可以直接发送，确认后将切换到当前工作区的独立 session。</div>}
           {activeConversation ? (<>
-            {conversationSearchOpen && <ConversationSearch key={activeConversation.id} listRef={messageListRef} onNavigate={stopFollowingLatest} onClose={() => {
+            {conversationSearchOpen && <ConversationSearch key={activeConversation.id} listRef={messageListRef} onNavigate={stopFollowingLatest}
+              searchIndexed={searchHistory ? searchIndexed : undefined} onReveal={revealHistoryMessage} onClose={() => {
               setConversationSearchOpen(false);
               conversationSearchTrigger.current?.focus();
             }} />}
             <div className="message-scroll-region">
-            {turnMessages.length > 1 && <TurnNavigator key={`turn-navigator:${activeConversation.id}`} turns={turnMessages} messageListRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} onJump={stopFollowingLatest} />}
+            {turnMessages.length > 1 && <TurnNavigator key={`turn-navigator:${activeConversation.id}`} turns={turnMessages} messageListRef={messageListRef}
+              turnOffset={activeConversation.messages.length === historyWindow.conversation?.messages.length ? historyWindow.turnOffset : undefined}
+              streaming={Boolean(activeConversation.activeRun)} onJump={stopFollowingLatest} />}
             <div className="message-list" ref={messageListRef} onScroll={trackMessageScroll}>
+              {chatHistoryLoading && <div className="chat-history-controls" role="status">{chatHistoryLoadFailed
+                ? <button type="button" className="secondary-button" onClick={retryChatHistory}>重新读取单聊历史</button> : '正在读取单聊历史…'}</div>}
+              {historyWindow.hasOlder && <div className="chat-history-controls"><button type="button" className="secondary-button" disabled={historyWindow.loading}
+                onClick={() => void historyWindow.loadOlder(keepHistoryPosition)}>加载更早消息</button></div>}
+              {historyWindow.failed && <div className="chat-history-controls" role="status">历史暂时读不到，可以重试。</div>}
               {nativeHistory.unavailable && <div className="removed-partner-notice" role="status">暂时读不到 Codex 原线程，当前显示星丛已有记录。</div>}
               {nativeHistory.hasOlder && <button type="button" className="secondary-button" disabled={nativeHistory.loadingOlder} onClick={() => {
-                stopFollowingLatest();
+                keepHistoryPosition();
                 void nativeHistory.loadOlder();
               }}>{nativeHistory.loadingOlder ? '正在读取原线程…' : '加载更早的 Codex 消息'}</button>}
               {chatRows.map(({ message, key, batches, receiptOnly }) => {
@@ -1065,9 +1160,18 @@ export function ChatPage() {
                 <div className="first-response-wait__content"><strong>{activeConversation.workStatus ? partnerStatusLabel(activeConversation.workStatus, activePartner.publicIdentity.displayName) : `${activePartner.publicIdentity.displayName} 正在整理思路`}</strong><span className="breathing-dots" aria-hidden="true"><i /><i /><i /></span></div>
               </div>}
               {activeConversation.runNotice?.restored && <div className={`run-notice run-notice--${activeConversation.runNotice.state}`} role="status"><CircleAlert size={15} /><span>{activeConversation.runNotice.message}，已恢复原回复。</span></div>}
+              {historyWindow.detached && <div className="chat-history-controls">
+                {historyWindow.hasNewer && <button type="button" className="secondary-button" disabled={historyWindow.loading}
+                  onClick={() => void historyWindow.loadNewer(keepHistoryPosition)}>加载较新消息</button>}
+                <button type="button" className="secondary-button" onClick={() => {
+                  setHistoryJump(undefined);
+                  followLatestMessageRef.current = true;
+                  historyWindow.returnToLatest();
+                }}>回到最新消息</button>
+              </div>}
               <div ref={messageEndRef} />
             </div>
-            <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} partnerName={activePartner?.publicIdentity.displayName} onJump={() => { followLatestMessageRef.current = true; }} />
+            {!historyWindow.detached && <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} partnerName={activePartner?.publicIdentity.displayName} onJump={() => { followLatestMessageRef.current = true; }} />}
             </div>
           </>) : (
             <div className="friendly-empty">
@@ -1200,7 +1304,9 @@ export function ChatPage() {
                 <span className="artifact-actions"><button type="button" disabled={latest.availability !== 'available'} onClick={() => void window.asteriumAttachments?.open(latest.id, activeConversation!.id)} title="用系统应用打开快照"><ExternalLink size={14} /></button><button type="button" disabled={latest.sourceAvailability !== 'available'} onClick={() => void window.asteriumAttachments?.reveal(latest.id, activeConversation!.id)} title={latest.sourceAvailability === 'available' ? '打开原文件所在文件夹' : latest.sourceAvailability === 'missing' ? '原文件已失效' : '没有原文件路径'}><FolderOpen size={14} /></button><button type="button" onClick={() => setExpandedAttachmentSources((current) => ({ ...current, [sourceId]: !current[sourceId] }))} title="查看附件版本" aria-expanded={Boolean(expandedAttachmentSources[sourceId])}>{expandedAttachmentSources[sourceId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></span>
                 </>}
               </div>
-              {expandedAttachmentSources[sourceId] && <div className="attachment-version-list">{[...versions].reverse().map((version, index) => <div className="attachment-version" key={version.id} onContextMenu={(event) => { event.preventDefault(); setAttachmentMenu({ id: version.id, x: event.clientX, y: event.clientY }); }}><button type="button" disabled={version.availability !== 'available'} onClick={() => void openUserAttachment(version.id)}><span><strong>{index === 0 ? '最新版' : `版本 ${versions.length - index}`}</strong><small>{formatAttachmentTime(version.sentAt)} · {formatBytes(version.sizeBytes)}</small></span></button>{version.sends.map((send) => { const message = activeConversation?.messages.find((item) => item.id === send.messageId); return <small className="attachment-send-record" key={`${version.id}-${send.messageId}-${send.sentAt}`}>{formatAttachmentTime(send.sentAt)} · {message ? `消息：${message.content.slice(0, 28) || '仅附件'}` : '对应消息已不在本地记录中'}</small>; })}</div>)}</div>}
+              {expandedAttachmentSources[sourceId] && <div className="attachment-version-list">{[...versions].reverse().map((version, index) => <div className="attachment-version" key={version.id} onContextMenu={(event) => { event.preventDefault(); setAttachmentMenu({ id: version.id, x: event.clientX, y: event.clientY }); }}><button type="button" disabled={version.availability !== 'available'} onClick={() => void openUserAttachment(version.id)}><span><strong>{index === 0 ? '最新版' : `版本 ${versions.length - index}`}</strong><small>{formatAttachmentTime(version.sentAt)} · {formatBytes(version.sizeBytes)}</small></span></button>{version.sends.map((send) => { const message = activeConversation?.messages.find((item) => item.id === send.messageId); return <small className="attachment-send-record" key={`${version.id}-${send.messageId}-${send.sentAt}`}>{formatAttachmentTime(send.sentAt)} · {message ? `消息：${message.content.slice(0, 28) || '仅附件'}`
+                  : window.asteriumConversations?.readHistoryPage ? <button type="button" className="text-button" onClick={() => void revealHistoryMessage(send.messageId)}>查看发送消息</button>
+                    : '对应消息已不在本地记录中'}</small>; })}</div>)}</div>}
             </div>)}
             {!attachmentGroups.length && <p className="resource-empty">这段对话还没有发送附件</p>}
           </div>}

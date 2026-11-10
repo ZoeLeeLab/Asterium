@@ -44,10 +44,11 @@ export class SingleChatMessageStore {
     return value ? structuredClone(value) : undefined;
   }
 
-  async list() {
-    const active = await this.history?.readProjection();
+  async list(includesPartner?: (partnerId: string) => boolean) {
+    const active = await this.history?.readProjection(undefined, includesPartner);
     if (active) return active.conversations.map(item => projectSingleChat(item, active.profile, active.busy.has(item.id)));
-    return this.listLegacy();
+    const legacy = await this.listLegacy();
+    return includesPartner ? legacy.filter(item => includesPartner(item.partnerId)) : legacy;
   }
 
   async listLegacy() {

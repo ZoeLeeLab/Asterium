@@ -1177,6 +1177,10 @@ interface PrototypeContextValue {
   toggleTheme: () => void;
   selectPartner: (partnerId: string) => void;
   selectConversation: (conversationId: string) => void;
+  chatHistoryPage?: import('../../shared/singleChatHistory').SingleChatPageBounds;
+  chatHistoryLoading?: boolean;
+  chatHistoryLoadFailed?: boolean;
+  retryChatHistory?: () => void;
   selectProject: (projectId: string) => void;
   refreshProfiles: () => Promise<import('../../shared/agentProtocol').PartnerProfilesSyncResult | undefined>;
   addPartner: (partner: Partner, alreadySaved?: boolean) => void;
@@ -1907,6 +1911,10 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     appearanceError, appearance, updateAppearance, setTheme, toggleTheme,
     selectPartner: (partnerId) => dispatch({ type: 'selectPartner', partnerId }),
     selectConversation: (conversationId) => dispatch({ type: 'selectConversation', conversationId }),
+    chatHistoryPage: chatHistory.selectedPage,
+    chatHistoryLoading: chatHistory.needsRecent,
+    chatHistoryLoadFailed: chatHistory.recentFailed,
+    retryChatHistory: chatHistory.retryRecent,
     selectProject: (projectId) => dispatch({ type: 'selectProject', projectId }),
     addPartner: (partner, alreadySaved = false) => {
       if (!alreadySaved && !partner.isPrototype) void window.asteriumAgents?.savePartnerProfile?.(partnerProfileSeed(partner)).catch(() => undefined);
@@ -2232,7 +2240,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     toggleGroupMember: (groupChatId, partnerId) => dispatch({ type: 'toggleGroupMember', groupChatId, partnerId }),
     contextHandoffDraft,
     setContextHandoffDraft,
-    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff) => compactingRef.current.has(conversationId) ? Promise.resolve(false) : sendSingleChatMessage({
+    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff) => (compactingRef.current.has(conversationId) || (conversationId === state.activeConversationId && chatHistory.needsRecent)) ? Promise.resolve(false) : sendSingleChatMessage({
       state,
       dispatch,
       saveBeforeSend: chatHistory.managed ? chatHistory.saveBeforeSend : undefined,
@@ -2305,6 +2313,8 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       bridge: { agents: window.asteriumAgents, attachments: window.asteriumAttachments },
       conversationId,
       editedContent,
+      readEarlierHistory: conversationId === state.activeConversationId && chatHistory.selectedPage?.hasOlder
+        ? window.asteriumConversations?.readHistoryPage : undefined,
     }),
     resolveChatAuthorization: (conversationId, decision, persistExtensionTrust) => {
       const conversation = state.conversations.find((item) => item.id === conversationId);
@@ -2476,10 +2486,11 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       });
     },
     addProjectMember: (projectId, partnerId) => dispatch({ type: 'addProjectMember', projectId, partnerId }),
-  }), [chatHistory.managed, chatHistory.saveBeforeSend, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
+  }), [chatHistory.managed, chatHistory.needsRecent, chatHistory.recentFailed, chatHistory.retryRecent, chatHistory.saveBeforeSend, chatHistory.selectedPage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
   return <PrototypeContext.Provider value={value}>
     {conversationAuthorityReady ? children : null}
+    {!chatHistory.ready && !chatHistory.startupFailed && <div className="chat-history-controls" role="status">正在准备单聊历史…</div>}
     {chatHistory.startupFailed && <div className="run-notice single-chat-storage-notice" role="alert">
       <span>单聊资料暂时无法打开。请检查磁盘空间和访问权限。</span>
       <button type="button" className="secondary-button" onClick={chatHistory.retryStartup}>重试读取</button>

@@ -347,8 +347,10 @@ export interface AsteriumNativeBindingsApi {
 }
 
 export interface AsteriumConversationsApi {
-  openHistory?: () => Promise<import('./singleChatHistory').SingleChatHistorySnapshot | undefined>;
-  migrateHistory?: (source: import('./singleChatHistory').SingleChatHistoryImport) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot>;
+  openHistory?: (recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot | undefined>;
+  migrateHistory?: (source: import('./singleChatHistory').SingleChatHistoryImport, recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot>;
+  readHistoryPage?: (request: import('./singleChatHistory').SingleChatPageRequest) => Promise<import('./singleChatHistory').SingleChatHistoryPage | undefined>;
+  searchHistory?: (request: import('./singleChatHistory').SingleChatSearchRequest) => Promise<import('./singleChatHistory').SingleChatSearchResult>;
   writeHistory?: (request: import('./singleChatHistory').SingleChatHistoryWrite) => Promise<void>;
   delete: (request: ConversationDeleteRequest) => Promise<ConversationDeleteResult>;
   listDeleted: () => Promise<string[]>;
