@@ -17,6 +17,7 @@
   "status": "experimental",
   "codeEntries": [
     "src/main/adapters/CodexCliAdapter.ts",
+    "src/renderer/app/nativeCodexHistory.ts",
     "src/main/adapters/ClaudeCodeAdapter.ts",
     "src/main/adapters/ExistingThreadAdapter.ts",
     "src/main/adapters/CyberBossBridgeClient.ts",
@@ -27,6 +28,8 @@
   ],
   "tests": [
     "tests/unit/codexCliAdapter.test.ts",
+    "tests/unit/nativeCodexHistory.test.ts",
+    "tests/long-chat-browser.mjs",
     "tests/unit/claudeCodeAdapter.test.ts",
     "tests/unit/existingThreadAdapter.test.ts",
     "tests/renderer/AgentChatFlows.test.tsx",
@@ -37,10 +40,11 @@
   ],
   "docs": [
     "docs/capabilities/schema.md",
+    "docs/single-chat-storage-stage-1.md",
     "docs/claude-cli-compatibility.md",
     "docs/claude-cli-release-blocker.md"
   ],
-  "lastVerifiedCommit": "106b5506be670d43f97ef85ff8c4d3d424834a55"
+  "lastVerifiedCommit": "323cfab7f9c0d95569b1b0c252027cae6c9f4db8"
 }
 ---
 
