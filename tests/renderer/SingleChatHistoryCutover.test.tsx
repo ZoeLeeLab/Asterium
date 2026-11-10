@@ -151,7 +151,9 @@ it('leaves a draft in place if the pre-send disk write fails', async () => {
   const fixture = connect(path.join(autoTestOutput(), 'disk-full'), async () => { throw new Error('ENOSPC'); });
   mount();
   const input = await sendPrompt('保留合成草稿');
-  expect(await screen.findByRole('alert')).toHaveTextContent('消息保存失败');
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('消息保存失败');
+  expect(alert.querySelector('button')).toBeNull();
   expect(input).toHaveValue('保留合成草稿');
   expect(fixture.send).not.toHaveBeenCalled();
 });

@@ -2492,14 +2492,11 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
 
   return <PrototypeContext.Provider value={value}>
     {conversationAuthorityReady ? children : null}
-    {!chatHistory.ready && !chatHistory.startupFailed && <div className="chat-history-controls" role="status">正在准备单聊历史…</div>}
     {chatHistory.startupFailed && <div className="run-notice single-chat-storage-notice" role="alert">
-      <span>单聊资料暂时无法打开。请检查磁盘空间和访问权限。</span>
-      <button type="button" className="secondary-button" onClick={chatHistory.retryStartup}>重试读取</button>
+      <span>单聊资料暂时无法打开。请检查磁盘空间和访问权限，再切回星丛重试。</span>
     </div>}
     {(chatHistory.writeFailed || chatHistory.sendSaveFailed) && <div className="run-notice single-chat-storage-notice" role="alert">
-      <span>{chatHistory.writeFailed ? '单聊暂时无法保存。请检查磁盘后重试保存。' : '消息保存失败，草稿还在输入框里。请检查磁盘后重新发送。'}</span>
-      <button type="button" className="secondary-button" onClick={chatHistory.retryWrite}>{chatHistory.writeFailed ? '重试保存' : '知道了'}</button>
+      <span>{chatHistory.writeFailed ? '单聊暂时无法保存。请检查磁盘，再切回星丛重试。' : '消息保存失败，草稿还在输入框里。请检查磁盘后重新发送。'}</span>
     </div>}
     {projectConfirmation && createPortal(<Modal title="确认项目保存位置" description={`「${projectConfirmation.name}」的项目文件将保存在以下目录。`}
       onClose={() => finishProjectConfirmation(false)} initialFocusRef={projectConfirmationCancel}>

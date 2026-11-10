@@ -135,12 +135,22 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
   const saveProfile = useCallback((profile: SingleChatProfile) => {
     dispatch({ type: 'historySaveProfile', profile });
   }, []);
-  const retryStartup = useCallback(() => { setStartupFailed(false); setStartupAttempt(attempt => attempt + 1); }, []);
-  const retryWrite = useCallback(() => { setWriteFailed(false); setSendSaveFailed(false); }, []);
+  useEffect(() => {
+    if (!startupFailed && !writeFailed) return;
+    const retry = () => {
+      if (startupFailed) {
+        setStartupFailed(false);
+        setStartupAttempt(attempt => attempt + 1);
+      }
+      if (writeFailed) setWriteFailed(false);
+    };
+    window.addEventListener('focus', retry);
+    return () => window.removeEventListener('focus', retry);
+  }, [startupFailed, writeFailed]);
 
   return {
     state: frame.state, dispatch, managed: Boolean(bridge), ready: !bridge || Boolean(generation), pending: pending.length > 0,
-    startupFailed, writeFailed, sendSaveFailed, retryStartup, retryWrite, saveProfile, saveBeforeSend,
+    startupFailed, writeFailed, sendSaveFailed, saveProfile, saveBeforeSend,
     selectedPage, needsRecent,
   };
 }
