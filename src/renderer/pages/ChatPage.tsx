@@ -6,6 +6,7 @@ import { useCollapsibleRails } from '../components/layout/useCollapsibleRails';
 import { SessionCommandNotice } from '../components/chat/SessionCommandNotice';
 import { ConversationSearch } from '../components/chat/ConversationSearch';
 import { JumpToLatest } from '../components/chat/JumpToLatest';
+import { TurnNavigator } from '../components/chat/TurnNavigator';
 import { WorkspaceShortcuts } from '../components/layout/WorkspaceShortcuts';
 import {
   Archive,
@@ -170,7 +171,6 @@ export function ChatPage() {
   const [activePreviewId, setActivePreviewId] = useState('');
   const [editingMessageId, setEditingMessageId] = useState('');
   const [editingText, setEditingText] = useState('');
-  const [activeTurnId, setActiveTurnId] = useState('');
   const [highlightedMessageId, setHighlightedMessageId] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState('');
   const [collapsedPartners, setCollapsedPartners] = useState<Record<string, boolean>>(() => readCollapsedPartners(state.activePartnerId));
@@ -544,18 +544,6 @@ export function ChatPage() {
     // Refresh only when switching conversations; artifact updates inside this effect must not restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConversation?.id]);
-
-  useEffect(() => {
-    const root = messageListRef.current;
-    if (!root || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting).sort((left, right) => Math.abs(left.boundingClientRect.top - root.getBoundingClientRect().top) - Math.abs(right.boundingClientRect.top - root.getBoundingClientRect().top));
-      const id = visible[0]?.target.getAttribute('data-turn-id');
-      if (id) setActiveTurnId(id);
-    }, { root, threshold: 0.3 });
-    root.querySelectorAll('[data-turn-id]').forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [activeConversation?.messages.length]);
 
   useEffect(() => {
     if (!artifactMenu && !attachmentMenu && !quoteMenu) return;
@@ -952,8 +940,8 @@ export function ChatPage() {
               setConversationSearchOpen(false);
               conversationSearchTrigger.current?.focus();
             }} />}
-            {turnMessages.length > 1 && <nav className="turn-navigator" aria-label="快速选择对话回合">{turnMessages.map((turn, index) => <button className={activeTurnId === turn.id ? 'active' : ''} type="button" key={turn.id} onClick={() => document.getElementById(`chat-message-${turn.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span>{index + 1}</span><em>{turn.content.slice(0, 48) || `第 ${index + 1} 轮`}</em></button>)}</nav>}
             <div className="message-scroll-region">
+            {turnMessages.length > 1 && <TurnNavigator key={`turn-navigator:${activeConversation.id}`} turns={turnMessages} messageListRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} onJump={stopFollowingLatest} />}
             <div className="message-list" ref={messageListRef} onScroll={trackMessageScroll}>
               {chatRows.map(({ message, key, batches, receiptOnly }) => {
                 const mine = isAsteriumUser(message.authorId);
