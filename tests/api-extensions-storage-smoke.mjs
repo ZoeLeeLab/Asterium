@@ -143,7 +143,7 @@ async function launch() {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   await until(() => { page = browser.contexts().flatMap((context) => context.pages()).find((candidate) => candidate.url().startsWith('file:')); return Boolean(page); }, 'page');
   await page.getByLabel('主要页面').waitFor();
-  await page.waitForFunction(() => Boolean(globalThis.asteriumExtensions && localStorage.getItem('asterium.prototype.v7')));
+  await page.waitForFunction(async () => Boolean(globalThis.asteriumExtensions && await globalThis.asteriumConversations?.openHistory?.(true)));
 }
 async function close() {
   await browser?.close().catch(() => {}); browser = undefined;
