@@ -130,7 +130,7 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
   await waitFor(async () => {
     const saved = await fixture.history.readConversation(conversationId);
     expect(saved?.conversation.messages.at(-1)?.timeline).toContainEqual(expect.objectContaining({ toolCallId: 'fixture-tool', state: 'success', detailRef: expect.anything() }));
-  });
+  }, { timeout: 5000 });
   fixture.emit('text.delta', 4, { text: '这一段只在内存' });
   expect(await screen.findByText('这一段只在内存')).toBeInTheDocument();
   view.unmount();

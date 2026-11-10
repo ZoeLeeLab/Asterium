@@ -13,6 +13,13 @@ export function useSingleChatTimeline(conversation: Conversation | undefined, re
   const [timeline, setWindow] = useState<TimelineWindow>();
   const [busyId, setBusyId] = useState<string>();
   const [failedId, setFailedId] = useState<string>();
+  const [windowId, setWindowId] = useState(id);
+  if (windowId !== id) {
+    setWindowId(id);
+    setWindow(undefined);
+    setBusyId(undefined);
+    setFailedId(undefined);
+  }
   const activeId = useRef(id);
   const requestNumber = useRef(0);
   const pending = useRef(false);
@@ -20,17 +27,16 @@ export function useSingleChatTimeline(conversation: Conversation | undefined, re
     activeId.current = id;
     requestNumber.current++;
     pending.current = false;
-    setWindow(undefined);
-    setBusyId(undefined);
-    setFailedId(undefined);
   }, [id]);
 
   const current = timeline?.id === id ? timeline : undefined;
+  const recentMessages = conversation?.messages;
+  const recentStartId = current?.recentStartId;
   const tail = useMemo(() => {
-    if (!conversation || !recentPage) return conversation?.messages;
-    const first = current?.recentStartId ? conversation.messages.findIndex(message => message.id === current.recentStartId) : -1;
-    return conversation.messages.slice(first >= 0 ? first : -SINGLE_CHAT_PAGE_SIZE);
-  }, [conversation?.messages, current?.recentStartId, recentPage]);
+    if (!recentMessages || !recentPage) return recentMessages;
+    const first = recentStartId ? recentMessages.findIndex(message => message.id === recentStartId) : -1;
+    return recentMessages.slice(first >= 0 ? first : -SINGLE_CHAT_PAGE_SIZE);
+  }, [recentMessages, recentStartId, recentPage]);
   const displayed = useMemo(() => {
     if (!conversation || !tail) return conversation;
     if (!current) return recentPage ? { ...conversation, messages: tail } : conversation;
