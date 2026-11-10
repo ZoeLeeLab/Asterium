@@ -609,6 +609,7 @@ function friendlyErrorLabel(summary: string, partnerName: string) {
 }
 
 function friendlyStatusLabel(summary: string, state: 'running' | 'success' | 'failure', partnerName: string) {
+  if (summary === '回复中断') return summary;
   if (/用户.*停止|已停止|取消/.test(summary)) return '已由用户停止';
   const namedSummary = partnerStatusLabel(summary, partnerName);
   if (state === 'running' && namedSummary !== summary) return namedSummary;

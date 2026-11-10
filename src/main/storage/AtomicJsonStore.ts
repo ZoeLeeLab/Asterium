@@ -10,6 +10,7 @@ export interface AtomicJsonStoreOptions<T> {
   decode: (value: unknown) => T;
   encode?: (value: T) => string;
   mode?: number;
+  flush?: boolean;
 }
 
 /**
@@ -44,6 +45,7 @@ export class AtomicJsonStore<T> {
       await writeFile(temporary, (this.options.encode ?? JSON.stringify)(value), {
         encoding: 'utf8',
         mode: this.options.mode ?? 0o600,
+        flush: this.options.flush,
       });
       await rename(temporary, target);
     } finally {

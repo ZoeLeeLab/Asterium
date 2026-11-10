@@ -178,3 +178,7 @@ S4 将自动测试入口迁到独立运行目录，autotest 显式入口通过�
 本轮源码增加 daily/dev/acceptance/autotest 启动环境，源代码默认开发资料，安装版默认日常资料；在业务存储创建前检查真实规范化路径、Windows junction／符号链接与目录归属。userData、sessionData 和运行临时目录独立，窗口／托盘明确标记环境，仅日常安装版注册自启动和执行安装更新。实现入口另含 src/main/settings/runtimeEnvironment.ts 和 src/shared/runtimeEnvironment.ts；新文件尚未提交，待获授权建立代码基线后补入结构化 codeEntries 并核验绑定。项目位置设置页尚未实施。
 
 lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。
+
+## 单聊本地历史迁移（Beta.5 工作区）
+
+桌面首次启动把旧单聊和应用资料校验后切换到主进程管理的目录。用户消息先保存再发送，工具返回和助手回复结束时写入历史。恢复显示已保存的内容和中断状态。旧资料保留为回退来源，激活后不会再次导入。当前源码与隔离验证范围见 [第二阶段记录](../../single-chat-storage-stage-2.md)。该范围将在代码基线提交后追加结构化核验来源。

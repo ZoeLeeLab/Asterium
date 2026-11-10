@@ -6,6 +6,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+import { build } from 'vite';
 import { autoTestOutput } from '../helpers/autoTest.mjs';
 import { SingleChatHistoryStore } from '../../src/main/conversation/SingleChatHistoryStore';
 import type { Conversation, Message } from '../../src/renderer/types/domain';
@@ -41,6 +42,17 @@ describe('single chat migration activation', () => {
     expect((await reopened.readConversation('one'))?.conversation.messages[0].content).toBe('new content');
   });
 
+  it('persists a newly bound native session without letting a second session replace it', async () => {
+    const profile = path.join(autoTestOutput(), 'native-binding');
+    const store = new SingleChatHistoryStore(profile);
+    const conversation = { ...chat('one'), sessionId: undefined };
+    await store.initialize(async () => ({ conversations: [conversation], deletedConversationIds: [] }));
+    expect(await store.bindInitialSession('one', 'fixture-partner', 'first-thread')).toBe(true);
+    expect(await store.bindInitialSession('one', 'fixture-partner', 'other-thread')).toBe(false);
+    const reopened = new SingleChatHistoryStore(profile);
+    expect((await reopened.readConversation('one'))?.conversation.sessionId).toBe('first-thread');
+  });
+
   it('retries interrupted staging, but does not reimport when an activated manifest is missing', async () => {
     const profile = path.join(autoTestOutput(), 'staging');
     await mkdir(path.join(profile, 'single-chat-history.stage-abandoned'), { recursive: true });
@@ -51,7 +63,7 @@ describe('single chat migration activation', () => {
     const active = path.join(profile, 'single-chat-history.v2', 'manifest.json');
     await rename(active, active + '.unavailable');
     const legacy = vi.fn(async () => ({ conversations: [], deletedConversationIds: [] }));
-    await expect(store.initialize(legacy)).rejects.toThrow('ENOENT');
+    await expect(store.initialize(legacy)).rejects.toThrow('SINGLE_CHAT_HISTORY_MANIFEST_MISSING');
     expect(legacy).not.toHaveBeenCalled();
   });
 
@@ -63,7 +75,13 @@ describe('single chat migration activation', () => {
     const manifest = await store.initialize(async () => ({ conversations, deletedConversationIds: [] }));
     const target = logPath(profile, 'chat-1');
     const fixture = path.join(profile, 'abrupt-worker.cjs');
-    const modulePath = fileURLToPath(new URL('../../src/main/conversation/SingleChatHistoryStore.ts', import.meta.url));
+    const entry = fileURLToPath(new URL('../../src/main/conversation/SingleChatHistoryStore.ts', import.meta.url));
+    const bundle = path.join(profile, 'bundle');
+    await build({
+      configFile: false, logLevel: 'silent',
+      build: { outDir: bundle, lib: { entry, formats: ['cjs'], fileName: () => 'store.cjs' }, rollupOptions: { external: [/^node:/] } },
+    });
+    const modulePath = path.join(bundle, 'store.cjs');
     await writeFile(fixture, [
       'const { appendFileSync } = require("node:fs");',
       'const { pathToFileURL } = require("node:url");',
@@ -77,7 +95,7 @@ describe('single chat migration activation', () => {
       '  setInterval(() => {}, 1000);',
       '})().catch(() => process.exit(1));',
     ].join('\n'));
-    const child = fork(fixture, [modulePath, profile, manifest.generation, target], { execArgv: ['--experimental-transform-types'], stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
+    const child = fork(fixture, [modulePath, profile, manifest.generation, target], { execArgv: [], stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
     const exit = once(child, 'exit');
     try {
       const status = await Promise.race([once(child, 'message').then(([value]) => value), exit.then(() => 'exited')]);

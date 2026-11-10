@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { build, preview } from 'vite';
-import { autoTestOutput, launchTestBrowser, runAutoTest } from './helpers/autoTest.mjs';
+import { autoTestOutput, createTestViteServer, launchTestBrowser, runAutoTest } from './helpers/autoTest.mjs';
 
 await runAutoTest(async () => {
   const outDir = autoTestOutput();
@@ -15,6 +15,17 @@ await runAutoTest(async () => {
     const browser = await launchTestBrowser(chromium, { headless: true,
       ...(process.platform === 'win32' && edgeRoot ? { executablePath: path.join(edgeRoot, 'Microsoft', 'Edge', 'Application', 'msedge.exe') } : {}) });
     const context = await browser.newContext({ viewport: { width: 1380, height: 860 } });
+    const loader = await createTestViteServer({ configFile: 'vite.renderer.config.ts', server: { middlewareMode: true } });
+    const { SingleChatHistoryStore } = await loader.ssrLoadModule(path.resolve('src/main/conversation/SingleChatHistoryStore.ts'));
+    const history = new SingleChatHistoryStore(autoTestOutput());
+    let importCount = 0;
+    await context.exposeBinding('fixtureChatHistory', async (_, operation, value) => {
+      if (operation === 'open') return history.open();
+      if (operation === 'write') return history.write(value);
+      assert.equal(operation, 'migrate');
+      await history.initialize(async () => { importCount++; return { ...value, deletedConversationIds: [] }; });
+      return history.open();
+    });
     const page = await context.newPage();
     const turns = 300;
     await page.addInitScript((turnCount) => {
@@ -39,6 +50,12 @@ await runAutoTest(async () => {
       }));
       const fixture = window.__longChat = { polls: 0, sends: 0, deltas: 0, batches: [], historyReads: [] };
       window.asteriumDelegation = { list: async () => { fixture.polls++; return structuredClone(fixture.batches); } };
+      window.asteriumConversations = {
+        listDeleted: async () => [],
+        openHistory: () => window.fixtureChatHistory('open'),
+        migrateHistory: input => window.fixtureChatHistory('migrate', input),
+        writeHistory: input => window.fixtureChatHistory('write', input),
+      };
       window.asteriumAgents = {
         onEvent: (listener) => { fixture.listener = listener; return () => { fixture.listener = undefined; }; },
         sendLocalCliMessage: async () => { fixture.sends++; },
@@ -70,6 +87,9 @@ await runAutoTest(async () => {
         fixture.timer = window.setInterval(() => {
           fixture.deltas++;
           send('text.delta', { text: `片段 ${fixture.deltas}。 ` });
+          if (fixture.deltas === 24 || fixture.deltas === 48) send('tool.completed', {
+            toolCallId: 'fixture-tool-' + fixture.deltas, outcome: 'success', summary: '合成工具完成',
+          });
         }, 80);
         fixture.finishReply = () => { window.clearInterval(fixture.timer); send('run.completed'); };
       };
@@ -184,7 +204,15 @@ await runAutoTest(async () => {
     const ime = await sample('chinese-ime', composeChinese, phrase);
     assert.ok(ime.compositions >= phrase.length);
     assert.equal(await page.evaluate(() => window.__longChat.sends), 0, 'composing Enter must not send');
+    const recorded = (await history.readConversation('fixture-chat')).conversation.messages.find(message => message.runId === 'fixture-run');
+    assert.equal(recorded?.runState, 'completed');
+    assert.equal(recorded?.timeline?.filter(item => item.kind === 'tool' && item.state === 'success').length, 2);
+    assert.equal(importCount, 1);
+    await page.reload();
+    await list.getByText(/片段 1。/).waitFor();
+    assert.equal(importCount, 1, 'the legacy snapshot must not re-run the migration');
     await context.close();
+    await loader.close();
   } finally {
     await new Promise((resolve, reject) => server.httpServer.close(error => error ? reject(error) : resolve()));
   }

@@ -40,6 +40,7 @@ interface SingleChatRuntimeContext {
 }
 
 export interface SendSingleChatMessageRequest extends SingleChatRuntimeContext {
+  saveBeforeSend?: (conversation: Conversation, message: Message) => Promise<boolean>;
   conversationId: string;
   content: string;
   attachments?: MessageAttachment[];
@@ -169,6 +170,7 @@ export async function sendSingleChatMessage({
   state,
   dispatch,
   bridge,
+  saveBeforeSend,
   conversationId,
   content,
   attachments,
@@ -201,7 +203,9 @@ export async function sendSingleChatMessage({
   if (partner?.sourceMode === 'existing_thread' && attachments?.length && !realExisting) return false;
   if (contextHandoff && (!realLocal && !realApi)) return false;
   if (!conversation || !partner || (!realLocal && !realApi && !realExisting)) {
-    dispatch({ type: 'sendChatMessage', conversationId, message: createSingleChatMessage(content, attachments, messageId, quote) });
+    const message = createSingleChatMessage(content, attachments, messageId, quote);
+    if (conversation && saveBeforeSend && !await saveBeforeSend(conversation, message)) return false;
+    dispatch({ type: 'sendChatMessage', conversationId, message, historySaved: Boolean(saveBeforeSend) });
     return true;
   }
   if (partner.sourceMode === 'local_cli' && partner.adapterType === 'codex_cli' && partner.connectionKind === 'local_codex' && conversation.sessionId) {
@@ -243,14 +247,16 @@ export async function sendSingleChatMessage({
     });
     return false;
   }
-  const clientMessageId = makeId('client-message');
   const visibleMessageId = messageId ?? makeId('message');
+  const clientMessageId = 'client-' + visibleMessageId;
   const visibleMessage = { ...createSingleChatMessage(content, attachments, visibleMessageId, quote), clientMessageId, status: 'sending' as const };
   const sourceMessage = { messageId: visibleMessage.id, authorType: 'user' as const, authorId: visibleMessage.authorId, content: visibleMessage.content, createdAt: visibleMessage.createdAt, occurredAt: visibleMessage.occurredAt };
+  if (saveBeforeSend && !await saveBeforeSend(conversation, visibleMessage)) return false;
   dispatch({
     type: 'sendChatMessage',
     conversationId,
     message: visibleMessage,
+    historySaved: Boolean(saveBeforeSend),
   });
   const runtimeContent = formatMessageWithQuote(content, quote);
   const fail = (error: ProtocolError) => dispatch({ type: 'messageSendFailed', conversationId, clientMessageId, error });

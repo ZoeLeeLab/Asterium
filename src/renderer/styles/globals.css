@@ -104,6 +104,7 @@ h1, h2, h3, p { margin: 0; }
 .avatar__status { position: absolute; right: -1px; bottom: 1px; width: 10px; height: 10px; border: 2px solid var(--surface-strong); border-radius: 50%; background: var(--success); }
 .avatar__source ~ .avatar__status { right: auto; left: -1px; }
 .removed-partner-notice { align-self: center; margin: 8px auto 0; padding: 6px 12px; border-radius: var(--radius-sm); color: var(--muted); background: var(--surface-soft); font-size: calc(10px * var(--ui-font-scale,1)); }
+.single-chat-storage-notice { position: fixed; top: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; }
 .run-notice { display: flex; align-items: center; gap: 7px; width: fit-content; max-width: min(560px, calc(100% - 48px)); margin: 10px auto; padding: 7px 11px; border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border)); border-radius: var(--radius-sm); color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); font-size: calc(11px * var(--ui-font-scale,1)); }
 .compaction-notice:not(.compaction-notice--error) { border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
 .compaction-notice.compaction-notice--success { border-color: color-mix(in srgb, var(--success) 28%, var(--border)); color: var(--success); background: color-mix(in srgb, var(--success) 7%, var(--surface)); }

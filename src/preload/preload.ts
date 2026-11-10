@@ -223,6 +223,9 @@ contextBridge.exposeInMainWorld('asteriumAttachments', {
 } satisfies AsteriumAttachmentsApi);
 
 contextBridge.exposeInMainWorld('asteriumConversations', {
+  openHistory: () => ipcRenderer.invoke(AGENT_IPC.conversationOpenHistory),
+  migrateHistory: (source: import('../shared/singleChatHistory').SingleChatHistoryImport) => ipcRenderer.invoke(AGENT_IPC.conversationMigrateHistory, source),
+  writeHistory: (request: import('../shared/singleChatHistory').SingleChatHistoryWrite) => ipcRenderer.invoke(AGENT_IPC.conversationWriteHistory, request),
   delete: (request: ConversationDeleteRequest): Promise<ConversationDeleteResult> => ipcRenderer.invoke(AGENT_IPC.conversationDelete, request),
   listDeleted: (): Promise<string[]> => ipcRenderer.invoke(AGENT_IPC.conversationListDeleted),
   syncMessages: (snapshots: SingleChatConversationSnapshot[]): Promise<void> => ipcRenderer.invoke(AGENT_IPC.conversationSyncMessages, snapshots),

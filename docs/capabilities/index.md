@@ -6,6 +6,8 @@
 
 2026-11-02 S5：桌面设置、文件与交付、工作室、群聊 MCP、Wake 和自动化六条绑定已存在的 S4 代码提交 `89a6c2dfd803b470690f1a2993d8ba729e981dca`；其余十条保留原真实来源。完整词典审计与未验收边界见 [S5 审计](../development-data-isolation-s5.md)。
 
+Beta.5 工作区的单聊存储切换、原线程和隔离验收边界见[第二阶段记录](../single-chat-storage-stage-2.md)。
+
 本目录是静态结构化词典，不自动注入模型，不授予目录、工具或成员权限。当前限制以条目正文为准；历史阶段记录不代表当前未实现或已完成真实联调。
 
 - [Anthropic Messages](entries/api-anthropic-messages.md)

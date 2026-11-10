@@ -85,6 +85,8 @@ import { ProjectFileDeletionService } from './project/ProjectFileDeletionService
 import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
 import { ConversationDeletionService } from './conversation/ConversationDeletionService';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
+import { assertHistoryImport, assertHistoryWrite, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
+import { mergeLegacySingleChats } from './conversation/singleChatHistoryProjection';
 import { assertSingleChatConversationSnapshots } from '../shared/singleChatMessages';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
 import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
@@ -367,7 +369,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     rootDirectory: () => path.join(app.getPath('userData'), 'conversation-attachments', 'v2'),
     legacyIndexPath: () => path.join(app.getPath('userData'), 'message-attachments.v1.json'),
   });
-  const singleChatMessages = new SingleChatMessageStore(() => path.join(app.getPath('userData'), 'single-chat-messages.v1.json'));
+  const singleChatHistory = new SingleChatHistoryStore(() => app.getPath('userData'));
+  const singleChatMessages = new SingleChatMessageStore(() => path.join(app.getPath('userData'), 'single-chat-messages.v1.json'), singleChatHistory);
   const studioAttachments = new StudioAttachments(messageAttachments, {
     workspaces: projectWorkspaces,
     rooms: studioRooms,
@@ -1532,6 +1535,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       if (!isRecord(item) || typeof item.partnerId !== 'string' || typeof item.conversationId !== 'string' || typeof item.nativeThreadId !== 'string'
         || !['local_cli', 'api_partner'].includes(String(item.source))) throw new Error('INVALID_SINGLE_BINDING_SYNC');
       if (await conversationDeletions.isDeleted(item.conversationId)) continue;
+      if (await singleChatHistory.isActive()) {
+        const committed = (await singleChatHistory.readConversation(item.conversationId))?.conversation;
+        if (!committed || committed.partnerId !== item.partnerId || committed.sessionId !== item.nativeThreadId) continue;
+      }
       await nativeBindings.registerSingle({
         partnerId: item.partnerId,
         conversationId: item.conversationId,
@@ -1761,8 +1768,50 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event);
     return conversationDeletions.listDeletedIds();
   });
+  const openSingleChatHistory = async () => {
+    const history = await singleChatHistory.open();
+    if (!history) return undefined;
+    const deleted = new Set(await conversationDeletions.listDeletedIds());
+    return { ...history, conversations: history.conversations.filter(conversation => !deleted.has(conversation.id)) };
+  };
+  ipcMain.handle(AGENT_IPC.conversationOpenHistory, async event => {
+    requireSender(event);
+    return openSingleChatHistory();
+  });
+  ipcMain.handle(AGENT_IPC.conversationMigrateHistory, async (event, value: unknown) => {
+    requireSender(event);
+    await singleChatHistory.initialize(async () => {
+      assertHistoryImport(value);
+      const [projection, deletedConversationIds] = await Promise.all([singleChatMessages.listLegacy(), conversationDeletions.listDeletedIds()]);
+      return {
+        profile: value.profile,
+        conversations: mergeLegacySingleChats(value.conversations, projection),
+        deletedConversationIds,
+      };
+    });
+    const history = await openSingleChatHistory();
+    if (!history) throw new Error('SINGLE_CHAT_HISTORY_ACTIVATION_MISSING');
+    return history;
+  });
+  ipcMain.handle(AGENT_IPC.conversationWriteHistory, async (event, value: unknown) => {
+    requireSender(event);
+    assertHistoryWrite(value);
+    const deleted = new Set(await conversationDeletions.listDeletedIds());
+    if (value.changes.some(change => deleted.has(change.conversationId) && change.upsert.some(message => message.status === 'sending'))) {
+      throw new Error('SINGLE_CHAT_HISTORY_CONVERSATION_DELETED');
+    }
+    const changes = value.changes.filter(change => !deleted.has(change.conversationId));
+    await singleChatHistory.write({ ...value, changes });
+    if (changes.some(change => change.busy === false && (change.upsert.length || change.remove.length))) {
+      void memoryFallbackInventory.refresh().catch(() => undefined);
+    }
+    if (changes.some(change => change.busy === false && (change.upsert.length || change.metadata?.isArchived || change.metadata?.isDisabled))) {
+      void diarySettings.reconcileSources().then(() => diaryScheduler.changed()).catch(() => undefined);
+    }
+  });
   ipcMain.handle(AGENT_IPC.conversationSyncMessages, async (event, value: unknown) => {
     requireSender(event);
+    if (await singleChatHistory.isActive()) return;
     assertSingleChatConversationSnapshots(value);
     await singleChatMessages.sync(value);
     await diarySettings.reconcileSources(); await diaryScheduler.changed();
@@ -1984,6 +2033,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       else if (binding.nativeThreadId !== event.sessionId) throw new Error('NATIVE_THREAD_ROUTE_MISMATCH');
     },
     onBound: async (event, command) => {
+      await persistFirstSingleChatBinding(event, command);
       await automationHandles.runtime?.bound(command, { runId: event.runId, sessionId: event.sessionId });
       if (command.route?.scope === 'group') await studioRooms.bindRun(command.route.roomId, command.route.roundId, command.partnerId, event.runId, event.sessionId);
       await sessionBootstrapRecorder.onBound(event, command);
@@ -2037,6 +2087,16 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       await studioRooms.retryPassAfterRelease(receipt.runId).catch(() => undefined);
     },
   }, writerLeases);
+  async function persistFirstSingleChatBinding(event: Extract<PartnerEvent, { type: 'session.bound' }>, command: SendMessageCommand) {
+    if ((command.route && command.route.scope !== 'single') || command.connectionSource === 'existing_thread') return;
+    if (await singleChatHistory.bindInitialSession(command.conversationId, command.partnerId, event.sessionId)) {
+      await nativeBindings.registerSingle({
+        conversationId: command.conversationId, partnerId: command.partnerId,
+        source: command.connectionSource, nativeThreadId: event.sessionId,
+      });
+    }
+  }
+
   const useLegacyRunPath = process.env.ASTERIUM_USE_LEGACY_RUN_PATH === '1';
   const projectTaskRuntime = new ProjectTaskRuntime({
     catalog: studioRuntimeCatalog,
@@ -3048,7 +3108,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       host.bindRun(receipt.runId, adapter);
       host.bindSession(command.partnerId, command.conversationId, receipt.sessionId, adapter);
       if (command.route?.scope === 'group') await studioRooms.bindRun(command.route.roomId, command.route.roundId, command.partnerId, receipt.runId, receipt.sessionId);
-      await sessionBootstrapRecorder.onBound(firstEvent as Extract<PartnerEvent, { type: 'session.bound' }>, command);
+      const bound = firstEvent as Extract<PartnerEvent, { type: 'session.bound' }>;
+      await persistFirstSingleChatBinding(bound, command);
+      await sessionBootstrapRecorder.onBound(bound, command);
       void (async () => {
         let lastSequence = firstEvent.sequence;
         try {
@@ -3280,6 +3342,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     runCoordinator.clearIdempotency();
     await host.dispose();
     await messageAttachments.dispose();
+    await singleChatHistory.flush();
     grants.clear();
   };
 }

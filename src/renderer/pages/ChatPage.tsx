@@ -61,7 +61,7 @@ import { TurnTimeline } from '../components/chat/TurnTimeline';
 import { FilePreviewPane, type PreviewTab } from '../components/chat/FilePreviewPane';
 import type { Conversation, ConversationArtifact, Message, MessageQuote } from '../types/domain';
 import type { DelegationBatchView } from '../../main/runtime/PartnerDelegation';
-import type { ConversationAttachmentInfo, PendingMessageAttachment } from '../../shared/agentProtocol';
+import type { ConversationAttachmentInfo, MessageAttachment, PendingMessageAttachment } from '../../shared/agentProtocol';
 import { assistantMessageText, formatMessageWithQuote } from '../app/messageQuote';
 import { partnerStatusLabel } from '../components/chat/partnerStatusLabel';
 import { friendlyRuntimeErrorMessage } from '../app/runtimeErrorPresentation';
@@ -119,6 +119,7 @@ export function ChatPage() {
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const stopFollowingLatest = useCallback(() => { followLatestMessageRef.current = false; }, []);
   const deferredGuidanceSendingRef = useRef(new Set<string>());
+  const pendingSendRef = useRef<{ key: string; messageId: string; attachments?: MessageAttachment[] } | undefined>(undefined);
   const [overlay, setOverlay] = useState<ChatOverlay>(null);
   const [query, setQuery] = useState('');
   const availablePartners = state.partners.filter((partner) => !partner.isRemoved);
@@ -300,13 +301,19 @@ export function ChatPage() {
     if (!activeConversation || (pending.length > 0 && !attachmentsEnabled)) return false;
     try {
       followLatestMessageRef.current = true;
-      const messageId = `message-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
-      const attachments = pending.length
-        ? await window.asteriumAttachments?.commit(activeConversation.id, pending.map((item) => item.selectionId), messageId)
-        : undefined;
-      if (pending.length && !attachments) return false;
-      const sent = await sendChatMessage(activeConversation.id, content, attachments, messageId, workspaceDecision, quote, activeHandoff);
+      const selections = pending.map(item => item.selectionId);
+      const key = JSON.stringify([activeConversation.id, content, selections, quote]);
+      let prepared = pendingSendRef.current;
+      if (prepared?.key !== key) {
+        const messageId = `message-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+        const attachments = selections.length ? await window.asteriumAttachments?.commit(activeConversation.id, selections, messageId) : undefined;
+        if (selections.length && !attachments) return false;
+        prepared = { key, messageId, attachments };
+        pendingSendRef.current = prepared;
+      }
+      const sent = await sendChatMessage(activeConversation.id, content, prepared.attachments, prepared.messageId, workspaceDecision, quote, activeHandoff);
       if (!sent) return false;
+      pendingSendRef.current = undefined;
       setPendingQuote(undefined);
       void window.asteriumAttachments?.list(activeConversation.id).then(setUserAttachments);
       return true;

@@ -64,9 +64,9 @@ try {
     const page = await waitForAsteriumPage(browser);
     await page.waitForLoadState('domcontentloaded');
     await page.getByLabel('主要页面').waitFor({ state: 'visible' });
-    const initial = await page.evaluate(() => JSON.parse(localStorage.getItem('asterium.prototype.v7')));
+    const initial = await readSmokeState(page);
     if (initial.partners.length || initial.conversations.length) throw new Error('Fresh application must not contain preloaded partners or chats');
-    await page.evaluate(state => localStorage.setItem('asterium.prototype.v7', JSON.stringify(state)), fixtureState);
+    await writeSmokeState(page, fixtureState);
     await page.reload();
     await page.getByLabel('主要页面').waitFor({ state: 'visible' });
     const fallbackDefaults = await page.evaluate(async () => globalThis.asteriumMemoryFallback?.get());
@@ -113,8 +113,9 @@ try {
       await page.evaluate(() => { globalThis.location.hash = '/chat'; });
       await page.getByLabel('主要页面').waitFor({ state: 'visible' });
     }
-    await page.evaluate(({ workspace, grantId, runtimeId }) => {
-      const state = JSON.parse(globalThis.localStorage.getItem('asterium.prototype.v7'));
+    const state = await readSmokeState(page);
+    {
+      const { workspace, grantId, runtimeId } = { workspace: claudeWorkspace, grantId: claudeGrantId, runtimeId: codexRuntimeId };
       const partner = state.partners.find((item) => item.id === 'fixture-local-b');
       partner.isPrototype = false;
       partner.connectionKind = 'local_claude';
@@ -151,8 +152,8 @@ try {
         delete codexConversation.nativeThreadStateCheckedAt;
         delete codexConversation.nativeThreadNotice;
       }
-      globalThis.localStorage.setItem('asterium.prototype.v7', JSON.stringify(state));
-    }, { workspace: claudeWorkspace, grantId: claudeGrantId, runtimeId: codexRuntimeId });
+    }
+    await writeSmokeState(page, state);
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     const claudePartner = page.getByRole('button', { name: '展开 测试伙伴 B 的对话' });
@@ -270,16 +271,18 @@ try {
     const taskExecutionRecoveryRequested = process.env.ASTERIUM_TASK_EXECUTION_RECOVERY_SMOKE === '1';
     if (permissionRecoveryRequested || projectDomainRecoveryRequested || taskExecutionRecoveryRequested) {
       if (permissionRecoveryRequested) {
-        await page.waitForFunction(() => {
-          const state = JSON.parse(globalThis.localStorage.getItem('asterium.prototype.v7'));
-          const conversations = state.conversations.filter((item) => item.id === 'conversation-a-1' || item.id === 'conversation-b-1');
+        await page.waitForFunction(async () => {
+          const active = await globalThis.asteriumConversations?.openHistory?.();
+          const saved = active?.conversations ?? JSON.parse(globalThis.localStorage.getItem('asterium.prototype.v7')).conversations;
+          const conversations = saved.filter((item) => item.id === 'conversation-a-1' || item.id === 'conversation-b-1');
           return conversations.length === 2 && conversations.every((item) => item.permissionMode === 'full');
         }, undefined, { timeout: 10_000 });
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.getByLabel('主要页面').waitFor({ state: 'visible' });
-        await page.waitForFunction(() => {
-          const state = JSON.parse(globalThis.localStorage.getItem('asterium.prototype.v7'));
-          const conversations = state.conversations.filter((item) => item.id === 'conversation-a-1' || item.id === 'conversation-b-1');
+        await page.waitForFunction(async () => {
+          const active = await globalThis.asteriumConversations?.openHistory?.();
+          const saved = active?.conversations ?? JSON.parse(globalThis.localStorage.getItem('asterium.prototype.v7')).conversations;
+          const conversations = saved.filter((item) => item.id === 'conversation-a-1' || item.id === 'conversation-b-1');
           return conversations.length === 2 && conversations.every((item) => item.permissionMode === 'full');
         }, undefined, { timeout: 10_000 });
         const saved = await page.evaluate(() => globalThis.asteriumProjects.setExecutionPolicy({ projectId: 'project-home', permissionMode: 'read_only' }));
@@ -339,7 +342,8 @@ try {
         await restartedPage.getByLabel('主要页面').waitFor({ state: 'visible' });
         const recovered = await restartedPage.evaluate(async ({ checkPermission, checkProjectDomain, checkTaskExecution, taskId, attemptId }) => ({
           projectPolicy: checkPermission ? await globalThis.asteriumProjects.getExecutionPolicy('project-home') : undefined,
-          conversations: checkPermission ? JSON.parse(globalThis.localStorage.getItem('asterium.prototype.v7')).conversations
+          conversations: checkPermission ? ((await globalThis.asteriumConversations?.openHistory?.())?.conversations
+            ?? JSON.parse(globalThis.localStorage.getItem('asterium.prototype.v7')).conversations)
             .filter((item) => item.id === 'conversation-a-1' || item.id === 'conversation-b-1')
             .map((item) => ({ id: item.id, permissionMode: item.permissionMode })) : [],
           domain: checkProjectDomain ? await globalThis.asteriumProjects.initializeDomain({ legacyProjects: [] }) : undefined,
@@ -412,6 +416,33 @@ try {
 } finally {
   await stopProcessTree(child);
   await rm(userDataDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
+async function readSmokeState(page) {
+  return page.evaluate(async () => {
+    const active = await globalThis.asteriumConversations?.openHistory?.();
+    return active ? { ...active.profile, conversations: active.conversations } : JSON.parse(localStorage.getItem('asterium.prototype.v7'));
+  });
+}
+
+async function writeSmokeState(page, state) {
+  await page.evaluate(async value => {
+    const bridge = globalThis.asteriumConversations;
+    const active = await bridge?.openHistory?.();
+    if (!active) {
+      localStorage.setItem('asterium.prototype.v7', JSON.stringify(value));
+      return;
+    }
+    const { conversations, ...profile } = value;
+    await bridge.writeHistory({ generation: active.generation, profile, changes: conversations.map(({ messages, ...metadata }) => {
+      const ids = new Set(messages.map(message => message.id));
+      return {
+        conversationId: metadata.id, metadata, upsert: messages, busy: false,
+        remove: (active.conversations.find(chat => chat.id === metadata.id)?.messages ?? [])
+          .map(message => message.id).filter(id => !ids.has(id)),
+      };
+    }) });
+  }, state);
 }
 
 function launchApp(debugPort) {
