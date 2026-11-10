@@ -2,7 +2,7 @@
 import { fork } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
@@ -65,6 +65,65 @@ describe('single chat migration activation', () => {
     const legacy = vi.fn(async () => ({ conversations: [], deletedConversationIds: [] }));
     await expect(store.initialize(legacy)).rejects.toThrow('SINGLE_CHAT_HISTORY_MANIFEST_MISSING');
     expect(legacy).not.toHaveBeenCalled();
+  });
+
+  it('stores oversized details once per chat, reads Unicode pages after restart and deletes only that chat', async () => {
+    const profile = path.join(autoTestOutput(), 'tool-output');
+    const store = new SingleChatHistoryStore(profile);
+    const detail = 'a'.repeat(65535) + '星😀'.repeat(20000) + '最后';
+    const withOutput = (id: string): Message => ({
+      ...message(id), timeline: [{ id: 'tool', sequence: 1, kind: 'tool', toolCallId: 'tool', summary: '文件读取', state: 'success', detail }],
+    });
+    const manifest = await store.initialize(async () => ({ conversations: [chat('one', [withOutput('first')]), chat('two')], deletedConversationIds: [] }));
+    await store.checkpoint({ generation: manifest.generation, conversationId: 'one', expectedRevision: 2, upsert: [withOutput('again')] });
+    const target = logPath(profile, 'one');
+    const reopened = new SingleChatHistoryStore(profile);
+    const saved = await reopened.readPage({ conversationId: 'one' });
+    const ref = expect.objectContaining({ sizeBytes: Buffer.byteLength(detail) });
+    expect(saved?.messages.map(message => message.timeline?.[0])).toEqual([
+      expect.objectContaining({ detailRef: ref }), expect.objectContaining({ detailRef: ref }),
+    ]);
+    const outputId = createHash('sha256').update(detail).digest('hex');
+    const outputs = path.join(path.dirname(target), 'outputs');
+    expect(await readdir(outputs)).toEqual([outputId + '.txt']);
+    expect((await readFile(target, 'utf8')).length).toBeLessThan(8000);
+    const query = { conversationId: 'one', outputId };
+    const first = await reopened.readToolOutput(query);
+    expect(first?.nextOffset).toBe(65535);
+    expect(first?.text).toBe(detail.slice(0, 65535));
+    let all = first!.text;
+    let next = first!.nextOffset;
+    while (next !== undefined) {
+      const page = await reopened.readToolOutput({ ...query, offset: next });
+      all += page!.text;
+      next = page!.nextOffset;
+    }
+    expect(all).toBe(detail);
+    await expect(reopened.readToolOutput({ ...query, offset: 65536 })).rejects.toThrow('INVALID_PAGE');
+    await expect(reopened.readToolOutput({ ...query, outputId: '../manifest' })).rejects.toThrow('INVALID_ID');
+    await expect(reopened.readToolOutput({ ...query, conversationId: 'two' })).rejects.toThrow();
+    await reopened.deleteConversation('one');
+    expect(await reopened.readToolOutput(query)).toBeUndefined();
+    expect(await readdir(outputs)).toEqual([]);
+    expect(await reopened.readConversation('two')).toBeDefined();
+  });
+
+  it('leaves the checkpoint revision retryable when tool detail cannot be saved', async () => {
+    const profile = path.join(autoTestOutput(), 'tool-output-retry');
+    const store = new SingleChatHistoryStore(profile);
+    const manifest = await store.initialize(async () => ({ conversations: [chat('one')], deletedConversationIds: [] }));
+    const outputPath = path.join(path.dirname(logPath(profile, 'one')), 'outputs');
+    await writeFile(outputPath, 'synthetic file blocks directory');
+    const request = {
+      generation: manifest.generation, conversationId: 'one', expectedRevision: 2,
+      upsert: [{ ...message('tool-result'), timeline: [
+        { id: 'tool', sequence: 1, kind: 'tool' as const, toolCallId: 'tool', summary: '合成工具', state: 'success' as const, detail: '中'.repeat(12000) },
+      ] }],
+    };
+    await expect(store.checkpoint(request)).rejects.toThrow();
+    expect((await store.readConversation('one'))?.revision).toBe(2);
+    await unlink(outputPath);
+    await expect(store.checkpoint(request)).resolves.toBe(3);
   });
 
   it('keeps every committed record across a process kill and saves the torn tail before appending', async () => {

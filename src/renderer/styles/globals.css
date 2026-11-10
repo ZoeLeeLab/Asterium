@@ -570,6 +570,7 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .timeline-operation--plain > .timeline-outcome { flex: 0 0 auto; width: 11px; height: 11px; color: var(--success); }
 .timeline-operation--plain.state-running > .timeline-outcome { color: var(--accent); }
 .timeline-operation--plain.state-failure > .timeline-outcome { color: var(--danger); }
+.timeline-tool-output pre { max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .timeline-operation__previews { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; }
 .timeline-operation__preview { flex: 0 0 auto; padding: 2px 5px; border: 0; border-radius: 4px; color: var(--accent-strong); background: transparent; font-size: calc(9px * var(--ui-font-scale,1)); }
 .timeline-operation__preview:hover { background: var(--surface-hover); }

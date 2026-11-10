@@ -8,6 +8,7 @@ import { mergeLegacySingleChats } from '../../src/main/conversation/singleChatHi
 import { PrototypeProvider } from '../../src/renderer/app/PrototypeProvider';
 import { ChatPage } from '../../src/renderer/pages/ChatPage';
 import { STATE_KEY } from '../../src/renderer/app/persistence';
+import type { CodexHistoryRequest, CodexHistorySearchRequest } from '../../src/shared/codexHistory';
 import type { ApiPartner } from '../../src/renderer/types/domain';
 import { AGENT_PROTOCOL_VERSION, type RendererAgentEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
 import { autoTestOutput } from '../helpers/autoTest.mjs';
@@ -51,6 +52,7 @@ function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
     delete: vi.fn(), listDeleted: vi.fn(async () => []),
     openHistory: recent => recent ? history.openRecent() : history.open(), migrateHistory: migrate, writeHistory: write,
     readHistoryPage: request => history.readPage(request), searchHistory: request => history.search(request),
+    readToolOutput: vi.fn(request => history.readToolOutput(request)),
   };
   let listener: (event: RendererAgentEvent) => void = () => undefined;
   const send = vi.fn(async (_connection, command: SendMessageCommand) => {
@@ -123,10 +125,11 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
   await waitFor(() => expect(fixture.send).toHaveBeenCalledOnce());
   fixture.emit('session.bound', 1, { isNew: true });
   fixture.emit('text.delta', 2, { text: '工具前已保存的文字' });
-  fixture.emit('tool.completed', 3, { toolCallId: 'fixture-tool', summary: '示例工具结果', outcome: 'success' });
+  const detail = '合成工具输出开始' + 'x'.repeat(70_000) + '合成工具输出结尾';
+  fixture.emit('tool.completed', 3, { toolCallId: 'fixture-tool', summary: '示例工具结果', outcome: 'success', detail });
   await waitFor(async () => {
     const saved = await fixture.history.readConversation(conversationId);
-    expect(saved?.conversation.messages.at(-1)?.timeline).toContainEqual(expect.objectContaining({ toolCallId: 'fixture-tool', state: 'success' }));
+    expect(saved?.conversation.messages.at(-1)?.timeline).toContainEqual(expect.objectContaining({ toolCallId: 'fixture-tool', state: 'success', detailRef: expect.anything() }));
   });
   fixture.emit('text.delta', 4, { text: '这一段只在内存' });
   expect(await screen.findByText('这一段只在内存')).toBeInTheDocument();
@@ -138,6 +141,13 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
   expect(screen.getByText('回复中断')).toBeInTheDocument();
   expect(screen.queryByText('这一段只在内存')).not.toBeInTheDocument();
   expect(restarted.send).not.toHaveBeenCalled();
+  expect(window.asteriumConversations?.readToolOutput).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '查看工具输出' }));
+  expect(await screen.findByText(/^合成工具输出开始/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '下一段输出' }));
+  expect(await screen.findByText(/合成工具输出结尾$/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '收起输出' }));
+  expect(screen.queryByText(/合成工具输出结尾$/)).not.toBeInTheDocument();
 });
 
 it('leaves a draft in place if the pre-send disk write fails', async () => {
@@ -164,7 +174,7 @@ it('keeps the latest model context when the reader is viewing a search hit in an
   expect(screen.queryByText('远古索引唯一消息')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '搜索当前对话' }));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索当前对话正文' }), { target: { value: '远古索引' } });
-  expect(await screen.findByText('远古索引唯一消息')).toBeInTheDocument();
+  expect(await screen.findByText('远古索引唯一消息', {}, { timeout: 5000 })).toBeInTheDocument();
   expect(screen.queryByText('历史回复 169')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '关闭当前对话搜索' }));
   await sendPrompt('继续最后的任务');
@@ -172,4 +182,46 @@ it('keeps the latest model context when the reader is viewing a search hit in an
   const history = fixture.send.mock.calls[0][1].apiContext?.history;
   expect(history?.at(-1)?.content).toBe('历史回复 169');
   expect(history?.some(message => message.content.includes('远古索引'))).toBe(false);
+});
+
+it('reveals a native-only search result without replacing the latest local conversation', async () => {
+  const state = createTestState();
+  const partner = state.partners[0];
+  if (partner.sourceMode !== 'local_cli') throw new Error('expected a local partner');
+  state.partners[0] = {
+    ...partner, isPrototype: false, connectionKind: 'local_codex', adapterType: 'codex_cli', codexRuntimeId: 'fixture-runtime',
+  };
+  const id = state.activeConversationId;
+  const chat = state.conversations.find(item => item.id === id)!;
+  chat.sessionId = 'fixture-original-thread';
+  chat.messages = [{ id: 'fixture-latest', authorId: partner.id, createdAt: '00:00', content: '星丛本地当前记录' }];
+  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  connect(path.join(autoTestOutput(), 'native-search'));
+  const read = vi.fn(async (request: CodexHistoryRequest) => ({
+    turns: request.aroundTurnId ? [{
+      id: 'original-turn', state: 'completed' as const,
+      items: [{ id: 'answer', kind: 'assistant' as const, text: '仅在原线程的旧记录' }],
+    }] : [],
+  }));
+  const search = vi.fn<(request: CodexHistorySearchRequest) => Promise<import('../../src/shared/codexHistory').CodexHistorySearchPage>>(async () => ({
+    hits: [{ turnId: 'original-turn', messageId: 'codex-history:original-turn:assistant', pageCursor: 'older-fixture-cursor' }],
+  }));
+  Object.assign(window.asteriumAgents!, { readCodexHistory: read, searchCodexHistory: search });
+  mount();
+  expect(await screen.findByText('星丛本地当前记录')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '搜索当前对话' }));
+  const input = screen.getByRole('searchbox', { name: '搜索当前对话正文' });
+  fireEvent.change(input, { target: { value: '旧记录' } });
+  expect(await screen.findByText('仅在原线程的旧记录', {}, { timeout: 5000 })).toBeInTheDocument();
+  expect(screen.queryByText('星丛本地当前记录')).not.toBeInTheDocument();
+  expect(search).toHaveBeenCalledWith(expect.objectContaining({ conversationId: id, threadId: chat.sessionId, query: '旧记录' }));
+  expect(read).toHaveBeenCalledWith(expect.objectContaining({ threadId: chat.sessionId, cursor: 'older-fixture-cursor', aroundTurnId: 'original-turn' }));
+
+  search.mockRejectedValueOnce(new Error('CODEX_HISTORY_UNAVAILABLE'));
+  fireEvent.change(input, { target: { value: '本地当前记录' } });
+  expect(await screen.findByText('原线程暂不可读，可切换到星丛记录', {}, { timeout: 5000 })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '切换到星丛记录' }));
+  expect(await screen.findByText('星丛本地当前记录')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '回到最新消息' }));
+  expect(screen.getByText('星丛本地当前记录')).toBeInTheDocument();
 });

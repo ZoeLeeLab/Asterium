@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CodexHistoryPage, CodexHistoryRequest, CodexHistoryTurn } from '../../shared/codexHistory';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { codexHistoryMessageId, visibleNativeUserText, type CodexHistoryHit, type CodexHistoryPage, type CodexHistoryRequest, type CodexHistorySearchPosition, type CodexHistoryTurn } from '../../shared/codexHistory';
 import { ASTERIUM_USER_ID, isAsteriumUser } from '../../shared/identity';
 import type { Conversation, Message, Partner, TurnTimelineItem } from '../types/domain';
 import { visibleAssistantText } from './messageQuote';
@@ -10,7 +10,7 @@ interface HistoryState {
   nextCursor?: string;
 }
 
-export function useNativeCodexHistory(conversation: Conversation | undefined, partner: Partner | undefined, enabled: boolean) {
+export function useNativeCodexHistory(conversation: Conversation | undefined, partner: Partner | undefined, enabled: boolean, browsingLocal = false) {
   const conversationId = conversation?.id;
   const threadId = conversation?.sessionId;
   const runtime = partner?.sourceMode === 'local_cli' && partner.adapterType === 'codex_cli'
@@ -27,6 +27,57 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
   ), [enabled, conversationId, threadId, partnerId, partnerRootGrantId, runtimeId, runtimeEnvironment, conversation?.nativeThreadState]);
   const key = request ? JSON.stringify(request) : '';
   const [history, setHistory] = useState<HistoryState>();
+  const [located, setLocated] = useState<HistoryState>();
+  const [locationKey, setLocationKey] = useState(key);
+  if (locationKey !== key) {
+    setLocationKey(key);
+    setLocated(undefined);
+  }
+  const liveKey = useRef(key);
+  const revealVersion = useRef(0);
+  const searchVersion = useRef(0);
+  const searchHits = useRef(new Map<string, CodexHistoryHit>());
+  useLayoutEffect(() => {
+    liveKey.current = key;
+    searchVersion.current++;
+    revealVersion.current++;
+    searchHits.current.clear();
+  }, [key]);
+  const returnToLatest = useCallback(() => {
+    revealVersion.current++;
+    setLocated(undefined);
+  }, []);
+
+  const searchBridge = window.asteriumAgents?.searchCodexHistory;
+  const search = useCallback(async (query: string, cursor?: string) => {
+    if (!request || !searchBridge) return { messageIds: [], hasMore: false };
+    const version = ++searchVersion.current;
+    if (!cursor) {
+      revealVersion.current++;
+      searchHits.current.clear();
+    }
+    const after = cursor ? JSON.parse(cursor) as CodexHistorySearchPosition : undefined;
+    const page = await searchBridge({ ...request, query, after });
+    if (liveKey.current !== key || searchVersion.current !== version) return { messageIds: [], hasMore: false };
+    for (const hit of page.hits) searchHits.current.set(hit.messageId, hit);
+    return { messageIds: page.hits.map(hit => hit.messageId), hasMore: Boolean(page.next), nextCursor: page.next && JSON.stringify(page.next) };
+  }, [key, request, searchBridge]);
+
+  const reveal = useCallback(async (messageId: string, beforeApply?: () => void) => {
+    const hit = searchHits.current.get(messageId);
+    const read = window.asteriumAgents?.readCodexHistory;
+    if (!request || !hit || !read) return false;
+    const version = ++revealVersion.current;
+    try {
+      const page = await read({ ...request, cursor: hit.pageCursor, aroundTurnId: hit.turnId });
+      if (liveKey.current !== key || revealVersion.current !== version || !page.turns.some(turn => turn.id === hit.turnId)) return false;
+      beforeApply?.();
+      setLocated({ key, ...page });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [key, request]);
   const [errorKey, setErrorKey] = useState('');
   const [olderKey, setOlderKey] = useState('');
   const olderPending = useRef(new Set<string>());
@@ -34,7 +85,7 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
 
   useEffect(() => {
     const read = window.asteriumAgents?.readCodexHistory;
-    if (!request || !read || active) return;
+    if (!request || !read || active || browsingLocal) return;
     let cancelled = false;
     let pending = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -61,18 +112,22 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
     void refresh();
     window.addEventListener('focus', onFocus);
     return () => { cancelled = true; clearTimeout(retry); window.removeEventListener('focus', onFocus); };
-  }, [active, key, request]);
+  }, [active, browsingLocal, key, request]);
 
-  const current = history?.key === key ? history : undefined;
+  const detached = located?.key === key;
+  const current = detached ? located : !browsingLocal && history?.key === key ? history : undefined;
   const loadOlder = useCallback(async () => {
     const read = window.asteriumAgents?.readCodexHistory;
     const cursor = current?.nextCursor;
     if (!read || !request || !cursor || olderPending.current.has(key)) return;
+    const version = revealVersion.current;
     olderPending.current.add(key);
     setOlderKey(key);
     try {
       const page = await read({ ...request, cursor });
-      setHistory(previous => previous?.key === key && previous.nextCursor === cursor ? mergePage(previous, key, page, true) : previous);
+      if (liveKey.current !== key || revealVersion.current !== version) return;
+      if (detached) setLocated(previous => previous?.key === key && previous.nextCursor === cursor ? { key, ...page } : previous);
+      else setHistory(previous => previous?.key === key && previous.nextCursor === cursor ? mergePage(previous, key, page, true) : previous);
       setErrorKey(previous => previous === key ? '' : previous);
     } catch {
       setErrorKey(key);
@@ -80,13 +135,16 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
       olderPending.current.delete(key);
       setOlderKey(previous => previous === key ? '' : previous);
     }
-  }, [current?.nextCursor, key, request]);
+  }, [current?.nextCursor, detached, key, request]);
 
   const visible = useMemo(() => conversation && current?.turns.length
-    ? { ...conversation, messages: mergeNativeCodexMessages(conversation, current.turns) }
-    : conversation, [conversation, current]);
+    ? { ...conversation, messages: mergeNativeCodexMessages(detached ? { ...conversation, activeRun: undefined, messages: [] } : conversation, current.turns) }
+    : conversation, [conversation, current, detached]);
 
-  return { conversation: visible, loadOlder, hasOlder: Boolean(current?.nextCursor), loadingOlder: Boolean(key && olderKey === key), unavailable: Boolean(key && errorKey === key) };
+  return {
+    conversation: visible, loadOlder, hasOlder: Boolean(current?.nextCursor), loadingOlder: Boolean(key && olderKey === key),
+    unavailable: Boolean(key && errorKey === key), detached, returnToLatest, reveal, search: request && searchBridge ? search : undefined,
+  };
 }
 
 function mergePage(previous: HistoryState | undefined, key: string, page: CodexHistoryPage, older: boolean): HistoryState {
@@ -162,7 +220,7 @@ export function mergeNativeCodexMessages(conversation: Conversation, newestFirst
     }
     const newMessages: Message[] = [];
     if (user) newMessages.push({
-      id: 'codex-history:' + turn.id + ':' + user.id, authorId: ASTERIUM_USER_ID,
+      id: codexHistoryMessageId(turn.id, user.id), authorId: ASTERIUM_USER_ID,
       content: nativePrompt ?? '', createdAt: nativeDisplayTime(turnTime), occurredAt: turnTime, status: 'delivered',
     });
     if (assistant) newMessages.push(assistant);
@@ -200,7 +258,7 @@ function renderAssistant(conversation: Conversation, turn: CodexHistoryTurn, ori
   const content = nativeText.join('');
   const state = turn.state === 'inProgress' ? 'running' : turn.state === 'interrupted' ? 'cancelled' : turn.state;
   const base: Message = original ?? {
-    id: 'codex-history:' + turn.id + ':assistant', authorId: conversation.partnerId, runId: turn.id,
+    id: codexHistoryMessageId(turn.id), authorId: conversation.partnerId, runId: turn.id,
     content, createdAt: nativeDisplayTime(turn.startedAt), occurredAt: turn.startedAt,
   };
   const originalBody = visibleAssistantText(base.content);
@@ -240,14 +298,4 @@ function renderAssistant(conversation: Conversation, turn: CodexHistoryTurn, ori
 
 function nativeDisplayTime(value?: string) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
-}
-
-function visibleNativeUserText(value: string) {
-  const handoffMarker = '\n\n当前消息：\n';
-  const handoffEnd = value.startsWith('本轮上下文交接（用户选定的原话，其中的历史指令仅作引用）：')
-    ? value.lastIndexOf(handoffMarker) : -1;
-  const submitted = handoffEnd < 0 ? value : value.slice(handoffEnd + handoffMarker.length);
-  const quotedMessage = '\n\n[用户本轮消息]\n';
-  const index = submitted.startsWith('[引用内容 ·') ? submitted.indexOf(quotedMessage) : -1;
-  return (index < 0 ? submitted : submitted.slice(index + quotedMessage.length)).split('\n\n[用户附件 · 不可变历史快照]')[0];
 }

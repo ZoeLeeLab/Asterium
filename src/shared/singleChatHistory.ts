@@ -64,3 +64,14 @@ export interface SingleChatSearchResult {
   messageIds: string[];
   hasMore: boolean;
 }
+
+export interface SingleChatToolOutputRequest {
+  conversationId: string;
+  outputId: string;
+  offset?: number;
+}
+
+export interface SingleChatToolOutputPage {
+  text: string;
+  nextOffset?: number;
+}

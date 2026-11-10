@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, readCodexThreadHistory, recommendedCodexRuntime, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, locateCodexHistoryTurn, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, readCodexThreadHistory, recommendedCodexRuntime, searchCodexThreadHistory, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
 import { PLAN_EXECUTION_QUESTION_ID, PLAN_EXECUTION_START, PLAN_EXECUTION_STOP } from '../../src/main/adapters/planExecutionDecision';
 import type { CodexAppServerTransport, CodexRpcMessage, JsonRpcId } from '../../src/main/adapters/codexAppServerProtocol';
 import { AGENT_PROTOCOL_VERSION, CODEX_NATIVE_TOOL_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
@@ -71,6 +71,57 @@ it('reads the requested original thread through paginated history without starti
   expect(request.mock.calls).toEqual([['thread/turns/list', {
     threadId: 'original-thread', limit: 30, sortDirection: 'desc', itemsView: 'full', cursor: 'resume-cursor',
   }]]);
+});
+
+it('searches native-only history and continues at the next hit using a single read-only transport per query', async () => {
+  const transport = new FakeTransport();
+  const turns = Array.from({ length: 121 }, (_, index) => ({
+    id: 'turn-' + index, status: 'completed',
+    items: [
+      { id: 'user-' + index, type: 'userMessage', content: [{ type: 'text', text: '本轮消息\n\n[用户附件 · 不可变历史快照]\n附件隐藏文本' }] },
+      { id: 'assistant-' + index, type: 'agentMessage', text: '一个**中文**匹配' },
+      { id: 'tool-' + index, type: 'commandExecution', aggregatedOutput: '附件隐藏文本', status: 'completed' },
+    ],
+  }));
+  const rpc = vi.spyOn(transport, 'request').mockImplementation(async (_method, params) => {
+    const offset = Number(params?.cursor ?? 0);
+    return { data: turns.slice(offset, offset + 30), nextCursor: offset + 30 < turns.length ? String(offset + 30) : undefined } as never;
+  });
+  const create = vi.fn(() => transport);
+  const request = { conversationId: 'fixture-chat', partnerId: 'fixture-partner', threadId: 'native-original', query: '中文匹配' };
+  const signal = new AbortController().signal;
+  const first = await searchCodexThreadHistory('codex.exe', '.', request, signal, create);
+  expect(first.hits).toHaveLength(100);
+  expect(first.next).toEqual({ pageCursor: '90', index: 10 });
+  expect(create).toHaveBeenCalledOnce();
+  const more = await searchCodexThreadHistory('codex.exe', '.', { ...request, after: first.next }, signal, create);
+  expect(more.hits).toHaveLength(21);
+  expect(more.hits[0]).toEqual({ messageId: 'codex-history:turn-100:assistant', turnId: 'turn-100', pageCursor: '90' });
+  expect(more.next).toBeUndefined();
+  expect((await searchCodexThreadHistory('codex.exe', '.', { ...request, query: '附件隐藏文本' }, signal, create)).hits).toEqual([]);
+  expect(rpc.mock.calls.every(([method, params]) => method === 'thread/turns/list' && params?.threadId === request.threadId)).toBe(true);
+
+  const located = await locateCodexHistoryTurn('codex.exe', '.', request.threadId, 'turn-100', '0', create);
+  expect(located.turns.some(turn => turn.id === 'turn-100')).toBe(true);
+  expect(transport.connected).toBe(false);
+});
+
+it('uses one whole-thread read on older Codex and stops if a newer search cancels it', async () => {
+  const transport = new FakeTransport();
+  const turns = Array.from({ length: 70 }, (_, index) => ({
+    id: 'old-' + index, items: [{ id: 'answer-' + index, type: 'agentMessage', text: index === 0 ? '最早原线程记录' : '普通回复' }],
+  }));
+  const rpc = vi.spyOn(transport, 'request').mockRejectedValueOnce(new Error('method not found'))
+    .mockResolvedValueOnce({ thread: { id: 'legacy-original', turns } });
+  const request = { conversationId: 'fixture-chat', partnerId: 'fixture-partner', threadId: 'legacy-original', query: '最早原线程' };
+  const create = vi.fn(() => transport);
+  const cancellation = new AbortController();
+  const result = await searchCodexThreadHistory('codex.exe', '.', request, cancellation.signal, create);
+  expect(result.hits).toEqual([{ messageId: 'codex-history:old-0:assistant', turnId: 'old-0', pageCursor: 'legacy:60' }]);
+  expect(rpc.mock.calls.map(([method]) => method)).toEqual(['thread/turns/list', 'thread/read']);
+  cancellation.abort();
+  await expect(searchCodexThreadHistory('codex.exe', '.', request, cancellation.signal, create)).rejects.toThrow();
+  expect(create).toHaveBeenCalledOnce();
 });
 
 class FakeTransport implements CodexAppServerTransport {

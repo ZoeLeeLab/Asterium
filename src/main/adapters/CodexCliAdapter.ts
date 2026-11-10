@@ -1,3 +1,7 @@
+import { codexHistoryMessageId, visibleNativeUserText, type CodexHistoryHit, type CodexHistoryPage, type CodexHistorySearchPage, type CodexHistorySearchRequest } from '../../shared/codexHistory';
+import { normalizeHistoryQuery, searchableHistoryText } from '../../shared/historySearchText';
+import { SINGLE_CHAT_SEARCH_SIZE } from '../../shared/singleChatHistory';
+import { visibleAssistantText } from '../../shared/visibleAssistantText';
 import { isCodexEffort, isCodexModelId, type CodexModelOption } from '../../shared/codexModels';
 import { withHandoffContext } from '../../shared/contextHandoff';
 import { execFile } from 'node:child_process';
@@ -275,34 +279,118 @@ export async function readCodexThreadHistory(
   threadId: string,
   cursor?: string,
   createTransport: CreateCodexTransport = defaultCreateTransport,
-): Promise<import('../../shared/codexHistory').CodexHistoryPage> {
+): Promise<CodexHistoryPage> {
+  return withCodexHistoryReader(executablePath, workingDirectory, threadId, AbortSignal.timeout(10_000), createTransport, read => read(cursor));
+}
+
+export async function locateCodexHistoryTurn(
+  executablePath: string,
+  workingDirectory: string,
+  threadId: string,
+  turnId: string,
+  hint?: string,
+  createTransport: CreateCodexTransport = defaultCreateTransport,
+) {
+  const signal = AbortSignal.timeout(60_000);
+  return withCodexHistoryReader(executablePath, workingDirectory, threadId, signal, createTransport, async read => {
+    if (hint) {
+      const page = await read(hint).catch(() => undefined);
+      signal.throwIfAborted();
+      if (page?.turns.some(turn => turn.id === turnId)) return page;
+    }
+    let cursor: string | undefined;
+    const seen = new Set<string | undefined>();
+    do {
+      if (seen.has(cursor)) throw new Error('CODEX_HISTORY_INVALID_CURSOR');
+      seen.add(cursor);
+      const page = await read(cursor);
+      if (page.turns.some(turn => turn.id === turnId)) return page;
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { turns: [] };
+  });
+}
+
+export async function searchCodexThreadHistory(
+  executablePath: string,
+  workingDirectory: string,
+  request: CodexHistorySearchRequest,
+  cancellation: AbortSignal,
+  createTransport: CreateCodexTransport = defaultCreateTransport,
+): Promise<CodexHistorySearchPage> {
+  const query = normalizeHistoryQuery(request.query.trim());
+  if (!query) return { hits: [] };
+  const signal = AbortSignal.any([cancellation, AbortSignal.timeout(60_000)]);
+  return withCodexHistoryReader(executablePath, workingDirectory, request.threadId, signal, createTransport, async read => {
+    const hits: CodexHistoryHit[] = [];
+    const seen = new Set<string | undefined>();
+    let cursor = request.after?.pageCursor;
+    let skip = request.after?.index ?? 0;
+    do {
+      signal.throwIfAborted();
+      if (seen.has(cursor)) throw new Error('CODEX_HISTORY_INVALID_CURSOR');
+      seen.add(cursor);
+      const page = await read(cursor);
+      let index = 0;
+      for (const turn of page.turns) {
+        const user = turn.items.find(item => item.kind === 'user');
+        const assistant = turn.items.flatMap(item => item.kind === 'assistant' ? [visibleAssistantText(item.text)] : []);
+        const matches: string[] = [];
+        if (user && searchableHistoryText(visibleNativeUserText(user.text)).includes(query)) matches.push(codexHistoryMessageId(turn.id, user.id));
+        if (assistant.length && searchableHistoryText(assistant.join('')).includes(query)) matches.push(codexHistoryMessageId(turn.id));
+        for (const messageId of matches) {
+          if (index++ < skip) continue;
+          if (hits.length === SINGLE_CHAT_SEARCH_SIZE) return { hits, next: { pageCursor: cursor, index: index - 1 } };
+          hits.push({ messageId, turnId: turn.id, pageCursor: cursor });
+        }
+      }
+      skip = 0;
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { hits };
+  });
+}
+
+async function withCodexHistoryReader<T>(
+  executablePath: string,
+  workingDirectory: string,
+  threadId: string,
+  signal: AbortSignal,
+  createTransport: CreateCodexTransport,
+  action: (read: (cursor?: string) => Promise<CodexHistoryPage>) => Promise<T>,
+) {
+  signal.throwIfAborted();
   const client = createTransport(executablePath, workingDirectory);
-  const signal = AbortSignal.timeout(10_000);
+  let legacyTurns: unknown[] | undefined;
   try {
     await abortable(client.start(), signal);
-    if (!cursor?.startsWith('legacy:')) {
-      try {
-        const response = await abortable(client.request<{ data?: unknown; nextCursor?: unknown }>('thread/turns/list', {
-          threadId, limit: CODEX_HISTORY_PAGE_SIZE, sortDirection: 'desc', itemsView: 'full',
-          ...(cursor ? { cursor } : {}),
-        }), signal);
-        if (!Array.isArray(response?.data)) throw new Error('CODEX_HISTORY_INVALID');
-        return { turns: parseCodexHistoryTurns(response.data), nextCursor: text(response.nextCursor) || undefined };
-      } catch (error) {
-        if (cursor || !(error instanceof Error) || !/method not found|unknown (request|method|variant)|unsupported|does not support/i.test(error.message)) throw error;
+    return await action(async cursor => {
+      if (!legacyTurns && !cursor?.startsWith('legacy:')) {
+        try {
+          const response = await abortable(client.request<{ data?: unknown; nextCursor?: unknown }>('thread/turns/list', {
+            threadId, limit: CODEX_HISTORY_PAGE_SIZE, sortDirection: 'desc', itemsView: 'full',
+            ...(cursor ? { cursor } : {}),
+          }), signal);
+          if (!Array.isArray(response?.data)) throw new Error('CODEX_HISTORY_INVALID');
+          return { turns: parseCodexHistoryTurns(response.data), nextCursor: text(response.nextCursor) || undefined };
+        } catch (error) {
+          if (cursor || !(error instanceof Error) || !/method not found|unknown (request|method|variant)|unsupported|does not support/i.test(error.message)) throw error;
+        }
       }
-    }
-    // Compatibility with older Codex releases that only expose a whole-thread read.
-    const response = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: true }), signal);
-    if (!isRecord(response?.thread) || text(response.thread.id) !== threadId || !Array.isArray(response.thread.turns)) throw new Error('CODEX_HISTORY_INVALID');
-    const offset = cursor ? Number(cursor.slice('legacy:'.length)) : 0;
-    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('CODEX_HISTORY_INVALID_CURSOR');
-    const newestFirst = [...response.thread.turns].reverse();
-    const end = offset + CODEX_HISTORY_PAGE_SIZE;
-    return {
-      turns: parseCodexHistoryTurns(newestFirst.slice(offset, end)),
-      nextCursor: end < newestFirst.length ? 'legacy:' + end : undefined,
-    };
+      // Older Codex releases expose a whole-thread read. Reuse it within this scan.
+      if (!legacyTurns) {
+        const response = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: true }), signal);
+        if (!isRecord(response?.thread) || text(response.thread.id) !== threadId || !Array.isArray(response.thread.turns)) throw new Error('CODEX_HISTORY_INVALID');
+        legacyTurns = [...response.thread.turns].reverse();
+      }
+      const offset = cursor ? Number(cursor.slice('legacy:'.length)) : 0;
+      if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('CODEX_HISTORY_INVALID_CURSOR');
+      const end = offset + CODEX_HISTORY_PAGE_SIZE;
+      return {
+        turns: parseCodexHistoryTurns(legacyTurns.slice(offset, end)),
+        nextCursor: end < legacyTurns.length ? 'legacy:' + end : undefined,
+      };
+    });
   } finally {
     await client.close().catch(() => undefined);
   }

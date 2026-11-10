@@ -108,10 +108,10 @@ it('updates existing rows without duplicate hits, then rebuilds a corrupt or lag
 
 it('limits page payloads without dropping the requested anchor or skipping rows', async () => {
   const store = new SingleChatHistoryStore(autoTestOutput());
-  const detail = '合成工具日志'.repeat(58_000);
+  const detail = '合成运行说明'.repeat(58_000);
   const messages = Array.from({ length: 8 }, (_, index) => ({
     ...message('large-' + index, '短正文 ' + index),
-    timeline: [{ id: 'tool-' + index, kind: 'tool' as const, sequence: 1, toolCallId: 'call-' + index, summary: '示例', state: 'success' as const, detail }],
+    timeline: [{ id: 'status-' + index, kind: 'status' as const, sequence: 1, summary: '示例', state: 'success' as const, detail }],
   }));
   await store.initialize(async () => ({ conversations: [chat(first, messages)], deletedConversationIds: [] }));
   const tail = await store.readPage({ conversationId: first });

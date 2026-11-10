@@ -18,9 +18,9 @@ Beta.5 工作区的单聊存储切换、原线程和隔离验收边界见[第二
 - [OpenAI Responses](entries/api-responses.md)
 - [API 会话与手动压缩](entries/api-sessions.md)
 - [通用自动化](entries/automations.md)
-- [桌面通用设置](entries/desktop-settings.md)（含截图快捷键、当前单聊搜索和回合导航）
+- [桌面通用设置](entries/desktop-settings.md)（含截图快捷键、单聊搜索、回合导航和工具输出）
 - [伙伴记忆](entries/memory.md)（含旧对话文本导入）
-- [伙伴接入](entries/partners.md)（含本机 Codex 原线程历史、单聊模型切换和 CyberBoss 单聊附件）
+- [伙伴接入](entries/partners.md)（含本机 Codex 原线程历史和搜索、单聊模型切换和 CyberBoss 单聊附件）
 - [运行状态、项目与协作工具](entries/runtime-tools.md)（含接回伙伴 Markdown 复核及宿主接线契约）
 - [外部伙伴群聊 MCP](entries/studio-mcp.md)（含接入凭据复制）
 - [星丛 Wake 通知与参考 SDK](entries/studio-wake.md)

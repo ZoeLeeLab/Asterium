@@ -1,3 +1,4 @@
+import type { ToolOutputReference } from '../../../shared/toolOutput';
 import type {
   ArtifactAvailability,
   ArtifactRegistrationMethod,
@@ -59,8 +60,8 @@ export type TurnTimelineItem =
   | { id: string; sequence: number; kind: 'text'; text: string }
   | { id: string; sequence: number; kind: 'reasoning'; reasoningId?: string; summary: string; state: 'running' | 'success' | 'failure'; detail?: string; truncated?: boolean }
   | { id: string; sequence: number; kind: 'status'; summary: string; state: 'running' | 'success' | 'failure'; detail?: string }
-  | { id: string; sequence: number; kind: 'tool'; toolCallId: string; toolName?: string; presentationName?: string; category?: TurnOperationCategory; summary: string; state: 'running' | 'success' | 'failure'; detail?: string; mutatesExternalState?: boolean }
-  | { id: string; sequence: number; kind: 'computer'; toolCallId: string; summary: string; state: 'running' | 'success' | 'failure'; detail?: string }
+  | { id: string; sequence: number; kind: 'tool'; toolCallId: string; toolName?: string; presentationName?: string; category?: TurnOperationCategory; summary: string; state: 'running' | 'success' | 'failure'; detail?: string; detailRef?: ToolOutputReference; mutatesExternalState?: boolean }
+  | { id: string; sequence: number; kind: 'computer'; toolCallId: string; summary: string; state: 'running' | 'success' | 'failure'; detail?: string; detailRef?: ToolOutputReference }
   | { id: string; sequence: number; kind: 'file'; artifactId: string; toolCallId?: string; name: string; summary: string; state: 'success'; mediaType?: string; sizeBytes?: number; changeKind?: 'create' | 'modify' }
   | { id: string; sequence: number; kind: 'authorization'; authorizationId: string; toolCallId?: string; summary: string; state: 'running' | 'success' | 'failure'; detail?: string; action?: 'read_file' | 'write_file' | 'delete_file' | 'run_command' | 'computer_control' | 'external_side_effect'; risk?: 'low' | 'medium' | 'high'; decision?: 'allow_once' | 'deny'; extensionTrustGranted?: boolean; purpose?: AuthorizationPurpose }
   | { id: string; sequence: number; kind: 'user_input'; requestId: string; questions: UserInputQuestion[]; state: 'running' | 'success' | 'failure'; answers?: Record<string, string[]>; customAnswers?: Record<string, string> }

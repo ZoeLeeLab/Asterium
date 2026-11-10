@@ -131,6 +131,7 @@ export interface AsteriumAgentsApi {
   detectClaude: () => Promise<ClaudeDetectionResult>;
   detectCodex?: () => Promise<CodexDetectionResult>;
   listCodexModels?: (request: import('./codexModels').CodexModelListRequest) => Promise<import('./codexModels').CodexModelOption[]>;
+  searchCodexHistory?: (request: import('./codexHistory').CodexHistorySearchRequest) => Promise<import('./codexHistory').CodexHistorySearchPage>;
   readCodexHistory?: (request: import('./codexHistory').CodexHistoryRequest) => Promise<import('./codexHistory').CodexHistoryPage>;
   listCodexThreads?: (runtimeId: string, workspaceGrantId: string) => Promise<CodexThreadSummary[]>;
   getLocalThreadLifecycles?: (request: LocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult[]>;
@@ -350,6 +351,7 @@ export interface AsteriumConversationsApi {
   openHistory?: (recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot | undefined>;
   migrateHistory?: (source: import('./singleChatHistory').SingleChatHistoryImport, recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot>;
   readHistoryPage?: (request: import('./singleChatHistory').SingleChatPageRequest) => Promise<import('./singleChatHistory').SingleChatHistoryPage | undefined>;
+  readToolOutput?: (request: import('./singleChatHistory').SingleChatToolOutputRequest) => Promise<import('./singleChatHistory').SingleChatToolOutputPage | undefined>;
   searchHistory?: (request: import('./singleChatHistory').SingleChatSearchRequest) => Promise<import('./singleChatHistory').SingleChatSearchResult>;
   writeHistory?: (request: import('./singleChatHistory').SingleChatHistoryWrite) => Promise<void>;
   delete: (request: ConversationDeleteRequest) => Promise<ConversationDeleteResult>;

@@ -1,3 +1,4 @@
+import { normalizeHistoryQuery, searchableHistoryText } from '../../shared/historySearchText';
 import { DatabaseSync } from 'node:sqlite';
 import { isAsteriumUser } from '../../shared/identity';
 import type { Message } from '../../renderer/types/domain';
@@ -89,7 +90,7 @@ export class SingleChatHistoryIndex {
       this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(id);
       const insert = this.db.prepare('INSERT INTO messages(chat_id, id, position, payload, body, quotes, is_user) VALUES (?, ?, ?, ?, ?, ?, ?)');
       let position = 0;
-      for (const message of messages) insert.run(id, message.id, position++, JSON.stringify(message), searchBody(message), normalized(message.quote?.text ?? ''), Number(isAsteriumUser(message.authorId)));
+      for (const message of messages) insert.run(id, message.id, position++, JSON.stringify(message), searchableHistoryText(message.content), normalizeHistoryQuery(message.quote?.text ?? ''), Number(isAsteriumUser(message.authorId)));
     });
   }
 
@@ -104,7 +105,7 @@ export class SingleChatHistoryIndex {
         'INSERT INTO messages(chat_id, id, position, payload, body, quotes, is_user) VALUES (?, ?, ?, ?, ?, ?, ?)',
         'ON CONFLICT(chat_id, id) DO UPDATE SET payload = excluded.payload, body = excluded.body, quotes = excluded.quotes, is_user = excluded.is_user',
       ].join(' '));
-      for (const message of upsert) put.run(id, message.id, position++, JSON.stringify(message), searchBody(message), normalized(message.quote?.text ?? ''), Number(isAsteriumUser(message.authorId)));
+      for (const message of upsert) put.run(id, message.id, position++, JSON.stringify(message), searchableHistoryText(message.content), normalizeHistoryQuery(message.quote?.text ?? ''), Number(isAsteriumUser(message.authorId)));
       if (order) {
         const present = this.db.prepare('SELECT id FROM messages WHERE chat_id = ? ORDER BY position').all(id).map(row => String(row.id));
         const requested = new Set(order);
@@ -142,7 +143,7 @@ export class SingleChatHistoryIndex {
   }
 
   search(request: SingleChatSearchRequest): SingleChatSearchResult {
-    const query = normalized(request.query.trim());
+    const query = normalizeHistoryQuery(request.query.trim());
     if (!query) return { conversationIds: [], messageIds: [], hasMore: false };
     const id = request.conversationId;
     const anchored = id && request.after ? this.position(id, request.after) : undefined;
@@ -216,15 +217,4 @@ function fitPage<T extends { payload?: unknown }>(rows: T[], center: number) {
 function decodeIndexJson<T>(value: string): T {
   try { return JSON.parse(value) as T; }
   catch (error) { throw new Error('SINGLE_CHAT_INDEX_INVALID_ROW', { cause: error }); }
-}
-
-function normalized(value: string) {
-  return value.normalize('NFKC').toLocaleLowerCase('zh-CN');
-}
-
-function searchBody(message: Message) {
-  const body = normalized(message.content);
-  const visible = body.replace(/!?\[([^\]\n]+)\]\([^\n)]*\)/g, '$1')
-    .replace(/(\*\*|__|~~)(.*?)\1/g, '$2').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1$2');
-  return visible === body ? body : body + '\n' + visible;
 }

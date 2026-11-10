@@ -441,6 +441,26 @@ describe('ApiAgentRuntime loop', () => {
     expect((await store.load('partner-1', 'conversation-1'))?.turns[0].messages).toHaveLength(3);
   });
 
+  it('forwards a large single-chat tool result for history while keeping the provider continuation intact', async () => {
+    const workspace = await tempDirectory();
+    const sessions = await tempDirectory();
+    const output = '合成输出'.repeat(10_000) + '合成结尾';
+    await writeFile(path.join(workspace, 'large-notes.txt'), output, 'utf8');
+    const fetcher = vi.fn(async () => response([{ choices: [{ delta: { content: '完成' }, finish_reason: 'stop' }] }]))
+      .mockResolvedValueOnce(response([{ choices: [{ delta: { tool_calls: [{
+        index: 0, id: 'call-large-read', type: 'function', function: { name: 'read_file', arguments: '{"path":"large-notes.txt"}' },
+      }] }, finish_reason: 'tool_calls' }] }]));
+    const store = new ApiAgentSessionStore(sessions);
+    const adapter = new ApiPartnerAdapter({ endpoint: 'https://fixture.invalid', model: 'deepseek-v4-flash', apiKey: 'fixture', fetcher, sessionStore: store, tools: new ApiAgentTools(workspace) });
+    const events: PartnerEvent[] = [];
+    for await (const event of adapter.sendMessage(command())) events.push(event);
+    const completed = events.find(event => event.type === 'tool.completed');
+    expect(completed?.detail && JSON.parse(completed.detail).result).toBe(output);
+    expect((await store.load('partner-1', 'conversation-1'))?.turns[0].messages).toContainEqual({
+      role: 'tool', toolCallId: 'call-large-read', content: completed?.detail,
+    });
+  });
+
   it('pauses mutating tools for allow-once authorization and emits the produced file', async () => {
     const workspace = await tempDirectory();
     let request = 0;

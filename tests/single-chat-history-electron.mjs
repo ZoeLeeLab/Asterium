@@ -26,6 +26,7 @@ await runAutoTest(async () => {
   await loader.close();
   const conversationId = fixture.activeConversationId;
   const original = fixture.conversations.find(chat => chat.id === conversationId);
+  const largeOutput = 'x'.repeat(65_535) + '星😀'.repeat(2_000) + '合成工具输出结尾';
   const legacyFile = path.join(profile, 'single-chat-messages.v1.json');
   const projected = {
     version: 1,
@@ -104,6 +105,7 @@ await runAutoTest(async () => {
     };
     const first = await launch();
     let generation;
+    let outputId;
     try {
       await first.page.getByText('旧投影补回记录', { exact: true }).waitFor();
       const snapshot = await first.page.evaluate(() => window.asteriumConversations.openHistory());
@@ -125,6 +127,16 @@ await runAutoTest(async () => {
       const disk = await first.page.evaluate(() => window.asteriumConversations.openHistory());
       assert.ok(disk.conversations.find(chat => chat.id === conversationId).messages.some(message => message.content === '强退前已保存的合成消息'));
       assert.equal(await readFile(legacyFile, 'utf8'), legacyBytes);
+      outputId = await first.page.evaluate(async ({ conversationId, generation, detail, partnerId }) => {
+        const bridge = window.asteriumConversations;
+        await bridge.writeHistory({ generation, changes: [{ conversationId, remove: [], upsert: [{
+          id: 'fixture-tool-output', content: '合成大工具输出', authorId: partnerId, createdAt: '10:34',
+          timeline: [{ id: 'fixture-tool', sequence: 1, kind: 'tool', toolCallId: 'fixture-tool', summary: '合成工具', state: 'success', detail }],
+        }] }] });
+        const page = await bridge.readHistoryPage({ conversationId, around: 'fixture-tool-output' });
+        return page.messages.find(message => message.id === 'fixture-tool-output').timeline[0].detailRef.id;
+      }, { conversationId, generation, detail: largeOutput, partnerId: original.partnerId });
+      assert.match(outputId, /^[a-f0-9]{64}$/);
       const stale = await first.page.evaluate(() => window.asteriumConversations.migrateHistory({ stale: true }));
       assert.equal(stale.generation, generation);
     } finally {
@@ -146,7 +158,17 @@ await runAutoTest(async () => {
       assert.equal(active.generation, generation);
       assert.ok(active.conversations.find(chat => chat.id === conversationId).messages.some(message => message.id === 'main-projection-only'));
       assert.equal(await readFile(legacyFile, 'utf8'), staleProjection);
-      console.log('Isolated Electron migrated both legacy sources, saved before display and recovered the same generation after forced exit.');
+      const recovered = await second.page.evaluate(async ({ conversationId, outputId }) => {
+        const bridge = window.asteriumConversations;
+        const first = await bridge.readToolOutput({ conversationId, outputId });
+        const next = await bridge.readToolOutput({ conversationId, outputId, offset: first.nextOffset });
+        const invalid = await bridge.readToolOutput({ conversationId, outputId: '../manifest' }).then(() => false, () => true);
+        return { text: first.text + next.text, nextOffset: first.nextOffset, invalid };
+      }, { conversationId, outputId });
+      assert.equal(recovered.text, largeOutput);
+      assert.equal(recovered.nextOffset, 65_535);
+      assert.equal(recovered.invalid, true);
+      console.log('Isolated Electron recovered the same migration generation, messages and paged tool output after forced exit.');
     } finally {
       await second.browser.close();
     }

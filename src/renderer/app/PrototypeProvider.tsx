@@ -403,17 +403,23 @@ function applyAgentEventToConversation(conversation: Conversation, event: Partne
       const toolName = 'toolName' in event ? event.toolName : previousAction?.kind === 'tool' ? previousAction.toolName : undefined;
       const presentationName = event.type === 'tool.started' ? event.presentationName : previousAction?.kind === 'tool' ? previousAction.presentationName : undefined;
       const isComputer = previousAction?.kind === 'computer' || Boolean(toolName && /computer|desktop|browser.*control/i.test(toolName));
+      const detailRef = event.type === 'tool.completed' ? event.detailRef : undefined;
+      const singleChatOutput = event.type === 'tool.completed' && (!event.route || event.route.scope === 'single')
+        && window.asteriumConversations?.readToolOutput;
+      const detail = singleChatOutput && typeof event.detail === 'string' ? event.detail : eventDetail(event.detail);
       message.timeline = appendTimeline(message, isComputer ? {
         id: event.eventId, sequence: event.sequence, kind: 'computer', toolCallId: event.toolCallId,
         summary: event.type === 'tool.completed' ? `操作电脑${event.outcome === 'success' ? '成功' : '失败'}` : '正在操作电脑',
         state: event.type === 'tool.completed' ? event.outcome : 'running',
+        ...(singleChatOutput && detail && detail.length > 4096 ? { detail } : {}),
+        ...(detailRef ? { detail, detailRef } : {}),
       } : {
       id: event.eventId, sequence: event.sequence, kind: 'tool', toolCallId: event.toolCallId,
       ...(toolName ? { toolName } : {}),
       ...(presentationName ? { presentationName } : {}),
       category: operationCategory(presentationName ?? toolName),
       ...('mutatesExternalState' in event ? { mutatesExternalState: event.mutatesExternalState } : {}),
-      summary: event.summary, state: event.type === 'tool.completed' ? event.outcome : 'running', detail: eventDetail(event.detail),
+      summary: event.summary, state: event.type === 'tool.completed' ? event.outcome : 'running', detail, detailRef,
       });
     }
     if (event.type === 'file.produced') {

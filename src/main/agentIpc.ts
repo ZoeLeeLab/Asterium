@@ -38,7 +38,7 @@ import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import { readClaudeSessionFile } from './adapters/claudeSessionFile';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, listCodexThreads, readCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, locateCodexHistoryTurn, listCodexModels, listCodexThreads, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -85,7 +85,7 @@ import { ProjectFileDeletionService } from './project/ProjectFileDeletionService
 import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
 import { ConversationDeletionService } from './conversation/ConversationDeletionService';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { assertHistoryImport, assertHistoryPage, assertHistorySearch, assertHistoryWrite, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
+import { assertHistoryImport, assertHistoryPage, assertHistorySearch, assertHistoryWrite, assertToolOutputRequest, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
 import { mergeLegacySingleChats } from './conversation/singleChatHistoryProjection';
 import { assertSingleChatConversationSnapshots } from '../shared/singleChatMessages';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
@@ -1801,6 +1801,12 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
     return singleChatHistory.readPage(value);
   });
+  ipcMain.handle(AGENT_IPC.conversationReadToolOutput, async (event, value: unknown) => {
+    requireSender(event);
+    assertToolOutputRequest(value);
+    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
+    return singleChatHistory.readToolOutput(value);
+  });
   ipcMain.handle(AGENT_IPC.conversationSearchHistory, async (event, value: unknown) => {
     requireSender(event);
     assertHistorySearch(value);
@@ -2011,6 +2017,15 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     });
   };
   const transformRuntimeEvent = async (event: PartnerEvent, artifactBaseDirectory?: string) => {
+    if (event.type === 'tool.completed') {
+      // The reference is main-owned. Adapters can only supply the detail itself.
+      const clean = { ...event, detail: typeof event.detail === 'string' ? event.detail : undefined, detailRef: undefined };
+      if (event.route && event.route.scope !== 'single') return clean;
+      if (!clean.detail || clean.detail.length <= 4096) return clean;
+      // On failure leave the detail in the event. The checkpoint retries it and surfaces a storage failure.
+      const stored = await singleChatHistory.recordToolOutput(event.conversationId, clean.detail).catch(() => undefined);
+      return stored ? { ...clean, ...stored } : clean;
+    }
     if (event.type !== 'file.produced') return event;
     const registered = await projectFileDelivery.registerRuntimeFile(event, artifactBaseDirectory);
     if (!registered?.emitArtifactEvent) {
@@ -2244,20 +2259,63 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return threads.filter((thread) => !reserved.has(thread.threadId));
   });
 
-  ipcMain.handle(AGENT_IPC.readCodexHistory, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.conversationId !== 'string' || typeof value.threadId !== 'string'
-      || (value.cursor !== undefined && (typeof value.cursor !== 'string' || value.cursor.length > 2048))
-      || !isLocalThreadLifecycleRequest({ ...value, adapterType: 'codex_cli', threadIds: [value.threadId] })) {
-      throw new Error('INVALID_CODEX_HISTORY_REQUEST');
-    }
-    const request = value as unknown as import('../shared/codexHistory').CodexHistoryRequest;
+  type CodexHistoryRequest = import('../shared/codexHistory').CodexHistoryRequest;
+  type CodexHistorySearchRequest = import('../shared/codexHistory').CodexHistorySearchRequest;
+  const assertCodexHistoryBinding = async (request: CodexHistoryRequest) => {
     const binding = await nativeBindings.getForScope(request.partnerId, 'single', request.conversationId);
     if (binding?.source !== 'local_cli' || binding.state !== 'active' || binding.nativeThreadId !== request.threadId
       || await conversationDeletions.isDeleted(request.conversationId)) throw new Error('CODEX_HISTORY_BINDING_UNAVAILABLE');
+  };
+  const resolveBoundCodexHistory = async (value: unknown) => {
+    if (!isRecord(value) || typeof value.conversationId !== 'string' || !value.conversationId.trim() || value.conversationId.length > 512
+      || typeof value.threadId !== 'string' || value.threadId.length > 512
+      || (value.cursor !== undefined && !isCodexHistoryCursor(value.cursor))
+      || (value.aroundTurnId !== undefined && (typeof value.aroundTurnId !== 'string' || !value.aroundTurnId.trim() || value.aroundTurnId.length > 512))
+      || !isLocalThreadLifecycleRequest({ ...value, adapterType: 'codex_cli', threadIds: [value.threadId] })) {
+      throw new Error('INVALID_CODEX_HISTORY_REQUEST');
+    }
+    const request = value as unknown as CodexHistoryRequest;
+    await assertCodexHistoryBinding(request);
     const partnerRootGrantId = request.partnerRootGrantId ?? (await partnerWorkspaces.grantIds(request.partnerId))?.cwdGrantId;
-    const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime({ ...request, partnerRootGrantId });
-    return readCodexThreadHistory(runtime.executablePath, workingDirectory, request.threadId, request.cursor);
+    return { request, ...await resolveCodexLifecycleRuntime({ ...request, partnerRootGrantId }) };
+  };
+
+  ipcMain.handle(AGENT_IPC.readCodexHistory, async (event, value: unknown) => {
+    requireSender(event);
+    const { request, runtime, workingDirectory } = await resolveBoundCodexHistory(value);
+    const page = request.aroundTurnId
+      ? await locateCodexHistoryTurn(runtime.executablePath, workingDirectory, request.threadId, request.aroundTurnId, request.cursor)
+      : await readCodexThreadHistory(runtime.executablePath, workingDirectory, request.threadId, request.cursor);
+    await assertCodexHistoryBinding(request);
+    return page;
+  });
+
+  const nativeHistorySearches = new WeakMap<Electron.WebContents, AbortController>();
+  ipcMain.handle(AGENT_IPC.searchCodexHistory, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.query !== 'string' || value.query.length > 512
+      || (value.after !== undefined && (!isRecord(value.after) || !Number.isSafeInteger(value.after.index)
+        || Number(value.after.index) < 0 || Number(value.after.index) >= 60
+        || (value.after.pageCursor !== undefined && !isCodexHistoryCursor(value.after.pageCursor))))) {
+      throw new Error('INVALID_CODEX_HISTORY_SEARCH');
+    }
+    const { sender } = event;
+    nativeHistorySearches.get(sender)?.abort();
+    const cancellation = new AbortController();
+    nativeHistorySearches.set(sender, cancellation);
+    const onDestroy = () => cancellation.abort();
+    sender.once('destroyed', onDestroy);
+    try {
+      const { request, runtime, workingDirectory } = await resolveBoundCodexHistory(value);
+      const query = value as unknown as CodexHistorySearchRequest;
+      const page = await searchCodexThreadHistory(runtime.executablePath, workingDirectory, query, cancellation.signal);
+      cancellation.signal.throwIfAborted();
+      await assertCodexHistoryBinding(request);
+      return page;
+    } finally {
+      sender.removeListener('destroyed', onDestroy);
+      if (nativeHistorySearches.get(sender) === cancellation) nativeHistorySearches.delete(sender);
+    }
   });
 
   ipcMain.handle(AGENT_IPC.listCodexModels, async (event, value: unknown) => {
@@ -3620,6 +3678,10 @@ function isLocalSendRequest(value: unknown): value is LocalCliSendRequest {
     && (value.codexRuntimeId === undefined || typeof value.codexRuntimeId === 'string')
     && (value.codexRuntimeEnvironment === undefined || ['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))
     && isRecord(value.command);
+}
+
+function isCodexHistoryCursor(value: unknown) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 2048;
 }
 
 function isLocalThreadLifecycleRequest(value: unknown): value is LocalThreadLifecycleRequest {
