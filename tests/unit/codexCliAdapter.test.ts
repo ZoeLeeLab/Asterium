@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, recommendedCodexRuntime, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, readCodexThreadHistory, recommendedCodexRuntime, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
 import { PLAN_EXECUTION_QUESTION_ID, PLAN_EXECUTION_START, PLAN_EXECUTION_STOP } from '../../src/main/adapters/planExecutionDecision';
 import type { CodexAppServerTransport, CodexRpcMessage, JsonRpcId } from '../../src/main/adapters/codexAppServerProtocol';
 import { AGENT_PROTOCOL_VERSION, CODEX_NATIVE_TOOL_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
@@ -57,6 +57,20 @@ it('reads visible model choices and supported effort from the selected runtime a
     ['model/list', { limit: 100, includeHidden: false, cursor: 'page-two' }],
   ]);
   expect(transport.connected).toBe(false);
+});
+
+it('reads the requested original thread through paginated history without starting or resuming a turn', async () => {
+  const transport = new FakeTransport();
+  const request = vi.spyOn(transport, 'request').mockResolvedValue({
+    data: [{ id: 'native-turn', status: 'completed', items: [{ id: 'answer', type: 'agentMessage', text: '完整回复' }] }],
+    nextCursor: 'older',
+  });
+  const page = await readCodexThreadHistory('codex.exe', '.', 'original-thread', 'resume-cursor', () => transport);
+  expect(page.turns[0].items).toEqual([{ id: 'answer', kind: 'assistant', text: '完整回复' }]);
+  expect(page.nextCursor).toBe('older');
+  expect(request.mock.calls).toEqual([['thread/turns/list', {
+    threadId: 'original-thread', limit: 30, sortDirection: 'desc', itemsView: 'full', cursor: 'resume-cursor',
+  }]]);
 });
 
 class FakeTransport implements CodexAppServerTransport {

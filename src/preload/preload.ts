@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
   detectClaude: (): Promise<ClaudeDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectClaude),
   detectCodex: (): Promise<CodexDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectCodex),
   listCodexModels: (request: import('../shared/codexModels').CodexModelListRequest): Promise<import('../shared/codexModels').CodexModelOption[]> => ipcRenderer.invoke(AGENT_IPC.listCodexModels, request),
+  readCodexHistory: (request: import('../shared/codexHistory').CodexHistoryRequest): Promise<import('../shared/codexHistory').CodexHistoryPage> => ipcRenderer.invoke(AGENT_IPC.readCodexHistory, request),
   listCodexThreads: (runtimeId: string, workspaceGrantId: string): Promise<CodexThreadSummary[]> => ipcRenderer.invoke(AGENT_IPC.listCodexThreads, { runtimeId, workspaceGrantId }),
   getLocalThreadLifecycles: (request: LocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult[]> => ipcRenderer.invoke(AGENT_IPC.getLocalThreadLifecycles, request),
   changeLocalThreadLifecycle: (request: ChangeLocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult> => ipcRenderer.invoke(AGENT_IPC.changeLocalThreadLifecycle, request),

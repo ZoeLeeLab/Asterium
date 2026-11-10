@@ -267,6 +267,75 @@ export async function listCodexModels(executablePath: string, workingDirectory: 
   }
 }
 
+const CODEX_HISTORY_PAGE_SIZE = 30;
+
+export async function readCodexThreadHistory(
+  executablePath: string,
+  workingDirectory: string,
+  threadId: string,
+  cursor?: string,
+  createTransport: CreateCodexTransport = defaultCreateTransport,
+): Promise<import('../../shared/codexHistory').CodexHistoryPage> {
+  const client = createTransport(executablePath, workingDirectory);
+  const signal = AbortSignal.timeout(10_000);
+  try {
+    await abortable(client.start(), signal);
+    if (!cursor?.startsWith('legacy:')) {
+      try {
+        const response = await abortable(client.request<{ data?: unknown; nextCursor?: unknown }>('thread/turns/list', {
+          threadId, limit: CODEX_HISTORY_PAGE_SIZE, sortDirection: 'desc', itemsView: 'full',
+          ...(cursor ? { cursor } : {}),
+        }), signal);
+        if (!Array.isArray(response?.data)) throw new Error('CODEX_HISTORY_INVALID');
+        return { turns: parseCodexHistoryTurns(response.data), nextCursor: text(response.nextCursor) || undefined };
+      } catch (error) {
+        if (cursor || !(error instanceof Error) || !/method not found|unknown (request|method|variant)|unsupported|does not support/i.test(error.message)) throw error;
+      }
+    }
+    // Compatibility with older Codex releases that only expose a whole-thread read.
+    const response = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: true }), signal);
+    if (!isRecord(response?.thread) || text(response.thread.id) !== threadId || !Array.isArray(response.thread.turns)) throw new Error('CODEX_HISTORY_INVALID');
+    const offset = cursor ? Number(cursor.slice('legacy:'.length)) : 0;
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('CODEX_HISTORY_INVALID_CURSOR');
+    const newestFirst = [...response.thread.turns].reverse();
+    const end = offset + CODEX_HISTORY_PAGE_SIZE;
+    return {
+      turns: parseCodexHistoryTurns(newestFirst.slice(offset, end)),
+      nextCursor: end < newestFirst.length ? 'legacy:' + end : undefined,
+    };
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+function parseCodexHistoryTurns(turns: unknown[]): import('../../shared/codexHistory').CodexHistoryTurn[] {
+  return turns.map(turn => {
+    if (!isRecord(turn) || !text(turn.id) || !Array.isArray(turn.items)) throw new Error('CODEX_HISTORY_INVALID_TURN');
+    const state = turn.status === 'inProgress' || turn.status === 'failed' || turn.status === 'interrupted' ? turn.status : 'completed';
+    const time = turn.startedAt;
+    const milliseconds = typeof time === 'number' ? (time < 1e12 ? time * 1000 : time) : typeof time === 'string' ? Date.parse(time) : NaN;
+    const startedAt = Number.isFinite(milliseconds) && Math.abs(milliseconds) <= 8.64e15 ? new Date(milliseconds).toISOString() : undefined;
+    const items = turn.items.flatMap((item): import('../../shared/codexHistory').CodexHistoryItem[] => {
+      if (!isRecord(item) || !text(item.id)) return [];
+      const id = text(item.id);
+      if (item.type === 'agentMessage' && typeof item.text === 'string' && item.text.trim()) return [{ id, kind: 'assistant', text: item.text }];
+      if (item.type === 'userMessage' && Array.isArray(item.content)) {
+        const body = item.content.flatMap(part => isRecord(part) && part.type === 'text' && typeof part.text === 'string' ? [part.text] : []).join('\n');
+        return body.trim() ? [{ id, kind: 'user', text: body }] : [];
+      }
+      const label = item.type === 'commandExecution' ? '运行命令'
+        : item.type === 'fileChange' ? '修改文件'
+        : item.type === 'mcpToolCall' || item.type === 'dynamicToolCall' ? text(item.tool) || '调用工具'
+        : item.type === 'webSearch' ? '搜索网页' : '';
+      if (!label) return [];
+      const outcome = item.status === 'inProgress' ? 'running'
+        : item.status === 'failed' || item.status === 'declined' || item.status === 'interrupted' ? 'failure' : 'success';
+      return [{ id, kind: 'tool', label, state: outcome }];
+    });
+    return { id: text(turn.id), state, startedAt, items };
+  });
+}
+
 export async function getCodexThreadLastTurnId(executablePath: string, workingDirectory: string, threadId: string, createTransport: CreateCodexTransport = defaultCreateTransport) {
   const client = createTransport(executablePath, workingDirectory);
   try {
@@ -882,6 +951,7 @@ export class CodexCliAdapter implements PartnerAdapter {
           ...this.runtimeWorkspaceRoots(runtimeWorkspaceDirectories),
         });
         const id = text(result?.thread?.id) || requestedSessionId;
+        if (id !== requestedSessionId) throw new Error('CODEX_RESUMED_THREAD_MISMATCH');
         const model = text(result?.model);
         this.loadedThreads.add(id);
         if (model) this.threadModels.set(id, model);

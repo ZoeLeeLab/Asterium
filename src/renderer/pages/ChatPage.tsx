@@ -1,3 +1,4 @@
+import { useNativeCodexHistory } from '../app/nativeCodexHistory';
 import { supportsContextHandoff } from '../app/singleChatRuntime';
 import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
 import type { CyberBossChatFileCapabilities } from '../../shared/cyberBossChatAttachments';
@@ -128,7 +129,10 @@ export function ChatPage() {
   const [conversationTargetId, setConversationTargetId] = useState('');
   const [conversationTitle, setConversationTitle] = useState('');
   const [partnerArchiveTargetId, setPartnerArchiveTargetId] = useState('');
-  const activeConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
+  const storedConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
+  const historyPartner = state.partners.find((partner) => partner.id === storedConversation?.partnerId);
+  const nativeHistory = useNativeCodexHistory(storedConversation, historyPartner, location.pathname === '/chat');
+  const activeConversation = nativeHistory.conversation;
   const activeConversationId = activeConversation?.id;
   const [delegationSnapshot, setDelegationSnapshot] = useState<{ conversationId: string; batches: DelegationBatchView[] }>();
   const delegationBatches = delegationSnapshot && delegationSnapshot.conversationId === activeConversationId ? delegationSnapshot.batches : emptyDelegationBatches;
@@ -952,6 +956,11 @@ export function ChatPage() {
             <div className="message-scroll-region">
             {turnMessages.length > 1 && <TurnNavigator key={`turn-navigator:${activeConversation.id}`} turns={turnMessages} messageListRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} onJump={stopFollowingLatest} />}
             <div className="message-list" ref={messageListRef} onScroll={trackMessageScroll}>
+              {nativeHistory.unavailable && <div className="removed-partner-notice" role="status">暂时读不到 Codex 原线程，当前显示星丛已有记录。</div>}
+              {nativeHistory.hasOlder && <button type="button" className="secondary-button" disabled={nativeHistory.loadingOlder} onClick={() => {
+                stopFollowingLatest();
+                void nativeHistory.loadOlder();
+              }}>{nativeHistory.loadingOlder ? '正在读取原线程…' : '加载更早的 Codex 消息'}</button>}
               {chatRows.map(({ message, key, batches, receiptOnly }) => {
                 const mine = isAsteriumUser(message.authorId);
                 const author = mine ? undefined : state.partners.find((partner) => partner.id === message.authorId);

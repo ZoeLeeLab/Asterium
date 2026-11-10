@@ -24,21 +24,41 @@ await runAutoTest(async () => {
       const messages = Array.from({ length: turnCount * 2 }, (_, index) => ({
         id: `fixture-message-${index}`, authorId: index % 2 ? partnerId : userId, createdAt, status: 'delivered',
         content: index % 2 ? `${markdown}\n\n示例 ${index}` : `示例提问 ${index}`,
+        ...(index % 2 ? { runId: 'fixture-turn-' + Math.floor(index / 2), runState: 'completed' } : {}),
         ...(index === turnCount * 2 - 2 ? { clientMessageId: 'fixture-client-message' } : {}),
       }));
       localStorage.setItem('asterium.prototype.v7', JSON.stringify({
         version: 7, userProfile: { id: userId, displayName: '示例用户', introduction: '', audience: 'all', updatedAt: createdAt },
         partners: [{ id: partnerId, publicIdentity: { displayName: '示例伙伴', introduction: '', expertise: '', mentionName: '示例伙伴' },
-          status: 'online', isPrototype: true, createdAt, accent: '#69a7ff', profileManagement: { userProfile: false, personality: false, memoryMode: 'self_managed' },
-          defaultPermissionMode: 'manual', sourceMode: 'local_cli', adapterType: 'codex_cli', location: 'remote', sessionMode: 'resume', connectionKind: 'mock' }],
+          status: 'online', isPrototype: false, createdAt, accent: '#69a7ff', profileManagement: { userProfile: false, personality: false, memoryMode: 'self_managed' },
+          defaultPermissionMode: 'manual', sourceMode: 'local_cli', adapterType: 'codex_cli', location: 'local', sessionMode: 'resume', connectionKind: 'local_codex',
+          partnerRootGrantId: 'fixture-grant' }],
         activePartnerId: partnerId, activeConversationId: conversationId, projects: [], groupChats: [],
-        conversations: [{ id: conversationId, partnerId, title: '合成长对话', permissionMode: 'manual', planMode: 'default', updatedAt: createdAt, messages }],
+        conversations: [{ id: conversationId, partnerId, title: '合成长对话', permissionMode: 'manual', planMode: 'default',
+          sessionId: 'fixture-session', partnerRootGrantId: 'fixture-grant', updatedAt: createdAt, messages }],
       }));
-      const fixture = window.__longChat = { polls: 0, sends: 0, deltas: 0, batches: [] };
+      const fixture = window.__longChat = { polls: 0, sends: 0, deltas: 0, batches: [], historyReads: [] };
       window.asteriumDelegation = { list: async () => { fixture.polls++; return structuredClone(fixture.batches); } };
       window.asteriumAgents = {
         onEvent: (listener) => { fixture.listener = listener; return () => { fixture.listener = undefined; }; },
         sendLocalCliMessage: async () => { fixture.sends++; },
+        readCodexHistory: async (request) => {
+          fixture.historyReads.push(request);
+          const offset = request.cursor ? Number(request.cursor) : 0;
+          const lastTurn = turnCount - offset - 1;
+          const count = Math.min(lastTurn + 1, 30);
+          return {
+            turns: Array.from({ length: count }, (_, position) => {
+              const turn = lastTurn - position;
+              const user = messages[turn * 2], reply = messages[turn * 2 + 1];
+              return { id: reply.runId, state: 'completed', startedAt: createdAt, items: [
+                { id: user.id, kind: 'user', text: user.content },
+                { id: reply.id, kind: 'assistant', text: reply.content + (turn === turnCount - 1 ? '\n\n原线程恢复的末尾。' : '') },
+              ] };
+            }),
+            ...(lastTurn >= count ? { nextCursor: String(offset + count) } : {}),
+          };
+        },
       };
       fixture.startReply = () => {
         const base = { protocolVersion: 2, connectionSource: 'local_cli', partnerId, conversationId, runId: 'fixture-run', sessionId: 'fixture-session',
@@ -68,6 +88,8 @@ await runAutoTest(async () => {
     assert.equal(rail.markHeight, '3px');
 
     const list = page.locator('.message-list');
+    await list.getByText('原线程恢复的末尾。', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.__longChat.historyReads[0].threadId), 'fixture-session');
     const bottom = await list.evaluate(element => element.scrollTop);
     await viewport.hover();
     await page.mouse.wheel(0, -1100);
@@ -147,18 +169,19 @@ await runAutoTest(async () => {
     const afterJump = await page.evaluate(() => window.__longChat.deltas);
     await page.waitForFunction(count => window.__longChat.deltas >= count + 3, afterJump);
     assert.ok(await list.evaluate(element => element.scrollTop) < 20, 'streaming must not pull the reader away from the selected turn');
-    await page.evaluate(() => window.__longChat.finishReply());
-    await page.getByRole('button', { name: '回到底部', exact: true }).click();
-
     const phrase = '星丛中文输入测试';
-    const ime = await sample('chinese-ime', async () => {
+    const composeChinese = async () => {
       for (const character of phrase) {
         await cdp.send('Input.imeSetComposition', { text: character, selectionStart: 1, selectionEnd: 1 });
         assert.equal(await editor.evaluate(element => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing: true }))), true);
         await cdp.send('Input.insertText', { text: character });
         await new Promise(resolve => setTimeout(resolve, 160));
       }
-    }, phrase);
+    };
+    const replyingIme = await sample('replying-chinese-ime', composeChinese, phrase);
+    assert.ok(replyingIme.compositions >= phrase.length && replyingIme.deltas >= 8);
+    await page.evaluate(() => window.__longChat.finishReply());
+    const ime = await sample('chinese-ime', composeChinese, phrase);
     assert.ok(ime.compositions >= phrase.length);
     assert.equal(await page.evaluate(() => window.__longChat.sends), 0, 'composing Enter must not send');
     await context.close();

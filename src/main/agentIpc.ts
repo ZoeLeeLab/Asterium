@@ -38,7 +38,7 @@ import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import { readClaudeSessionFile } from './adapters/claudeSessionFile';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, listCodexThreads, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, listCodexThreads, readCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -2162,6 +2162,22 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const threads = await listCodexThreads(runtime.executablePath, workingDirectory);
     const reserved = new Set(await nativeBindings.activeNativeThreadIds());
     return threads.filter((thread) => !reserved.has(thread.threadId));
+  });
+
+  ipcMain.handle(AGENT_IPC.readCodexHistory, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.conversationId !== 'string' || typeof value.threadId !== 'string'
+      || (value.cursor !== undefined && (typeof value.cursor !== 'string' || value.cursor.length > 2048))
+      || !isLocalThreadLifecycleRequest({ ...value, adapterType: 'codex_cli', threadIds: [value.threadId] })) {
+      throw new Error('INVALID_CODEX_HISTORY_REQUEST');
+    }
+    const request = value as unknown as import('../shared/codexHistory').CodexHistoryRequest;
+    const binding = await nativeBindings.getForScope(request.partnerId, 'single', request.conversationId);
+    if (binding?.source !== 'local_cli' || binding.state !== 'active' || binding.nativeThreadId !== request.threadId
+      || await conversationDeletions.isDeleted(request.conversationId)) throw new Error('CODEX_HISTORY_BINDING_UNAVAILABLE');
+    const partnerRootGrantId = request.partnerRootGrantId ?? (await partnerWorkspaces.grantIds(request.partnerId))?.cwdGrantId;
+    const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime({ ...request, partnerRootGrantId });
+    return readCodexThreadHistory(runtime.executablePath, workingDirectory, request.threadId, request.cursor);
   });
 
   ipcMain.handle(AGENT_IPC.listCodexModels, async (event, value: unknown) => {
