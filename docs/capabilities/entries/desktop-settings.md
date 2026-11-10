@@ -23,6 +23,7 @@
     "src/main/main.ts",
     "src/renderer/app/sendShortcut.ts",
     "src/renderer/components/chat/ConversationSearch.tsx",
+    "src/main/conversation/SingleChatHistoryStore.ts",
     "src/renderer/components/chat/TurnNavigator.tsx",
     "src/renderer/components/chat/MarkdownContent.tsx",
     "src/renderer/components/layout/AppNavigation.tsx",
@@ -65,6 +66,8 @@
     "tests/renderer/SendShortcut.test.tsx",
     "tests/renderer/NavigationFlows.test.tsx",
     "tests/long-chat-browser.mjs",
+    "tests/renderer/SingleChatHistoryCutover.test.tsx",
+    "tests/single-chat-history-electron.mjs",
     "tests/unit/desktopNotifications.test.ts",
     "tests/renderer/DesktopNotificationNavigation.test.tsx",
     "tests/unit/executionBackendRouter.test.ts",
@@ -83,6 +86,7 @@
   ],
   "docs": [
     "docs/release-status.md",
+    "docs/single-chat-storage-stage-2.md",
     "docs/data-isolation.md",
     "docs/development-and-validation.md",
     "docs/releases/0.1.0-beta.1-r1.md",
@@ -99,7 +103,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "491c09e4e30e53b3dc80f179a79025c192ba3e40"
+  "lastVerifiedCommit": "3861b7aa80b6411bf718d50fd4224c647f836877"
 }
 ---
 
@@ -181,4 +185,4 @@ lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已�
 
 ## 单聊本地历史迁移（Beta.5 工作区）
 
-桌面首次启动把旧单聊和应用资料校验后切换到主进程管理的目录。用户消息先保存再发送，工具返回和助手回复结束时写入历史。恢复显示已保存的内容和中断状态。旧资料保留为回退来源，激活后不会再次导入。当前源码与隔离验证范围见 [第二阶段记录](../../single-chat-storage-stage-2.md)。该范围将在代码基线提交后追加结构化核验来源。
+桌面首次启动把旧单聊和应用资料校验后切换到主进程管理的目录。用户消息先保存再发送，工具返回和助手回复结束时写入历史。恢复显示已保存的内容和中断状态。旧资料保留为回退来源，激活后不会再次导入。当前源码与隔离验证范围见 [第二阶段记录](../../single-chat-storage-stage-2.md)。核验来源为已存在的第二阶段代码提交。
