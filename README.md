@@ -4,7 +4,7 @@
 >
 > 保留关系与记忆，也让 Codex、Claude Code 和不同模型一起把想法做出来。
 
-[下载 Beta.4](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.4) · [查看全部版本](https://github.com/ZoeLeeLab/Asterium/releases) · [使用文档](#文档)
+[下载 Beta.5](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.5) · [查看全部版本](https://github.com/ZoeLeeLab/Asterium/releases) · [使用文档](#文档)
 
 星丛是一款面向长期 AI 伙伴与多 Agent 协作的 Windows 桌面应用。
 
