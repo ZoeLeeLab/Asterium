@@ -78,7 +78,7 @@
 
 ### 1. 下载并安装
 
-前往 [Beta.4 发行页](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.4)，下载 Windows x64 安装包。已安装 Beta.3 的用户可在「关于」中检查更新。发行页也提供对应源码包和 SHA-256 校验文件。
+前往 [Beta.5 发行页](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.5)，下载 Windows x64 安装包。已安装 Beta.4 的用户可在「关于」中检查更新。发行页也提供对应源码包和 SHA-256 校验文件。
 
 当前安装包尚未进行代码签名，Windows 或浏览器可能提示“未知发布者”或“下载不常见”。请从本仓库的 Releases 下载，并核对发行页提供的哈希。
 
