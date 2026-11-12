@@ -131,6 +131,8 @@ export interface AsteriumAgentsApi {
   detectClaude: () => Promise<ClaudeDetectionResult>;
   detectCodex?: () => Promise<CodexDetectionResult>;
   listCodexModels?: (request: import('./codexModels').CodexModelListRequest) => Promise<import('./codexModels').CodexModelOption[]>;
+  searchCodexHistory?: (request: import('./codexHistory').CodexHistorySearchRequest) => Promise<import('./codexHistory').CodexHistorySearchPage>;
+  readCodexHistory?: (request: import('./codexHistory').CodexHistoryRequest) => Promise<import('./codexHistory').CodexHistoryPage>;
   listCodexThreads?: (runtimeId: string, workspaceGrantId: string) => Promise<CodexThreadSummary[]>;
   getLocalThreadLifecycles?: (request: LocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult[]>;
   changeLocalThreadLifecycle?: (request: ChangeLocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult>;
@@ -205,6 +207,7 @@ export interface AsteriumArtifactsApi {
   inspect: (artifactId: string) => Promise<ArtifactInfo | null>;
   read: (artifactId: string) => Promise<ArtifactReadResult>;
   open: (artifactId: string) => Promise<void>;
+  openInBrowser?: (artifactId: string) => Promise<void>;
   reveal: (artifactId: string) => Promise<void>;
   copyPath: (artifactId: string) => Promise<void>;
   saveAs: (artifactId: string) => Promise<boolean>;
@@ -345,6 +348,12 @@ export interface AsteriumNativeBindingsApi {
 }
 
 export interface AsteriumConversationsApi {
+  openHistory?: (recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot | undefined>;
+  migrateHistory?: (source: import('./singleChatHistory').SingleChatHistoryImport, recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot>;
+  readHistoryPage?: (request: import('./singleChatHistory').SingleChatPageRequest) => Promise<import('./singleChatHistory').SingleChatHistoryPage | undefined>;
+  readToolOutput?: (request: import('./singleChatHistory').SingleChatToolOutputRequest) => Promise<import('./singleChatHistory').SingleChatToolOutputPage | undefined>;
+  searchHistory?: (request: import('./singleChatHistory').SingleChatSearchRequest) => Promise<import('./singleChatHistory').SingleChatSearchResult>;
+  writeHistory?: (request: import('./singleChatHistory').SingleChatHistoryWrite) => Promise<void>;
   delete: (request: ConversationDeleteRequest) => Promise<ConversationDeleteResult>;
   listDeleted: () => Promise<string[]>;
   syncMessages?: (snapshots: SingleChatConversationSnapshot[]) => Promise<void>;

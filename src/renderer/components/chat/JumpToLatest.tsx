@@ -4,12 +4,13 @@ import { useEffect, useState, type RefObject } from 'react';
 interface JumpToLatestProps {
   scrollRef: RefObject<HTMLDivElement | null>;
   streaming: boolean;
+  hasNewerMessages?: boolean;
   partnerName?: string;
   onJump: () => void;
 }
 
 /** Observe the actual message viewport, including late image/code layout changes. */
-export function JumpToLatest({ scrollRef, streaming, partnerName, onJump }: JumpToLatestProps) {
+export function JumpToLatest({ scrollRef, streaming, hasNewerMessages, partnerName, onJump }: JumpToLatestProps) {
   const [away, setAway] = useState(false);
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export function JumpToLatest({ scrollRef, streaming, partnerName, onJump }: Jump
     };
   }, [scrollRef]);
 
-  if (!away) return null;
+  if (!away && !hasNewerMessages) return null;
   return <div className="jump-to-latest" data-state={streaming ? 'streaming' : 'idle'}>
     <button type="button" aria-label={streaming ? '回到底部（' + (partnerName ?? '伙伴') + '正在回复）' : '回到底部'} onClick={() => {
       const root = scrollRef.current;

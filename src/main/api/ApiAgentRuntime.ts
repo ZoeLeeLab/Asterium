@@ -1,4 +1,5 @@
 import { withHandoffContext } from '../../shared/contextHandoff';
+import { INLINE_TOOL_OUTPUT_BYTES } from '../../shared/toolOutput';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { PartnerAdapter } from '../adapters/PartnerAdapter';
@@ -564,7 +565,10 @@ export class ApiAgentRuntime implements PartnerAdapter {
           }
           current.messages.push({ role: 'tool', toolCallId: call.id, content: result });
           const backendSummary = execution ? execution.sandboxed ? ' · Windows 沙箱' : ' · Native（无沙箱）' : '';
-          yield event({ type: 'tool.completed', toolCallId: call.id, outcome: success ? 'success' : 'failure', summary: `${success ? `${call.name} 已完成` : `${call.name} 未完成`}${backendSummary}`, detail: result.slice(0, 2_000) });
+          // Larger single-chat results are saved out of line by the desktop. The provider receives the original result.
+          const largeSingleChatOutput = (!command.route || command.route.scope === 'single')
+            && Buffer.byteLength(result) > INLINE_TOOL_OUTPUT_BYTES;
+          yield event({ type: 'tool.completed', toolCallId: call.id, outcome: success ? 'success' : 'failure', summary: `${success ? `${call.name} 已完成` : `${call.name} 未完成`}${backendSummary}`, detail: largeSingleChatOutput ? result : result.slice(0, 2_000) });
         }
       }
       throw protocolException('API_MODEL_ROUND_LIMIT_REACHED', '本轮已达到 16 个模型子轮次上限。', 'adapter', false);

@@ -17,6 +17,8 @@
   "status": "experimental",
   "codeEntries": [
     "src/main/adapters/CodexCliAdapter.ts",
+    "src/renderer/app/nativeCodexHistory.ts",
+    "src/shared/codexHistory.ts",
     "src/main/adapters/ClaudeCodeAdapter.ts",
     "src/main/adapters/ExistingThreadAdapter.ts",
     "src/main/adapters/CyberBossBridgeClient.ts",
@@ -27,6 +29,10 @@
   ],
   "tests": [
     "tests/unit/codexCliAdapter.test.ts",
+    "tests/unit/nativeCodexHistory.test.ts",
+    "tests/renderer/SingleChatHistoryCutover.test.tsx",
+    "tests/unit/apiAgentRuntime.test.ts",
+    "tests/long-chat-browser.mjs",
     "tests/unit/claudeCodeAdapter.test.ts",
     "tests/unit/existingThreadAdapter.test.ts",
     "tests/renderer/AgentChatFlows.test.tsx",
@@ -37,10 +43,12 @@
   ],
   "docs": [
     "docs/capabilities/schema.md",
+    "docs/single-chat-storage-stage-1.md",
+    "docs/single-chat-storage-stage-4.md",
     "docs/claude-cli-compatibility.md",
     "docs/claude-cli-release-blocker.md"
   ],
-  "lastVerifiedCommit": "106b5506be670d43f97ef85ff8c4d3d424834a55"
+  "lastVerifiedCommit": "109f3881c043a69f184a84e3e6b5c123d2a83ae8"
 }
 ---
 
@@ -75,6 +83,14 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 主进程读取本轮已提交的对话快照，经现有会话鉴权分别上传图片和普通文件原始字节。含普通文件的消息将附件引用、正文、绑定线程 ID 和消息幂等 ID 一起原子提交。允许无正文或图文文件混发。上传失败时停止提交。传输结果不明时，客户端最多使用同一份请求重试一次。已发送的附件可以从本地快照预览或另存。当前范围是星丛单聊发给伙伴。仓库核验使用合成宿主，覆盖纯图片、纯文件、混发、线程切换和幂等重试。
 
 
+## 本机 Codex 原线程历史（当前工作区）
+
+打开有原线程绑定的本机 Codex 单聊时，星丛可以只读加载原线程历史和更早页。主进程校验当前会话绑定、删除状态和工作区授权。原线程记录可补回旧星丛快照缺失的正文，续聊沿用原线程 ID。核验范围为合成会话和本机 App Server 的模拟模型回复。迁移模块、桌面接入范围和验收边界见 [第一阶段记录](../../single-chat-storage-stage-1.md)。
+
 ## 本机 Codex 单聊模型切换（当前工作区）
 
 在单聊右侧伙伴卡的「选择模型」和「思考强度」中调整 Codex。模型列表由该伙伴已绑定的运行环境提供。选择按对话保存，从下一条消息起使用，并在同一个原生线程续聊。正在运行的轮次保留开始时的选择，计划修订和确认执行沿用这份选择。
+
+## 本机 Codex 原线程搜索（第四阶段）
+
+当前单聊搜索可查找只在已绑定 Codex 原线程中的消息，并定位到命中的历史页。搜索通过所选本机运行时只读分页，继续校验单聊绑定和工作区授权。原线程暂不可读或找不到匹配时，原有放大镜会查询星丛记录。核验来源为已存在的界面兼容修正提交，实施范围见 [实施与验证记录](../../single-chat-storage-stage-4.md)。

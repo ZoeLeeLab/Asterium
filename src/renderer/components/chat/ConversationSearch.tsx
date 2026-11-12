@@ -59,19 +59,72 @@ function findMatches(root: HTMLElement, query: string): MessageMatch[] {
   return Array.from(messages, ([message, ranges]) => ({ message, ranges }));
 }
 
-export function ConversationSearch({ listRef, onNavigate, onClose }: {
+type SearchHistory = (query: string, after?: string) => Promise<{ messageIds: string[]; hasMore: boolean; nextCursor?: string; native?: boolean }>;
+type RevealMessage = (messageId: string) => Promise<boolean>;
+
+export function ConversationSearch({ listRef, onNavigate, onClose, searchIndexed: search, onReveal: reveal }: {
   listRef: RefObject<HTMLDivElement | null>;
   onNavigate: () => void;
   onClose: () => void;
+  searchIndexed?: SearchHistory;
+  onReveal?: RevealMessage;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<MessageMatch[]>();
   const [selection, setSelection] = useState(0);
-  const term = query.trim();
-  const matchCount = matches?.length ?? 0;
+  const [composing, setComposing] = useState(false);
+  const [indexed, setIndexed] = useState<{ term: string; native?: boolean; ids: string[]; more: boolean; cursor?: string; failed?: boolean }>();
+  const moreRequest = useRef(0);
+  const [morePending, setMorePending] = useState(false);
+  const [revealFailedId, setRevealFailedId] = useState('');
+  const term = composing ? '' : query.trim();
+  const result = indexed?.term === term ? indexed : undefined;
+  const local = new Map((matches ?? []).map(match => [match.message.id.replace(/^chat-message-/, ''), match]));
+  const includeRenderedMatches = !result?.native;
+  const ids = [...new Set([...(result?.ids ?? []), ...(includeRenderedMatches ? local.keys() : [])])];
+  const matchCount = ids.length;
   const index = matchCount ? selection % matchCount : 0;
-  const active = matches?.[index];
+  const activeId = search && !result ? undefined : ids[index];
+  const active = activeId ? local.get(activeId) : undefined;
+  const requestedId = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!search || !term) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void search(term).then(response => {
+        if (live) setIndexed({ term, native: response.native, ids: response.messageIds, more: response.hasMore, cursor: response.nextCursor });
+      }).catch(() => { if (live) setIndexed({ term, ids: [], more: false, failed: true }); });
+    }, 100);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [search, term]);
+
+  const loadMore = () => {
+    const after = result?.cursor ?? result?.ids.at(-1);
+    if (!search || !result || !after || morePending) return;
+    const version = ++moreRequest.current;
+    setMorePending(true);
+    void search(term, after).then(response => {
+      if (version !== moreRequest.current) return;
+      const nextIds = [...new Set([...result.ids, ...response.messageIds])];
+      setIndexed(current => current === result
+        ? { term, native: result.native, ids: nextIds, more: response.hasMore, cursor: response.nextCursor } : current);
+      if (nextIds.length > result.ids.length) setSelection(result.ids.length);
+    }).catch(() => {
+      if (version === moreRequest.current) setIndexed(current => current === result ? { ...result, failed: true } : current);
+    }).finally(() => { if (version === moreRequest.current) setMorePending(false); });
+  };
+
+  useEffect(() => {
+    if (active) requestedId.current = activeId;
+    if (!activeId || active || !reveal || requestedId.current === activeId) return;
+    requestedId.current = activeId;
+    setRevealFailedId('');
+    void reveal(activeId).then(found => {
+      if (!found && requestedId.current === activeId) setRevealFailedId(activeId);
+    });
+  }, [active, activeId, reveal]);
 
   useEffect(() => {
     const root = listRef.current;
@@ -94,7 +147,7 @@ export function ConversationSearch({ listRef, onNavigate, onClose }: {
   }, [listRef, term]);
 
   useEffect(() => {
-    if (!active || !matches) return;
+    if (!matches?.length) return;
     const registry = globalThis.CSS?.highlights;
     if (!registry || typeof Highlight === 'undefined') return;
     const others = new Highlight();
@@ -102,7 +155,7 @@ export function ConversationSearch({ listRef, onNavigate, onClose }: {
       if (match !== active) for (const range of match.ranges) others.add(range);
     }
     const current = new Highlight();
-    for (const range of active.ranges) current.add(range);
+    for (const range of active?.ranges ?? []) current.add(range);
     registry.set(ALL_HIGHLIGHTS, others);
     registry.set(ACTIVE_HIGHLIGHTS, current);
     return () => {
@@ -133,7 +186,12 @@ export function ConversationSearch({ listRef, onNavigate, onClose }: {
   }, [active, listRef, onNavigate]);
 
   const move = (direction: number) => {
-    if (matchCount) setSelection((current) => (current + direction + matchCount) % matchCount);
+    if (morePending || !matchCount) return;
+    if (direction > 0 && index === matchCount - 1 && result?.more) {
+      loadMore();
+      return;
+    }
+    setSelection((current) => (current + direction + matchCount) % matchCount);
   };
 
   return <div id="conversation-search" className="conversation-search" role="search" aria-label="当前对话搜索" onKeyDown={(event) => {
@@ -148,17 +206,27 @@ export function ConversationSearch({ listRef, onNavigate, onClose }: {
     }
   }}>
     <Search size={15} aria-hidden="true" />
-    <input ref={inputRef} type="search" autoFocus aria-label="搜索当前对话正文" placeholder="搜索当前对话" value={query} onChange={(event) => {
+    <input ref={inputRef} type="search" autoFocus aria-label="搜索当前对话正文" placeholder="搜索当前对话" value={query}
+      maxLength={512} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={(event) => {
       const value = event.target.value;
       if (value.trim() !== term) {
         setMatches(undefined);
+        setIndexed(undefined);
+        moreRequest.current++;
+        setMorePending(false);
+        requestedId.current = undefined;
+        setRevealFailedId('');
         setSelection(0);
       }
       setQuery(value);
     }} />
-    <span role="status" className="conversation-search__count">{term && (matchCount ? (index + 1) + ' / ' + matchCount : matches ? '无匹配' : '查找中…')}</span>
+    <span role="status" className="conversation-search__count">{term && (
+      search && (!result || morePending) ? '查找中…' : activeId && revealFailedId === activeId ? '无法跳转'
+        : matchCount ? (index + 1) + ' / ' + matchCount + (result?.more ? '+' : '')
+          : result?.failed ? '历史搜索暂不可用' : matches || result ? '无匹配' : '查找中…'
+    )}</span>
     <button className="icon-button" type="button" disabled={matchCount < 2} onClick={() => move(-1)} aria-label="上一条匹配" title="上一条匹配"><ChevronUp size={16} /></button>
-    <button className="icon-button" type="button" disabled={matchCount < 2} onClick={() => move(1)} aria-label="下一条匹配" title="下一条匹配"><ChevronDown size={16} /></button>
+    <button className="icon-button" type="button" disabled={morePending || (matchCount < 2 && !result?.more)} onClick={() => move(1)} aria-label="下一条匹配" title="下一条匹配"><ChevronDown size={16} /></button>
     <button className="icon-button" type="button" onClick={onClose} aria-label="关闭当前对话搜索" title="关闭（Esc）"><X size={16} /></button>
   </div>;
 }

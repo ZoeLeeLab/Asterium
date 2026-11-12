@@ -1,3 +1,5 @@
+import { useNativeCodexHistory } from '../app/nativeCodexHistory';
+import { useSingleChatTimeline } from '../app/useSingleChatTimeline';
 import { supportsContextHandoff } from '../app/singleChatRuntime';
 import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
 import type { CyberBossChatFileCapabilities } from '../../shared/cyberBossChatAttachments';
@@ -6,6 +8,7 @@ import { useCollapsibleRails } from '../components/layout/useCollapsibleRails';
 import { SessionCommandNotice } from '../components/chat/SessionCommandNotice';
 import { ConversationSearch } from '../components/chat/ConversationSearch';
 import { JumpToLatest } from '../components/chat/JumpToLatest';
+import { TurnNavigator } from '../components/chat/TurnNavigator';
 import { WorkspaceShortcuts } from '../components/layout/WorkspaceShortcuts';
 import {
   Archive,
@@ -16,9 +19,11 @@ import {
   Copy,
   ExternalLink,
   FileImage,
+  FileSearch,
   FileText,
   FolderKanban,
   FolderOpen,
+  Globe2,
   Inbox,
   ListTodo,
   MessageSquarePlus,
@@ -36,7 +41,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { conversationWorkspaceMismatch, usePrototype, type WorkspaceSwitchDecision } from '../app/PrototypeProvider';
 import type { MemorySourceNavigationState } from '../app/memorySourceNavigation';
@@ -57,13 +62,14 @@ import { TurnTimeline } from '../components/chat/TurnTimeline';
 import { FilePreviewPane, type PreviewTab } from '../components/chat/FilePreviewPane';
 import type { Conversation, ConversationArtifact, Message, MessageQuote } from '../types/domain';
 import type { DelegationBatchView } from '../../main/runtime/PartnerDelegation';
-import type { ConversationAttachmentInfo, PendingMessageAttachment } from '../../shared/agentProtocol';
+import type { ConversationAttachmentInfo, MessageAttachment, PendingMessageAttachment } from '../../shared/agentProtocol';
 import { assistantMessageText, formatMessageWithQuote } from '../app/messageQuote';
 import { partnerStatusLabel } from '../components/chat/partnerStatusLabel';
 import { friendlyRuntimeErrorMessage } from '../app/runtimeErrorPresentation';
 import type { FileDeletionInspection } from '../../shared/projectWorkspace';
 
 type ChatOverlay = 'new-chat' | 'rename-chat' | 'archive-chat' | 'archive-partner' | 'save-artifact' | 'diary' | null;
+const emptyDelegationBatches: DelegationBatchView[] = [];
 
 export function ChatPage() {
   const rails = useCollapsibleRails('chat');
@@ -73,6 +79,8 @@ export function ChatPage() {
     state,
     selectPartner,
     selectConversation,
+    chatHistoryPage,
+    chatHistoryLoading,
     selectProject,
     createConversation,
     renameConversation,
@@ -110,10 +118,15 @@ export function ChatPage() {
   const messageListRef = useRef<HTMLDivElement>(null);
   const previousConversationIdRef = useRef<string | undefined>(undefined);
   const followLatestMessageRef = useRef(true);
+  const scrollAnchor = useRef<{ id: string; top: number } | undefined>(undefined);
+  const previousScrollTop = useRef(0);
+  const [historyJump, setHistoryJump] = useState<{ conversationId: string; messageId: string }>();
+  const appliedJump = useRef<typeof historyJump>(undefined);
   const conversationSearchTrigger = useRef<HTMLButtonElement>(null);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const stopFollowingLatest = useCallback(() => { followLatestMessageRef.current = false; }, []);
   const deferredGuidanceSendingRef = useRef(new Set<string>());
+  const pendingSendRef = useRef<{ key: string; messageId: string; attachments?: MessageAttachment[] } | undefined>(undefined);
   const [overlay, setOverlay] = useState<ChatOverlay>(null);
   const [query, setQuery] = useState('');
   const availablePartners = state.partners.filter((partner) => !partner.isRemoved);
@@ -124,9 +137,61 @@ export function ChatPage() {
   const [conversationTargetId, setConversationTargetId] = useState('');
   const [conversationTitle, setConversationTitle] = useState('');
   const [partnerArchiveTargetId, setPartnerArchiveTargetId] = useState('');
-  const activeConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
+  const storedConversation = state.conversations.find((conversation) => conversation.id === state.activeConversationId);
+  const historyPartner = state.partners.find((partner) => partner.id === storedConversation?.partnerId);
+  const historyWindow = useSingleChatTimeline(storedConversation, chatHistoryPage);
+  const nativeHistory = useNativeCodexHistory(historyWindow.conversation, historyPartner, location.pathname === '/chat' && !chatHistoryLoading, historyWindow.detached);
+  const historyDetached = historyWindow.detached || nativeHistory.detached;
+  const returnToLatestNative = nativeHistory.returnToLatest;
+  const activeConversation = nativeHistory.conversation;
   const activeConversationId = activeConversation?.id;
-  const [delegationBatches, setDelegationBatches] = useState<DelegationBatchView[]>([]);
+  const searchHistory = window.asteriumConversations?.searchHistory;
+  const searchNative = nativeHistory.search;
+  const searchIndexed = useCallback(async (term: string, after?: string) => {
+    const continueNative = after?.startsWith('native:');
+    if (searchNative && (!after || continueNative)) {
+      try {
+        const result = await searchNative(term, continueNative ? after?.slice('native:'.length) : undefined);
+        if (continueNative || result.messageIds.length) {
+          return { ...result, native: true, nextCursor: result.nextCursor && 'native:' + result.nextCursor };
+        }
+      } catch (error) {
+        if (continueNative) throw error;
+      }
+    }
+    if (!activeConversationId || !searchHistory) return { messageIds: [], hasMore: false };
+    return searchHistory({ conversationId: activeConversationId, query: term, after });
+  }, [activeConversationId, searchHistory, searchNative]);
+  const showAround = historyWindow.showAround;
+  const revealNative = nativeHistory.reveal;
+  const revealHistoryMessage = useCallback(async (messageId: string) => {
+    if (!activeConversationId) return false;
+    const requestJump = () => {
+      followLatestMessageRef.current = false;
+      setHistoryJump({ conversationId: activeConversationId, messageId });
+    };
+    const row = document.getElementById('chat-message-' + messageId);
+    if (row && messageListRef.current?.contains(row)) {
+      requestJump();
+      return true;
+    }
+    if (messageId.startsWith('codex-history:') && await revealNative(messageId, requestJump)) return true;
+    return showAround(messageId, () => {
+      returnToLatestNative();
+      requestJump();
+    });
+  }, [activeConversationId, returnToLatestNative, revealNative, showAround]);
+  const keepHistoryPosition = useCallback(() => {
+    const list = messageListRef.current;
+    if (!list) return;
+    const top = list.getBoundingClientRect().top;
+    const row = Array.from(list.querySelectorAll<HTMLElement>('.message-row'))
+      .find(message => message.getBoundingClientRect().bottom >= top);
+    followLatestMessageRef.current = false;
+    scrollAnchor.current = row ? { id: row.id, top: row.getBoundingClientRect().top } : undefined;
+  }, []);
+  const [delegationSnapshot, setDelegationSnapshot] = useState<{ conversationId: string; batches: DelegationBatchView[] }>();
+  const delegationBatches = delegationSnapshot && delegationSnapshot.conversationId === activeConversationId ? delegationSnapshot.batches : emptyDelegationBatches;
   const [delegationError, setDelegationError] = useState('');
   const chatRows = useMemo(() => buildChatRows(activeConversation, delegationBatches), [activeConversation, delegationBatches]);
   useEffect(() => {
@@ -134,12 +199,19 @@ export function ChatPage() {
     if (!activeConversationId || !bridge) return;
     let disposed = false;
     let reading = false;
+    let previousSignature: string | undefined;
     const refresh = async () => {
       if (reading) return;
       reading = true;
       try {
         const batches = await bridge.list(activeConversationId);
-        if (!disposed) setDelegationBatches(batches);
+        if (disposed) return;
+        // IPC returns a new array even if the displayed records haven't changed.
+        const signature = JSON.stringify(batches);
+        if (signature !== previousSignature) {
+          previousSignature = signature;
+          setDelegationSnapshot((current) => !current && !batches.length ? current : { conversationId: activeConversationId, batches });
+        }
       } catch {
         if (!disposed) setDelegationError('委派记录暂时无法读取。');
       } finally {
@@ -168,11 +240,12 @@ export function ChatPage() {
   const [activePreviewId, setActivePreviewId] = useState('');
   const [editingMessageId, setEditingMessageId] = useState('');
   const [editingText, setEditingText] = useState('');
-  const [activeTurnId, setActiveTurnId] = useState('');
   const [highlightedMessageId, setHighlightedMessageId] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState('');
   const [collapsedPartners, setCollapsedPartners] = useState<Record<string, boolean>>(() => readCollapsedPartners(state.activePartnerId));
-  const [artifactMenu, setArtifactMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [artifactMenu, setArtifactMenu] = useState<{ id: string; conversationId: string; x: number; y: number; fromList: boolean } | null>(null);
+  const [artifactLocation, setArtifactLocation] = useState<{ id: string; conversationId: string }>();
+  const [artifactActionError, setArtifactActionError] = useState<{ conversationId: string; message: string }>();
   const [artifactDeletionTarget, setArtifactDeletionTarget] = useState<{ conversationId: string; id: string; artifactRef: string }>();
   const [fileDeletionInspection, setFileDeletionInspection] = useState<FileDeletionInspection>();
   const [fileDeletionBusy, setFileDeletionBusy] = useState(false);
@@ -204,6 +277,16 @@ export function ChatPage() {
   const attachmentGroups = useMemo(() => groupUserAttachments(userAttachments), [userAttachments]);
   const deliveryRecords = activeConversation?.artifacts;
   const visibleDeliveries = useMemo(() => latestDeliveriesBySource(deliveryRecords ?? []), [deliveryRecords]);
+  const artifactMenuFile = artifactMenu?.conversationId === activeConversationId
+    ? deliveryRecords?.find((item) => item.id === artifactMenu?.id)
+    : undefined;
+  useLayoutEffect(() => {
+    if (!artifactLocation || artifactLocation.conversationId !== activeConversationId || rails.right || collapsedResourceSections.artifacts) return;
+    const row = document.getElementById(`chat-delivery-${artifactLocation.id}`);
+    row?.scrollIntoView?.({ block: 'nearest' });
+    row?.focus({ preventScroll: true });
+    setArtifactLocation(undefined);
+  }, [activeConversationId, artifactLocation, collapsedResourceSections.artifacts, rails.right]);
   const turnMessages = useMemo(() => activeConversation?.messages.filter((message) => isAsteriumUser(message.authorId)) ?? [], [activeConversation]);
   const participatingProjects = useMemo(() => state.projects.filter((project) => activePartner && project.memberIds.includes(activePartner.id)), [activePartner, state.projects]);
   const latestUserMessage = [...(activeConversation?.messages ?? [])].reverse().find((message) => isAsteriumUser(message.authorId));
@@ -220,7 +303,7 @@ export function ChatPage() {
   }, [activeConversationId, compaction, dismissChatCompaction]);
   const compacting = compaction?.state === 'running' || Boolean(activeConversation && chatMaintenanceRunning[activeConversation.id]);
   const nativeThreadUnavailable = activeConversation?.nativeThreadState === 'unavailable' || activeConversation?.nativeThreadState === 'deleted';
-  const canRegenerate = activePartner?.sourceMode !== 'existing_thread'
+  const canRegenerate = !historyDetached && !chatHistoryLoading && activePartner?.sourceMode !== 'existing_thread'
     && !compacting
     && !activeConversation?.activeRun && !activeConversation?.isDisabled && !workspaceMismatch && !latestUserMessage?.isGuidance;
   const cyberBossChat = activePartner?.sourceMode === 'existing_thread';
@@ -273,13 +356,21 @@ export function ChatPage() {
     if (!activeConversation || (pending.length > 0 && !attachmentsEnabled)) return false;
     try {
       followLatestMessageRef.current = true;
-      const messageId = `message-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
-      const attachments = pending.length
-        ? await window.asteriumAttachments?.commit(activeConversation.id, pending.map((item) => item.selectionId), messageId)
-        : undefined;
-      if (pending.length && !attachments) return false;
-      const sent = await sendChatMessage(activeConversation.id, content, attachments, messageId, workspaceDecision, quote, activeHandoff);
+      const selections = pending.map(item => item.selectionId);
+      const key = JSON.stringify([activeConversation.id, content, selections, quote]);
+      let prepared = pendingSendRef.current;
+      if (prepared?.key !== key) {
+        const messageId = `message-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+        const attachments = selections.length ? await window.asteriumAttachments?.commit(activeConversation.id, selections, messageId) : undefined;
+        if (selections.length && !attachments) return false;
+        prepared = { key, messageId, attachments };
+        pendingSendRef.current = prepared;
+      }
+      const sent = await sendChatMessage(activeConversation.id, content, prepared.attachments, prepared.messageId, workspaceDecision, quote, activeHandoff);
       if (!sent) return false;
+      pendingSendRef.current = undefined;
+      historyWindow.returnToLatest();
+      returnToLatestNative();
       setPendingQuote(undefined);
       void window.asteriumAttachments?.list(activeConversation.id).then(setUserAttachments);
       return true;
@@ -390,24 +481,67 @@ export function ChatPage() {
     }
   };
 
-  const matchingConversationIds = useMemo(() => new Set(
+  const [indexedSidebar, setIndexedSidebar] = useState<{ query: string; ids: string[] }>();
+  useEffect(() => {
+    if (!normalizedQuery || !searchHistory) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void searchHistory({ query: normalizedQuery.slice(0, 512) }).then(result => {
+        if (live) setIndexedSidebar({ query: normalizedQuery, ids: result.conversationIds });
+      }).catch(() => { if (live) setIndexedSidebar({ query: normalizedQuery, ids: [] }); });
+    }, 120);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [normalizedQuery, searchHistory]);
+  const sidebarSearching = Boolean(searchHistory && normalizedQuery && indexedSidebar?.query !== normalizedQuery);
+  const matchingConversationIds = useMemo(() => {
+    const indexed = new Set(indexedSidebar?.query === normalizedQuery ? indexedSidebar.ids : []);
+    return new Set(
     state.conversations
       .filter((conversation) => !conversation.isArchived && (!normalizedQuery
+        || indexed.has(conversation.id)
         || conversation.title.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
         || conversation.messages.some((message) => message.content.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
           || message.quote?.text.toLocaleLowerCase('zh-CN').includes(normalizedQuery))))
       .map((conversation) => conversation.id),
-  ), [normalizedQuery, state.conversations]);
+    );
+  }, [indexedSidebar, normalizedQuery, state.conversations]);
 
   useLayoutEffect(() => {
     const root = messageListRef.current;
     if (!root || !activeConversationId) return;
     const switchedConversation = previousConversationIdRef.current !== activeConversationId;
     previousConversationIdRef.current = activeConversationId;
+    if (switchedConversation) {
+      scrollAnchor.current = undefined;
+      previousScrollTop.current = 0;
+    }
     if (!switchedConversation && !followLatestMessageRef.current) return;
     root.scrollTop = root.scrollHeight;
     followLatestMessageRef.current = true;
   }, [activeConversation, activeConversationId]);
+
+  useLayoutEffect(() => {
+    const list = messageListRef.current;
+    if (!list) return;
+    const anchor = scrollAnchor.current;
+    if (anchor) {
+      scrollAnchor.current = undefined;
+      const row = document.getElementById(anchor.id);
+      if (row && list.contains(row)) list.scrollTop += row.getBoundingClientRect().top - anchor.top;
+    }
+    if (!historyJump || historyJump.conversationId !== activeConversationId || appliedJump.current === historyJump) return;
+    const row = document.getElementById('chat-message-' + historyJump.messageId);
+    if (!row || !list.contains(row)) return;
+    appliedJump.current = historyJump;
+    row.scrollIntoView?.({ block: 'center' });
+    setHighlightedMessageId(historyJump.messageId);
+  }, [activeConversation, activeConversationId, historyJump]);
+
+  useEffect(() => {
+    if (!historyJump) return;
+    const timer = window.setTimeout(() => setHighlightedMessageId(value => value === historyJump.messageId ? '' : value), 1800);
+    return () => window.clearTimeout(timer);
+  }, [historyJump]);
 
   useEffect(() => {
     if (memorySourceTarget?.kind !== 'single_chat') return;
@@ -418,18 +552,17 @@ export function ChatPage() {
       selectConversation(conversation.id);
       return;
     }
+    if (chatHistoryLoading) return;
+    let live = true;
     const timer = window.setTimeout(() => {
-      const target = document.getElementById(`chat-message-${memorySourceTarget.messageId}`);
-      if (!target) return;
-      followLatestMessageRef.current = false;
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setHighlightedMessageId(memorySourceTarget.messageId);
-      const currentState = (location.state as MemorySourceNavigationState | null) ?? {};
-      navigate(location.pathname, { replace: true, state: { ...currentState, memorySourceTarget: undefined } satisfies MemorySourceNavigationState });
-      window.setTimeout(() => setHighlightedMessageId((current) => current === memorySourceTarget.messageId ? '' : current), 1800);
+      void revealHistoryMessage(memorySourceTarget.messageId).then(found => {
+        if (!found || !live) return;
+        const currentState = (location.state as MemorySourceNavigationState | null) ?? {};
+        navigate(location.pathname, { replace: true, state: { ...currentState, memorySourceTarget: undefined } satisfies MemorySourceNavigationState });
+      });
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, [activeConversationId, location.pathname, location.state, memorySourceTarget, navigate, selectConversation, state.conversations]);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [activeConversationId, chatHistoryLoading, location.pathname, location.state, memorySourceTarget, navigate, revealHistoryMessage, selectConversation, state.conversations]);
 
   useEffect(() => {
     const root = messageListRef.current;
@@ -449,10 +582,29 @@ export function ChatPage() {
     };
   }, [activeConversationId]);
 
+  const pageHistoryAtEdge = (root: HTMLDivElement, direction: number) => {
+    if (conversationSearchOpen) return;
+    if (direction < 0 && root.scrollTop <= 56) {
+      if (nativeHistory.hasOlder) {
+        if (!nativeHistory.loadingOlder) void nativeHistory.loadOlder(keepHistoryPosition);
+      } else if (!nativeHistory.detached && historyWindow.hasOlder && !historyWindow.loading) {
+        void historyWindow.loadOlder(keepHistoryPosition);
+      }
+    }
+    if (direction > 0 && root.scrollHeight - root.scrollTop - root.clientHeight <= 56
+      && !nativeHistory.detached && historyWindow.hasNewer && !historyWindow.loading) {
+      void historyWindow.loadNewer(keepHistoryPosition);
+    }
+  };
+
   const trackMessageScroll = () => {
     const root = messageListRef.current;
-    if (!root || conversationSearchOpen) return;
-    followLatestMessageRef.current = root.scrollHeight - root.scrollTop - root.clientHeight <= 72;
+    if (!root) return;
+    const direction = root.scrollTop - previousScrollTop.current;
+    previousScrollTop.current = root.scrollTop;
+    if (conversationSearchOpen) return;
+    followLatestMessageRef.current = !historyDetached && root.scrollHeight - root.scrollTop - root.clientHeight <= 72;
+    pageHistoryAtEdge(root, direction);
   };
 
   useEffect(() => {
@@ -532,22 +684,15 @@ export function ChatPage() {
   }, [activeConversation?.id]);
 
   useEffect(() => {
-    const root = messageListRef.current;
-    if (!root || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting).sort((left, right) => Math.abs(left.boundingClientRect.top - root.getBoundingClientRect().top) - Math.abs(right.boundingClientRect.top - root.getBoundingClientRect().top));
-      const id = visible[0]?.target.getAttribute('data-turn-id');
-      if (id) setActiveTurnId(id);
-    }, { root, threshold: 0.3 });
-    root.querySelectorAll('[data-turn-id]').forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [activeConversation?.messages.length]);
-
-  useEffect(() => {
     if (!artifactMenu && !attachmentMenu && !quoteMenu) return;
     const close = () => { setArtifactMenu(null); setAttachmentMenu(null); setQuoteMenu(null); };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
     window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [artifactMenu, attachmentMenu, quoteMenu]);
 
   const openNewChat = (partnerId?: string) => {
@@ -558,9 +703,9 @@ export function ChatPage() {
     setOverlay('new-chat');
   };
 
-  const toggleResourceSection = (section: 'artifacts' | 'attachments') => {
+  const toggleResourceSection = (section: 'artifacts' | 'attachments', collapsed?: boolean) => {
     setCollapsedResourceSections((current) => {
-      const next = { ...current, [section]: !current[section] };
+      const next = { ...current, [section]: collapsed ?? !current[section] };
       window.localStorage.setItem('asterium.chat.collapsedResourceSections', JSON.stringify(next));
       return next;
     });
@@ -655,6 +800,36 @@ export function ChatPage() {
       setPreviewTabs((current) => current.map((item) => item.id === artifactId ? { ...item, content } : item));
     } catch (error) {
       setPreviewTabs((current) => current.map((item) => item.id === artifactId ? { ...item, error: artifactPreviewError(error, artifact.name) } : item));
+    }
+  };
+
+  const openArtifactMenu = (id: string, event: ReactMouseEvent<HTMLElement>, fromList = false) => {
+    if (!activeConversationId || !deliveryRecords?.some((item) => item.id === id)) return;
+    event.preventDefault();
+    setAttachmentMenu(null);
+    setQuoteMenu(null);
+    setArtifactMenu({ id, conversationId: activeConversationId, x: event.clientX, y: event.clientY, fromList });
+  };
+
+  const locateDelivery = (file: ConversationArtifact) => {
+    const target = visibleDeliveries.find((item) => deliverySourceKey(item) === deliverySourceKey(file));
+    if (!target || !activeConversationId) return;
+    setArtifactMenu(null);
+    if (rails.right) rails.toggle('right');
+    toggleResourceSection('artifacts', false);
+    setArtifactLocation({ id: target.id, conversationId: activeConversationId });
+  };
+
+  const runArtifactAction = async (file: ConversationArtifact, action: 'copyPath' | 'exportAs' | 'reveal' | 'openInBrowser', failure: string) => {
+    if (!activeConversationId) return;
+    setArtifactMenu(null);
+    setArtifactActionError(undefined);
+    try {
+      const invoke = window.asteriumArtifacts?.[action];
+      if (!invoke) throw new Error('ARTIFACT_ACTION_UNAVAILABLE');
+      await invoke(file.artifactRef);
+    } catch {
+      setArtifactActionError({ conversationId: activeConversationId, message: failure });
     }
   };
 
@@ -870,7 +1045,7 @@ export function ChatPage() {
               </section>
             );
           })}
-          {normalizedQuery && matchingConversationIds.size === 0 && <div className="search-empty">没有找到相关聊天记录</div>}
+          {normalizedQuery && matchingConversationIds.size === 0 && <div className="search-empty">{sidebarSearching ? '查找历史中…' : '没有找到相关聊天记录'}</div>}
         </div>
         <button className="profile-row profile-row--button" type="button" onClick={() => navigate('/profile', { state: { from: '/chat' } })} title="编辑个人资料">
           <Avatar name={userProfile.displayName} src={userAvatar} accent="#91a9cf" size="sm" />
@@ -899,13 +1074,17 @@ export function ChatPage() {
           {activeConversation?.isDisabled && <div className="removed-partner-notice">伙伴配置来源已改变 · 这条旧会话已停用，请切换到自动创建的新对话</div>}
           {workspaceMismatch && <div className="removed-partner-notice">这条对话仍绑定原工作区「{activeConversation?.partnerRoot}」。你可以切回原工作区继续原 session；也可以直接发送，确认后将切换到当前工作区的独立 session。</div>}
           {activeConversation ? (<>
-            {conversationSearchOpen && <ConversationSearch key={activeConversation.id} listRef={messageListRef} onNavigate={stopFollowingLatest} onClose={() => {
+            {conversationSearchOpen && <ConversationSearch key={activeConversation.id} listRef={messageListRef} onNavigate={stopFollowingLatest}
+              searchIndexed={searchHistory || searchNative ? searchIndexed : undefined} onReveal={revealHistoryMessage} onClose={() => {
               setConversationSearchOpen(false);
               conversationSearchTrigger.current?.focus();
             }} />}
-            {turnMessages.length > 1 && <nav className="turn-navigator" aria-label="快速选择对话回合">{turnMessages.map((turn, index) => <button className={activeTurnId === turn.id ? 'active' : ''} type="button" key={turn.id} onClick={() => document.getElementById(`chat-message-${turn.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span>{index + 1}</span><em>{turn.content.slice(0, 48) || `第 ${index + 1} 轮`}</em></button>)}</nav>}
             <div className="message-scroll-region">
-            <div className="message-list" ref={messageListRef} onScroll={trackMessageScroll}>
+            {turnMessages.length > 1 && <TurnNavigator key={`turn-navigator:${activeConversation.id}`} turns={turnMessages} messageListRef={messageListRef}
+              turnOffset={!nativeHistory.detached && activeConversation.messages.length === historyWindow.conversation?.messages.length ? historyWindow.turnOffset : undefined}
+              streaming={Boolean(activeConversation.activeRun)} onJump={stopFollowingLatest} />}
+            <div className="message-list" ref={messageListRef} onScroll={trackMessageScroll}
+              onWheel={event => pageHistoryAtEdge(event.currentTarget, event.deltaY)}>
               {chatRows.map(({ message, key, batches, receiptOnly }) => {
                 const mine = isAsteriumUser(message.authorId);
                 const author = mine ? undefined : state.partners.find((partner) => partner.id === message.authorId);
@@ -986,7 +1165,7 @@ export function ChatPage() {
                             {message.quote && <MessageQuoteCard quote={message.quote} className="message-quote-card--sent" />}
                             {message.content && <MarkdownContent className="message-content--user">{message.content}</MarkdownContent>}
                             <MessageAttachmentCards attachments={message.attachments} conversationId={activeConversation.id} onPreview={(attachment) => void openUserAttachment(attachment.id)} onContextMenu={(attachment, x, y) => { setArtifactMenu(null); setQuoteMenu(null); setAttachmentMenu({ id: attachment.id, x, y }); }} />
-                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
+                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onArtifactContextMenu={openArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
                         </div>
                       </div>
                       {showStreamTail && <span className="stream-tail" role="status" aria-label={`${author?.publicIdentity.displayName ?? '伙伴'}仍在工作`}><i /><i /><i /></span>}
@@ -1005,7 +1184,15 @@ export function ChatPage() {
               {activeConversation.runNotice?.restored && <div className={`run-notice run-notice--${activeConversation.runNotice.state}`} role="status"><CircleAlert size={15} /><span>{activeConversation.runNotice.message}，已恢复原回复。</span></div>}
               <div ref={messageEndRef} />
             </div>
-            <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)} partnerName={activePartner?.publicIdentity.displayName} onJump={() => { followLatestMessageRef.current = true; }} />
+            <JumpToLatest key={activeConversation.id} scrollRef={messageListRef} streaming={Boolean(activeConversation.activeRun)}
+              hasNewerMessages={historyDetached} partnerName={activePartner?.publicIdentity.displayName} onJump={() => {
+                setHistoryJump(undefined);
+                followLatestMessageRef.current = true;
+                if (historyDetached) {
+                  historyWindow.returnToLatest();
+                  returnToLatestNative();
+                }
+              }} />
             </div>
           </>) : (
             <div className="friendly-empty">
@@ -1069,7 +1256,7 @@ export function ChatPage() {
       </section>
 
       {previewTabs.length > 0 && <div className="rail-resizer rail-resizer--preview" role="separator" tabIndex={0} aria-label="调整聊天区与预览区宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize('preview', event)} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setPreviewWidth((width) => clamp(width + 20, 320, 860)); if (event.key === 'ArrowRight') setPreviewWidth((width) => clamp(width - 20, 320, 860)); }} />}
-      {previewTabs.length > 0 && <FilePreviewPane tabs={previewTabs} activeId={activePreviewId} onActive={setActivePreviewId} onClose={closePreview} />}
+      {previewTabs.length > 0 && <FilePreviewPane tabs={previewTabs} activeId={activePreviewId} onActive={setActivePreviewId} onClose={closePreview} onArtifactContextMenu={openArtifactMenu} />}
 
       <div hidden={rails.right} className="rail-resizer rail-resizer--right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize('right', event)} />
 
@@ -1103,7 +1290,7 @@ export function ChatPage() {
             onPointerMove={(event) => setArtifactScrollbarVisible(event.currentTarget.getBoundingClientRect().right - event.clientX <= 20)}
             onPointerLeave={() => setArtifactScrollbarVisible(false)}
           >
-            {visibleDeliveries.map((file) => <div className="artifact-row" key={file.id} onContextMenu={(event) => { event.preventDefault(); setArtifactMenu({ id: file.id, x: event.clientX, y: event.clientY }); }}>
+            {visibleDeliveries.map((file) => <div className="artifact-row" key={file.id} id={`chat-delivery-${file.id}`} tabIndex={-1} onContextMenu={(event) => openArtifactMenu(file.id, event, true)}>
               <button className="artifact-main" type="button" disabled={file.availability === 'missing' || file.availability === 'unavailable'} onClick={() => void openArtifact(file.id)} title={`预览 ${file.name}`}>
                 <span className="resource-icon">{file.mediaType?.startsWith('image/') ? <FileImage /> : <FileText />}</span>
                 <span>
@@ -1138,7 +1325,8 @@ export function ChatPage() {
                 <span className="artifact-actions"><button type="button" disabled={latest.availability !== 'available'} onClick={() => void window.asteriumAttachments?.open(latest.id, activeConversation!.id)} title="用系统应用打开快照"><ExternalLink size={14} /></button><button type="button" disabled={latest.sourceAvailability !== 'available'} onClick={() => void window.asteriumAttachments?.reveal(latest.id, activeConversation!.id)} title={latest.sourceAvailability === 'available' ? '打开原文件所在文件夹' : latest.sourceAvailability === 'missing' ? '原文件已失效' : '没有原文件路径'}><FolderOpen size={14} /></button><button type="button" onClick={() => setExpandedAttachmentSources((current) => ({ ...current, [sourceId]: !current[sourceId] }))} title="查看附件版本" aria-expanded={Boolean(expandedAttachmentSources[sourceId])}>{expandedAttachmentSources[sourceId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></span>
                 </>}
               </div>
-              {expandedAttachmentSources[sourceId] && <div className="attachment-version-list">{[...versions].reverse().map((version, index) => <div className="attachment-version" key={version.id} onContextMenu={(event) => { event.preventDefault(); setAttachmentMenu({ id: version.id, x: event.clientX, y: event.clientY }); }}><button type="button" disabled={version.availability !== 'available'} onClick={() => void openUserAttachment(version.id)}><span><strong>{index === 0 ? '最新版' : `版本 ${versions.length - index}`}</strong><small>{formatAttachmentTime(version.sentAt)} · {formatBytes(version.sizeBytes)}</small></span></button>{version.sends.map((send) => { const message = activeConversation?.messages.find((item) => item.id === send.messageId); return <small className="attachment-send-record" key={`${version.id}-${send.messageId}-${send.sentAt}`}>{formatAttachmentTime(send.sentAt)} · {message ? `消息：${message.content.slice(0, 28) || '仅附件'}` : '对应消息已不在本地记录中'}</small>; })}</div>)}</div>}
+              {expandedAttachmentSources[sourceId] && <div className="attachment-version-list">{[...versions].reverse().map((version, index) => <div className="attachment-version" key={version.id} onContextMenu={(event) => { event.preventDefault(); setAttachmentMenu({ id: version.id, x: event.clientX, y: event.clientY }); }}><button type="button" disabled={version.availability !== 'available'} onClick={() => void openUserAttachment(version.id)}><span><strong>{index === 0 ? '最新版' : `版本 ${versions.length - index}`}</strong><small>{formatAttachmentTime(version.sentAt)} · {formatBytes(version.sizeBytes)}</small></span></button>{version.sends.map((send) => { const message = activeConversation?.messages.find((item) => item.id === send.messageId); return <small className="attachment-send-record" key={`${version.id}-${send.messageId}-${send.sentAt}`}>{formatAttachmentTime(send.sentAt)} · {message ? `消息：${message.content.slice(0, 28) || '仅附件'}`
+                    : '对应消息未在当前页显示'}</small>; })}</div>)}</div>}
             </div>)}
             {!attachmentGroups.length && <p className="resource-empty">这段对话还没有发送附件</p>}
           </div>}
@@ -1165,7 +1353,23 @@ export function ChatPage() {
 
       {overlay === 'diary' && activePartner && <DiaryModal key={activePartner.id} partnerId={activePartner.id} onClose={() => setOverlay(null)} />}
 
-      {artifactMenu && (() => { const file = activeConversation?.artifacts?.find((item) => item.id === artifactMenu.id); return <div className="artifact-context-menu" style={contextMenuPosition(artifactMenu.x, artifactMenu.y)} onPointerDown={(event) => event.stopPropagation()}>{file?.sourceKind === 'local_path' && <button type="button" onClick={() => { void window.asteriumArtifacts?.copyPath(file.artifactRef); setArtifactMenu(null); }}><Copy size={14} />复制路径</button>}<button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file) void window.asteriumArtifacts?.exportAs(file.artifactRef); setArtifactMenu(null); }}><Save size={14} />{file?.sourceKind === 'local_path' ? '文件另存为' : '下载'}</button><button type="button" disabled={file?.availability !== 'available'} onClick={() => { if (file) openSaveToProject(file.id); setArtifactMenu(null); }}><FolderKanban size={14} />保存到项目</button><hr /><button className="danger" type="button" onClick={() => void beginArtifactDeletion(artifactMenu.id)}><Trash2 size={14} />删除文件</button></div>; })()}
+      {artifactMenu && artifactMenuFile && (() => {
+        const file = artifactMenuFile;
+        const unavailable = file.availability !== 'available';
+        return <div className="artifact-context-menu artifact-delivery-menu" aria-label="交付文件操作" style={contextMenuPosition(artifactMenu.x, artifactMenu.y, artifactMenu.fromList ? 212 : 225)} onPointerDown={(event) => event.stopPropagation()}>
+          <button type="button" disabled={unavailable || !window.asteriumArtifacts?.openInBrowser} onClick={() => void runArtifactAction(file, 'openInBrowser', '无法在默认浏览器中打开，请确认交付文件仍可用。')}><Globe2 size={14} />用默认浏览器打开</button>
+          <button type="button" disabled={unavailable} onClick={() => void runArtifactAction(file, 'reveal', '无法打开所在文件夹，请确认交付文件仍可用。')}><FolderOpen size={14} />打开文件所在文件夹</button>
+          {!artifactMenu.fromList && <button type="button" onClick={() => locateDelivery(file)}><FileSearch size={14} />在文件与交付中定位</button>}
+          {file.sourceKind === 'local_path' && <button type="button" onClick={() => void runArtifactAction(file, 'copyPath', '无法复制交付文件路径。')}><Copy size={14} />复制路径</button>}
+          <hr />
+          <button type="button" disabled={unavailable} onClick={() => void runArtifactAction(file, 'exportAs', '文件另存失败，请确认文件可用且目标位置可写。')}><Save size={14} />文件另存为</button>
+          <button type="button" disabled={unavailable} onClick={() => { setArtifactMenu(null); openSaveToProject(file.id); }}><FolderKanban size={14} />保存到项目</button>
+          {artifactMenu.fromList && <><hr /><button className="danger" type="button" onClick={() => void beginArtifactDeletion(file.id)}><Trash2 size={14} />删除文件</button></>}
+        </div>;
+      })()}
+      {artifactActionError && artifactActionError.conversationId === activeConversationId && <div className="session-command-notice session-command-notice-header artifact-action-error" role="alert">
+        <span>{artifactActionError.message}</span><button type="button" aria-label="关闭文件操作提示" onClick={() => setArtifactActionError(undefined)}><X size={14} /></button>
+      </div>}
       {attachmentMenu && (() => {
         const file = userAttachments.find((item) => item.id === attachmentMenu.id);
         return <div className="artifact-context-menu" style={contextMenuPosition(attachmentMenu.x, attachmentMenu.y)} onPointerDown={(event) => event.stopPropagation()}>
@@ -1282,11 +1486,15 @@ function formatBytes(value?: number) {
 function latestDeliveriesBySource(artifacts: ConversationArtifact[]) {
   const latest = new Map<string, ConversationArtifact>();
   for (const artifact of artifacts) {
-    const key = artifact.sourceKind === 'local_path' && artifact.localSourceKey ? `local:${artifact.localSourceKey}` : `record:${artifact.id}`;
+    const key = deliverySourceKey(artifact);
     const previous = latest.get(key);
     if (!previous || artifact.createdAt >= previous.createdAt) latest.set(key, artifact);
   }
   return [...latest.values()];
+}
+
+function deliverySourceKey(artifact: ConversationArtifact) {
+  return artifact.sourceKind === 'local_path' && artifact.localSourceKey ? `local:${artifact.localSourceKey}` : `record:${artifact.id}`;
 }
 
 function groupUserAttachments(attachments: ConversationAttachmentInfo[]) {
@@ -1303,8 +1511,8 @@ function formatAttachmentTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-function contextMenuPosition(x: number, y: number): CSSProperties {
-  return { left: Math.max(8, Math.min(x, window.innerWidth - 210)), top: Math.max(8, Math.min(y, window.innerHeight - 132)) };
+function contextMenuPosition(x: number, y: number, height = 132): CSSProperties {
+  return { left: Math.max(8, Math.min(x, window.innerWidth - 210)), top: Math.max(8, Math.min(y, window.innerHeight - height)) };
 }
 
 function artifactSourceLabel(source?: 'local_path' | 'remote_ref' | 'content', cached?: boolean) {

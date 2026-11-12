@@ -21,7 +21,7 @@ export class MemoryFallbackInventory {
     const work = Promise.resolve().then(async () => {
       while (this.refreshRequested) {
         this.refreshRequested = false;
-        const [singles, rooms, settings] = await Promise.all([this.singles.list(), this.studio.listAll(), this.settings.get()]);
+        const [singles, rooms, settings] = await Promise.all([this.singles.list(this.eligible), this.studio.listAll(), this.settings.get()]);
         await this.jobs.sync([...singleChatFallbackInputs(singles), ...studioFallbackInputs(rooms)].filter((input) => this.eligible(input.partnerId)));
         for (const [id, config] of Object.entries(settings.partners)) if (config.enabled) await this.jobs.applyEnablement(id, config.enabledAt, config.history);
         for (const listener of this.listeners) listener();

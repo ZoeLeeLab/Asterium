@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
   detectClaude: (): Promise<ClaudeDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectClaude),
   detectCodex: (): Promise<CodexDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectCodex),
   listCodexModels: (request: import('../shared/codexModels').CodexModelListRequest): Promise<import('../shared/codexModels').CodexModelOption[]> => ipcRenderer.invoke(AGENT_IPC.listCodexModels, request),
+  searchCodexHistory: (request: import('../shared/codexHistory').CodexHistorySearchRequest): Promise<import('../shared/codexHistory').CodexHistorySearchPage> => ipcRenderer.invoke(AGENT_IPC.searchCodexHistory, request),
+  readCodexHistory: (request: import('../shared/codexHistory').CodexHistoryRequest): Promise<import('../shared/codexHistory').CodexHistoryPage> => ipcRenderer.invoke(AGENT_IPC.readCodexHistory, request),
   listCodexThreads: (runtimeId: string, workspaceGrantId: string): Promise<CodexThreadSummary[]> => ipcRenderer.invoke(AGENT_IPC.listCodexThreads, { runtimeId, workspaceGrantId }),
   getLocalThreadLifecycles: (request: LocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult[]> => ipcRenderer.invoke(AGENT_IPC.getLocalThreadLifecycles, request),
   changeLocalThreadLifecycle: (request: ChangeLocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult> => ipcRenderer.invoke(AGENT_IPC.changeLocalThreadLifecycle, request),
@@ -160,6 +162,7 @@ contextBridge.exposeInMainWorld('asteriumArtifacts', {
   inspect: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactInspect, artifactId),
   read: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactRead, artifactId),
   open: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpen, artifactId),
+  openInBrowser: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpenInBrowser, artifactId),
   reveal: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactReveal, artifactId),
   copyPath: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactCopyPath, artifactId),
   saveAs: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactSaveAs, artifactId),
@@ -221,6 +224,12 @@ contextBridge.exposeInMainWorld('asteriumAttachments', {
 } satisfies AsteriumAttachmentsApi);
 
 contextBridge.exposeInMainWorld('asteriumConversations', {
+  openHistory: (recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationOpenHistory, recent),
+  migrateHistory: (source: import('../shared/singleChatHistory').SingleChatHistoryImport, recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationMigrateHistory, source, recent),
+  readHistoryPage: (request: import('../shared/singleChatHistory').SingleChatPageRequest) => ipcRenderer.invoke(AGENT_IPC.conversationReadHistoryPage, request),
+  readToolOutput: (request: import('../shared/singleChatHistory').SingleChatToolOutputRequest) => ipcRenderer.invoke(AGENT_IPC.conversationReadToolOutput, request),
+  searchHistory: (request: import('../shared/singleChatHistory').SingleChatSearchRequest) => ipcRenderer.invoke(AGENT_IPC.conversationSearchHistory, request),
+  writeHistory: (request: import('../shared/singleChatHistory').SingleChatHistoryWrite) => ipcRenderer.invoke(AGENT_IPC.conversationWriteHistory, request),
   delete: (request: ConversationDeleteRequest): Promise<ConversationDeleteResult> => ipcRenderer.invoke(AGENT_IPC.conversationDelete, request),
   listDeleted: (): Promise<string[]> => ipcRenderer.invoke(AGENT_IPC.conversationListDeleted),
   syncMessages: (snapshots: SingleChatConversationSnapshot[]): Promise<void> => ipcRenderer.invoke(AGENT_IPC.conversationSyncMessages, snapshots),

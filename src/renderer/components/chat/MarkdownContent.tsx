@@ -1,5 +1,5 @@
 import { Check, Copy } from 'lucide-react';
-import { isValidElement, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { isValidElement, memo, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -137,7 +137,8 @@ export interface StudioRenderedMention {
   label: string;
 }
 
-export function MarkdownContent({
+// The active reply can update many times a second; unchanged history needn't be parsed again.
+export const MarkdownContent = memo(function MarkdownContent({
   children,
   className = '',
   studioReferences = [],
@@ -191,7 +192,7 @@ export function MarkdownContent({
       >{children}</ReactMarkdown>
     </div>
   );
-}
+});
 
 interface HastNode {
   type: string;

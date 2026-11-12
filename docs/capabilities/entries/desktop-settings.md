@@ -23,6 +23,13 @@
     "src/main/main.ts",
     "src/renderer/app/sendShortcut.ts",
     "src/renderer/components/chat/ConversationSearch.tsx",
+    "src/main/conversation/SingleChatHistoryStore.ts",
+    "src/main/conversation/SingleChatHistoryIndex.ts",
+    "src/main/conversation/SingleChatToolOutputs.ts",
+    "src/renderer/components/chat/TurnTimeline.tsx",
+    "src/renderer/app/useSingleChatTimeline.ts",
+    "src/renderer/components/chat/TurnNavigator.tsx",
+    "src/renderer/components/chat/MarkdownContent.tsx",
     "src/renderer/components/layout/AppNavigation.tsx",
     "src/renderer/pages/ChatPage.tsx",
     "src/main/settings/DesktopNotifications.ts",
@@ -62,6 +69,11 @@
     "tests/general-settings-smoke.mjs",
     "tests/renderer/SendShortcut.test.tsx",
     "tests/renderer/NavigationFlows.test.tsx",
+    "tests/long-chat-browser.mjs",
+    "tests/renderer/SingleChatHistoryCutover.test.tsx",
+    "tests/single-chat-history-electron.mjs",
+    "tests/unit/singleChatHistoryIndex.test.ts",
+    "tests/unit/singleChatHistoryStore.test.ts",
     "tests/unit/desktopNotifications.test.ts",
     "tests/renderer/DesktopNotificationNavigation.test.tsx",
     "tests/unit/executionBackendRouter.test.ts",
@@ -80,6 +92,9 @@
   ],
   "docs": [
     "docs/release-status.md",
+    "docs/single-chat-storage-stage-2.md",
+    "docs/single-chat-storage-stage-3.md",
+    "docs/single-chat-storage-stage-4.md",
     "docs/data-isolation.md",
     "docs/development-and-validation.md",
     "docs/releases/0.1.0-beta.1-r1.md",
@@ -96,7 +111,7 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "a8c1a7838c732fa834d23cc463dff39d393f44cb"
+  "lastVerifiedCommit": "109f3881c043a69f184a84e3e6b5c123d2a83ae8"
 }
 ---
 
@@ -111,6 +126,14 @@
 单聊顶部的放大镜可搜索当前对话中渲染的消息正文。搜索栏按匹配消息计数，高亮关键词，支持用上下箭头按钮或 Enter、Shift+Enter 跳转。Esc 可关闭搜索栏。切换单聊时清空关键词。左栏的聊天记录搜索按对话筛选，工具卡、引用卡和附件名不计入当前正文搜索。
 
 当前搜索核验绑定代码提交 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。67 项相关渲染层测试通过。另用独立 Chromium 环境确认跨 Markdown 行内格式高亮、定位和键盘操作。当前单聊搜索随 Beta.3 安装包交付。
+
+## 浏览单聊回合
+
+当前开发源码的单聊回合刻度在消息区左边独立滚动，隐藏滚动条。打开长聊天时从最近回合附近开始，滚轮或触控板可查看更早的回合，鼠标悬停可看摘要。点击或用方向键、Enter 选中刻度可以跳到对应消息。
+
+`node tests/long-chat-browser.mjs` 使用生产构建的渲染器和 300 轮合成对话，验证刻度高度、独立滚动、悬停摘要、点击与键盘跳转，以及回复中跳到旧回合后不会被拉回底部。测试同时确认委派记录实际变化时仍更新界面，并检查空闲、流式回复中和 Chromium 中文组字输入。委派快照内容未变时跳过刷新，旧消息的 Markdown 内容不变时复用渲染。中文组字通过浏览器注入，未做 Windows 原生输入法或安装包人工验收。
+
+本轮核验绑定已存在的代码提交 `491c09e4e30e53b3dc80f179a79025c192ba3e40`。最终浏览器样本中，三种输入场景都未出现达到 50 毫秒的主线程长任务，回复样本期间收到 68 个合成片段。81 项相关渲染层测试、类型检查及改动范围的 lint 通过。
 
 ## 截图快捷键
 
@@ -167,3 +190,15 @@ S4 将自动测试入口迁到独立运行目录，autotest 显式入口通过�
 本轮源码增加 daily/dev/acceptance/autotest 启动环境，源代码默认开发资料，安装版默认日常资料；在业务存储创建前检查真实规范化路径、Windows junction／符号链接与目录归属。userData、sessionData 和运行临时目录独立，窗口／托盘明确标记环境，仅日常安装版注册自启动和执行安装更新。实现入口另含 src/main/settings/runtimeEnvironment.ts 和 src/shared/runtimeEnvironment.ts；新文件尚未提交，待获授权建立代码基线后补入结构化 codeEntries 并核验绑定。项目位置设置页尚未实施。
 
 lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。
+
+## 单聊本地历史迁移（Beta.5 工作区）
+
+桌面首次启动把旧单聊和应用资料校验后切换到主进程管理的目录。用户消息先保存再发送，工具返回和助手回复结束时写入历史。恢复显示已保存的内容和中断状态。旧资料保留为回退来源，激活后不会再次导入。当前源码与隔离验证范围见 [第二阶段记录](../../single-chat-storage-stage-2.md)。核验来源为已存在的第二阶段代码提交。
+
+## 单聊分页和历史搜索（当前工作区）
+
+桌面用可重建的本地 SQLite 索引定位会话历史。启动只加载当前会话的近期正文，旧页可按需翻阅，支持中文历史搜索和跳转。左侧刻度仍可滚动和点选。代码与验收边界见 [第三阶段记录](../../single-chat-storage-stage-3.md)。结构化来源绑定已经核验的第三阶段提交。
+
+## 大型单聊工具输出（第四阶段）
+
+大型工具详情在星丛当前资料目录按单聊保存。聊天日志和 SQLite 只保存展示信息及引用，界面沿用原有工具摘要。保存失败沿用聊天历史的重试和错误提示，删除单聊会清理它的输出文件。核验来源为已存在的界面兼容修正提交，实施范围见 [实施与验证记录](../../single-chat-storage-stage-4.md)。

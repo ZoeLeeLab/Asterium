@@ -82,7 +82,7 @@ async function run(index, conversationId, text, sessionId) {
   return events;
 }
 try {
-  await launch(); await page.waitForFunction(() => localStorage.getItem('asterium.prototype.v7'));
+  await launch(); await page.waitForFunction(async () => Boolean(await globalThis.asteriumConversations?.openHistory?.(true)));
   await page.evaluate(async ({ origin, protocols, providers, workspace }) => {
     const api = globalThis.asteriumAgents; const credential = await api.saveApiCredential('synthetic-provider-key');
     let config = await api.apiConnectionsGet();
@@ -91,10 +91,11 @@ try {
       config = await api.apiConnectionsMutate({ action: 'model', expectedRevision: config.revision, value: { id: `model-${index}`, serviceId: `service-${index}`, name: 'fixture-model', model: 'fixture-model', tools: true, images: false, settings: { autoCompact: false, maxOutputTokens: 512 } } });
       config = await api.apiConnectionsMutate({ action: 'bind', expectedRevision: config.revision, partnerId: `fixture-${index}`, modelId: `model-${index}` });
     }
-    const state = JSON.parse(localStorage.getItem('asterium.prototype.v7'));
-    state.partners = protocols.map((protocol, index) => ({ id: `fixture-${index}`, publicIdentity: { displayName: `API 测试 ${index}`, mentionName: `API测试${index}`, introduction: '隔离验收', expertise: '' }, sourceMode: 'api_partner', provider: providers[index], endpoint: `${origin}/${protocol}/v1`, model: 'fixture-model', modelId: `model-${index}`, credentialRef: credential.credentialRef, configured: true, isPrototype: false, status: 'online', accent: '#7094c7', createdAt: new Date().toISOString(), personality: '', thinkingMode: 'auto', reasoningEffort: 'high', apiSessionHistoryEnabled: true, profileManagement: { userProfile: false, personality: false, memoryMode: 'asterium' }, primaryWorkspaceGrantId: 'fixture-root', workspaceGrantIds: ['fixture-root'], workingDirectories: [workspace] }));
-    state.projects = []; state.groupChats = []; state.conversations = []; state.activePartnerId = 'fixture-0'; state.activeConversationId = ''; state.activeProjectId = ''; state.activeGroupChatId = '';
-    localStorage.setItem('asterium.prototype.v7', JSON.stringify(state));
+    const history = globalThis.asteriumConversations;
+    const { generation, profile } = await history.openHistory(true);
+    profile.partners = protocols.map((protocol, index) => ({ id: `fixture-${index}`, publicIdentity: { displayName: `API 测试 ${index}`, mentionName: `API测试${index}`, introduction: '隔离验收', expertise: '' }, sourceMode: 'api_partner', provider: providers[index], endpoint: `${origin}/${protocol}/v1`, model: 'fixture-model', modelId: `model-${index}`, credentialRef: credential.credentialRef, configured: true, isPrototype: false, status: 'online', accent: '#7094c7', createdAt: new Date().toISOString(), personality: '', thinkingMode: 'auto', reasoningEffort: 'high', apiSessionHistoryEnabled: true, profileManagement: { userProfile: false, personality: false, memoryMode: 'asterium' }, primaryWorkspaceGrantId: 'fixture-root', workspaceGrantIds: ['fixture-root'], workingDirectories: [workspace] }));
+    profile.projects = []; profile.groupChats = []; profile.activePartnerId = 'fixture-0'; profile.activeConversationId = ''; profile.activeProjectId = ''; profile.activeGroupChatId = '';
+    await history.writeHistory({ generation, profile, changes: [] });
   }, { origin, protocols, providers, workspace });
   await page.reload(); await page.waitForFunction(async () => (await globalThis.asteriumAgents.refreshPartnerProfiles()).partners.filter(p => p.partnerId.startsWith('fixture-')).length === 4);
   result.cases.push('packaged-main-configurations-and-credentials');
@@ -184,9 +185,10 @@ try {
   await page.getByLabel('称呼或 @ 名称', { exact: true }).fill('界面验收');
   await page.getByRole('button', { name: '添加 API 伙伴', exact: true }).click();
   await page.getByRole('heading', { name: '界面保存验收 已加入星丛' }).waitFor();
+  await page.waitForFunction(async () => (await globalThis.asteriumConversations.openHistory(true)).profile.partners.some(partner => partner.publicIdentity.displayName === '界面保存验收'));
   const savedBinding = await page.evaluate(async () => {
-    const state = JSON.parse(localStorage.getItem('asterium.prototype.v7'));
-    const partner = state.partners.find(p => p.publicIdentity.displayName === '界面保存验收');
+    const { profile } = await globalThis.asteriumConversations.openHistory(true);
+    const partner = profile.partners.find(p => p.publicIdentity.displayName === '界面保存验收');
     const config = await globalThis.asteriumAgents.apiConnectionsGet();
     return { modelId: partner?.modelId, binding: config.bindings.find(b => b.partnerId === partner?.id) };
   });

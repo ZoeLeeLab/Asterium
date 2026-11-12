@@ -3,7 +3,7 @@ import { useAppearance } from './useAppearance';
 import type { AppearanceSettings, AppearanceUpdate } from './appearance';
 /* eslint-disable react-refresh/only-export-components -- reducer and hook are intentionally colocated with this small prototype provider. */
 import type { SessionCommandName, SessionStatus } from '../../shared/sessionCommands';
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Modal } from '../components/ui/Modal';
 import { useLocation } from 'react-router-dom';
@@ -11,7 +11,8 @@ import { useLocation } from 'react-router-dom';
 import type { ApiPartner, Conversation, ConversationArtifact, ExistingThreadPartner, GroupChat, LocalCliPartner, Message, MessageQuote, Partner, Project, ProjectFile, PrototypeAction, PrototypeState, TaskItem, ThemeMode, TurnOperationCategory, TurnTimelineItem, UserProfile } from '../types/domain';
 import { formatMessageWithQuote } from './messageQuote';
 import { friendlyRuntimeErrorMessage } from './runtimeErrorPresentation';
-import { loadPrototypeState, savePrototypeState } from './persistence';
+import { prepareSingleChatProfile, savePrototypeState } from './persistence';
+import { useSingleChatHistory } from './useSingleChatHistory';
 import { AGENT_PROTOCOL_VERSION, type JsonValue, type LocalThreadLifecycleRequest, type MessageAttachment, type MessageDeliveryEvent, type PartnerEvent, type PartnerProfileSeed, type PartnerWorkspaceState, type PermissionMode, type PlanMode, type RunId, type RuntimeModelObservation, type WorkspaceGrant } from '../../shared/agentProtocol';
 import { toolPresentation } from '../components/chat/toolPresentation';
 import { type StudioMention, type StudioRoomSettings, type StudioRoomSnapshot } from '../../shared/studioRuntime';
@@ -402,17 +403,23 @@ function applyAgentEventToConversation(conversation: Conversation, event: Partne
       const toolName = 'toolName' in event ? event.toolName : previousAction?.kind === 'tool' ? previousAction.toolName : undefined;
       const presentationName = event.type === 'tool.started' ? event.presentationName : previousAction?.kind === 'tool' ? previousAction.presentationName : undefined;
       const isComputer = previousAction?.kind === 'computer' || Boolean(toolName && /computer|desktop|browser.*control/i.test(toolName));
+      const detailRef = event.type === 'tool.completed' ? event.detailRef : undefined;
+      const singleChatOutput = event.type === 'tool.completed' && (!event.route || event.route.scope === 'single')
+        && window.asteriumConversations?.readToolOutput;
+      const detail = singleChatOutput && typeof event.detail === 'string' ? event.detail : eventDetail(event.detail);
       message.timeline = appendTimeline(message, isComputer ? {
         id: event.eventId, sequence: event.sequence, kind: 'computer', toolCallId: event.toolCallId,
         summary: event.type === 'tool.completed' ? `操作电脑${event.outcome === 'success' ? '成功' : '失败'}` : '正在操作电脑',
         state: event.type === 'tool.completed' ? event.outcome : 'running',
+        ...(singleChatOutput && detail && detail.length > 4096 ? { detail } : {}),
+        ...(detailRef ? { detail, detailRef } : {}),
       } : {
       id: event.eventId, sequence: event.sequence, kind: 'tool', toolCallId: event.toolCallId,
       ...(toolName ? { toolName } : {}),
       ...(presentationName ? { presentationName } : {}),
       category: operationCategory(presentationName ?? toolName),
       ...('mutatesExternalState' in event ? { mutatesExternalState: event.mutatesExternalState } : {}),
-      summary: event.summary, state: event.type === 'tool.completed' ? event.outcome : 'running', detail: eventDetail(event.detail),
+      summary: event.summary, state: event.type === 'tool.completed' ? event.outcome : 'running', detail, detailRef,
       });
     }
     if (event.type === 'file.produced') {
@@ -877,7 +884,9 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
         ...state,
         conversations: state.conversations.map((conversation) =>
           conversation.id === action.conversationId
-            ? { ...conversation, messages: [...conversation.messages, action.message], awaitingFirstResponse: action.message.clientMessageId ? { clientMessageId: action.message.clientMessageId, startedAt: new Date().toISOString() } : undefined, updatedAt: new Date().toISOString() }
+            ? { ...conversation, messages: conversation.messages.some(message => message.id === action.message.id)
+              ? conversation.messages.map(message => message.id === action.message.id ? action.message : message)
+              : [...conversation.messages, action.message], awaitingFirstResponse: action.message.clientMessageId ? { clientMessageId: action.message.clientMessageId, startedAt: new Date().toISOString() } : undefined, updatedAt: new Date().toISOString() }
             : conversation,
         ),
       };
@@ -1174,6 +1183,8 @@ interface PrototypeContextValue {
   toggleTheme: () => void;
   selectPartner: (partnerId: string) => void;
   selectConversation: (conversationId: string) => void;
+  chatHistoryPage?: import('../../shared/singleChatHistory').SingleChatPageBounds;
+  chatHistoryLoading?: boolean;
   selectProject: (projectId: string) => void;
   refreshProfiles: () => Promise<import('../../shared/agentProtocol').PartnerProfilesSyncResult | undefined>;
   addPartner: (partner: Partner, alreadySaved?: boolean) => void;
@@ -1316,7 +1327,8 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   const [chatCommandResults, setChatCommandResults] = useState<PrototypeContextValue['chatCommandResults']>({});
   const [chatCompactions, setChatCompactions] = useState<PrototypeContextValue['chatCompactions']>({});
   const compactingRef = useRef(new Set<string>());
-  const [state, dispatch] = useReducer(prototypeReducer, undefined, loadPrototypeState);
+  const chatHistory = useSingleChatHistory(prototypeReducer);
+  const { state, dispatch } = chatHistory;
   const { appearanceError, appearance, updateAppearance, theme, setTheme, toggleTheme } = useAppearance();
   const [studioRooms, setStudioRooms] = useState<Record<string, StudioRoomSnapshot>>({});
   const [studioInteractions, setStudioInteractions] = useState<Record<string, StudioInteraction>>({});
@@ -1324,47 +1336,53 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     ready: !window.asteriumProjects?.initializeDomain,
     blockedProjectIds: [] as string[],
   });
-  const [conversationAuthorityReady, setConversationAuthorityReady] = useState(!window.asteriumConversations?.listDeleted);
+  const [legacyConversationsReady, setLegacyConversationsReady] = useState(chatHistory.managed || !window.asteriumConversations?.listDeleted);
+  const conversationAuthorityReady = chatHistory.ready && legacyConversationsReady;
   const studioRoomsRef = useRef<Record<string, StudioRoomSnapshot>>({});
   const projectAuthorityGenerationRef = useRef(0);
-  const startupProjectMigrationRef = useRef(state.projects.map((project) => ({
-    id: project.id,
-    name: project.name,
-    avatarDataUrl: project.avatarDataUrl,
-    description: project.description,
-    status: project.status,
-    progress: project.progress,
-    tags: project.tags,
-    memberIds: project.memberIds,
-    tasks: project.tasks,
-    createdAt: project.createdAt,
-    updatedAt: project.updatedAt,
-  })));
+  const startupProjectMigrationRef = useRef(state.projects);
+  useLayoutEffect(() => { startupProjectMigrationRef.current = state.projects; }, [state.projects]);
   const location = useLocation();
   const viewContextRef = useRef({ pathname: location.pathname, activeConversationId: state.activeConversationId, activeGroupChatId: state.activeGroupChatId });
   const profileSyncStartedRef = useRef(false);
   const singleChatMessageSyncRef = useRef('');
 
   useEffect(() => {
-    const api = window.asteriumAutomations; if (!api) return;
+    const api = window.asteriumAutomations; if (!api || !conversationAuthorityReady) return;
     let live = true;
     const hydrate = () => { void api.get().then(snapshot => { if (live) dispatch({ type: 'automationHydrate', runs: snapshot.runs }); }).catch(() => undefined); };
     hydrate(); const offChanged = api.onChanged(hydrate);
     const offEvents = api.onEvent?.(payload => dispatch({ type: 'automationEvent', ...payload }));
     return () => { live = false; offChanged(); offEvents?.(); };
-  }, []);
+  }, [conversationAuthorityReady]);
 
   useLayoutEffect(() => {
     viewContextRef.current = { pathname: location.pathname, activeConversationId: state.activeConversationId, activeGroupChatId: state.activeGroupChatId };
   }, [location.pathname, state.activeConversationId, state.activeGroupChatId]);
 
   useEffect(() => {
-    if (projectAuthority.ready) savePrototypeState(state);
-  }, [projectAuthority.ready, state]);
+    if (!chatHistory.managed && projectAuthority.ready) savePrototypeState(state);
+  }, [chatHistory.managed, projectAuthority.ready, state]);
+
+  const savedProfileSignature = useRef<string | undefined>(undefined);
+  const saveProfile = chatHistory.saveProfile;
+  const { userProfile, partners, groupChats, activePartnerId, activeConversationId, activeProjectId, activeGroupChatId } = state;
+  useEffect(() => {
+    if (!chatHistory.managed || !conversationAuthorityReady || !projectAuthority.ready) return;
+    const profile = prepareSingleChatProfile({
+      version: 7, userProfile, partners, groupChats, activePartnerId, activeConversationId, activeProjectId, activeGroupChatId,
+      conversations: [], projects: [],
+    });
+    const signature = JSON.stringify(profile);
+    if (signature === savedProfileSignature.current) return;
+    savedProfileSignature.current = signature;
+    saveProfile(profile);
+  }, [chatHistory.managed, conversationAuthorityReady, projectAuthority.ready, saveProfile,
+    userProfile, partners, groupChats, activePartnerId, activeConversationId, activeProjectId, activeGroupChatId]);
 
   useEffect(() => {
     const conversations = window.asteriumConversations;
-    if (!conversationAuthorityReady || !conversations?.syncMessages) return;
+    if (chatHistory.managed || !conversationAuthorityReady || !conversations?.syncMessages) return;
     const snapshots = state.conversations.map((conversation) => ({
       conversationId: conversation.id,
       partnerId: conversation.partnerId,
@@ -1396,20 +1414,20 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     if (signature === singleChatMessageSyncRef.current) return;
     singleChatMessageSyncRef.current = signature;
     void conversations.syncMessages(snapshots).catch(() => { singleChatMessageSyncRef.current = ''; });
-  }, [conversationAuthorityReady, state.conversations, state.partners]);
+  }, [chatHistory.managed, conversationAuthorityReady, state.conversations, state.partners]);
 
   useEffect(() => {
     const conversations = window.asteriumConversations;
-    if (!conversations?.listDeleted) return;
+    if (chatHistory.managed || !conversations?.listDeleted) return;
     let cancelled = false;
     void conversations.listDeleted()
       .then((conversationIds) => {
         if (!cancelled && conversationIds.length) dispatch({ type: 'reconcileDeletedConversations', conversationIds });
       })
       .catch(() => undefined)
-      .finally(() => { if (!cancelled) setConversationAuthorityReady(true); });
+      .finally(() => { if (!cancelled) setLegacyConversationsReady(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [chatHistory.managed]);
 
 
   useEffect(() => {
@@ -1493,10 +1511,15 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const projects = window.asteriumProjects;
-    if (!projects?.initializeDomain) return;
+    if (!projects?.initializeDomain || !conversationAuthorityReady) return;
+    const seeds = startupProjectMigrationRef.current.map((project) => ({
+      id: project.id, name: project.name, avatarDataUrl: project.avatarDataUrl, description: project.description,
+      status: project.status, progress: project.progress, tags: project.tags, memberIds: project.memberIds,
+      tasks: project.tasks, createdAt: project.createdAt, updatedAt: project.updatedAt,
+    }));
     const generation = ++projectAuthorityGenerationRef.current;
     const hydrate = async () => {
-      const snapshot = await projects.initializeDomain({ legacyProjects: startupProjectMigrationRef.current });
+      const snapshot = await projects.initializeDomain({ legacyProjects: seeds });
       if (projectAuthorityGenerationRef.current !== generation) return;
       dispatch({ type: 'hydrateProjectDomain', snapshot });
       const workspaces = await Promise.all(snapshot.projects.map(async (project) => ({ project, workspace: await projects.get(project.id).catch(() => null) })));
@@ -1520,11 +1543,11 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       }
       setProjectAuthority({ ready: true, blockedProjectIds: [] });
     };
-    void hydrate().catch(() => setProjectAuthority({ ready: false, blockedProjectIds: startupProjectMigrationRef.current.map((project) => project.id) }));
+    void hydrate().catch(() => setProjectAuthority({ ready: false, blockedProjectIds: seeds.map((project) => project.id) }));
     return () => {
       if (projectAuthorityGenerationRef.current === generation) projectAuthorityGenerationRef.current += 1;
     };
-  }, []);
+  }, [conversationAuthorityReady]);
 
   useEffect(() => window.asteriumProjects?.onDomainChanged?.((change) => {
     if (change.type === 'snapshot') dispatch({ type: 'hydrateProjectDomain', snapshot: change.snapshot });
@@ -1557,6 +1580,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [projectAuthority.ready, studioMetadata]);
 
+  const syncedSingleBindings = useRef('');
   const singleBindings = JSON.stringify(state.conversations.flatMap((conversation) => {
     const partner = state.partners.find((item) => item.id === conversation.partnerId);
     if (!conversation.sessionId || !partner || partner.sourceMode === 'existing_thread') return [];
@@ -1565,10 +1589,13 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const api = window.asteriumNativeBindings;
-    if (!api || !conversationAuthorityReady) return;
+    if (!api || !conversationAuthorityReady || chatHistory.pending || chatHistory.writeFailed || syncedSingleBindings.current === singleBindings) return;
     const bindings = JSON.parse(singleBindings) as Array<{ partnerId: string; source: 'local_cli' | 'api_partner'; conversationId: string; nativeThreadId: string }>;
-    if (bindings.length) void api.syncSingle(bindings).catch(() => undefined);
-  }, [conversationAuthorityReady, singleBindings]);
+    syncedSingleBindings.current = singleBindings;
+    if (bindings.length) void api.syncSingle(bindings).catch(() => {
+      if (syncedSingleBindings.current === singleBindings) syncedSingleBindings.current = '';
+    });
+  }, [chatHistory.pending, chatHistory.writeFailed, conversationAuthorityReady, singleBindings]);
 
   useEffect(() => window.asteriumAgents?.onPartnerWorkspaceChanged?.((workspace) => {
     dispatch({ type: 'syncPartnerWorkspaceState', workspace });
@@ -1655,13 +1682,13 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const sync = window.asteriumAgents?.syncPartnerProfiles;
-    if (!sync || profileSyncStartedRef.current) return;
+    if (!sync || !conversationAuthorityReady || profileSyncStartedRef.current) return;
     profileSyncStartedRef.current = true;
     const partners = state.partners.filter((partner) => !partner.isRemoved && !partner.managedDataDeletedAt).map(partnerProfileSeed);
     void sync({ displayName: state.userProfile.displayName, introduction: state.userProfile.introduction, updatedAt: state.userProfile.updatedAt }, partners)
       .then((profiles) => dispatch({ type: 'hydratePartnerProfiles', profiles }))
       .catch(() => { profileSyncStartedRef.current = false; });
-  }, [state.partners, state.userProfile]);
+  }, [conversationAuthorityReady, state.partners, state.userProfile]);
 
   const nativeLifecycleSyncPayload = JSON.stringify(buildNativeLifecycleSyncGroups(state.partners, state.conversations));
 
@@ -1888,6 +1915,8 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     appearanceError, appearance, updateAppearance, setTheme, toggleTheme,
     selectPartner: (partnerId) => dispatch({ type: 'selectPartner', partnerId }),
     selectConversation: (conversationId) => dispatch({ type: 'selectConversation', conversationId }),
+    chatHistoryPage: chatHistory.selectedPage,
+    chatHistoryLoading: chatHistory.needsRecent,
     selectProject: (projectId) => dispatch({ type: 'selectProject', projectId }),
     addPartner: (partner, alreadySaved = false) => {
       if (!alreadySaved && !partner.isPrototype) void window.asteriumAgents?.savePartnerProfile?.(partnerProfileSeed(partner)).catch(() => undefined);
@@ -2213,9 +2242,10 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     toggleGroupMember: (groupChatId, partnerId) => dispatch({ type: 'toggleGroupMember', groupChatId, partnerId }),
     contextHandoffDraft,
     setContextHandoffDraft,
-    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff) => compactingRef.current.has(conversationId) ? Promise.resolve(false) : sendSingleChatMessage({
+    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff) => (compactingRef.current.has(conversationId) || (conversationId === state.activeConversationId && chatHistory.needsRecent)) ? Promise.resolve(false) : sendSingleChatMessage({
       state,
       dispatch,
+      saveBeforeSend: chatHistory.managed ? chatHistory.saveBeforeSend : undefined,
       bridge: { agents: window.asteriumAgents, attachments: window.asteriumAttachments },
       conversationId,
       content,
@@ -2285,6 +2315,8 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       bridge: { agents: window.asteriumAgents, attachments: window.asteriumAttachments },
       conversationId,
       editedContent,
+      readEarlierHistory: conversationId === state.activeConversationId && chatHistory.selectedPage?.hasOlder
+        ? window.asteriumConversations?.readHistoryPage : undefined,
     }),
     resolveChatAuthorization: (conversationId, decision, persistExtensionTrust) => {
       const conversation = state.conversations.find((item) => item.id === conversationId);
@@ -2456,10 +2488,16 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       });
     },
     addProjectMember: (projectId, partnerId) => dispatch({ type: 'addProjectMember', projectId, partnerId }),
-  }), [confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
+  }), [chatHistory.managed, chatHistory.needsRecent, chatHistory.saveBeforeSend, chatHistory.selectedPage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
   return <PrototypeContext.Provider value={value}>
     {conversationAuthorityReady ? children : null}
+    {chatHistory.startupFailed && <div className="run-notice single-chat-storage-notice" role="alert">
+      <span>单聊资料暂时无法打开。请检查磁盘空间和访问权限，再切回星丛重试。</span>
+    </div>}
+    {(chatHistory.writeFailed || chatHistory.sendSaveFailed) && <div className="run-notice single-chat-storage-notice" role="alert">
+      <span>{chatHistory.writeFailed ? '单聊暂时无法保存。请检查磁盘，再切回星丛重试。' : '消息保存失败，草稿还在输入框里。请检查磁盘后重新发送。'}</span>
+    </div>}
     {projectConfirmation && createPortal(<Modal title="确认项目保存位置" description={`「${projectConfirmation.name}」的项目文件将保存在以下目录。`}
       onClose={() => finishProjectConfirmation(false)} initialFocusRef={projectConfirmationCancel}>
       <div className="modal-body"><div className="project-location-confirmation">{projectConfirmation.path}</div></div>

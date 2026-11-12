@@ -40,6 +40,7 @@ interface SingleChatRuntimeContext {
 }
 
 export interface SendSingleChatMessageRequest extends SingleChatRuntimeContext {
+  saveBeforeSend?: (conversation: Conversation, message: Message) => Promise<boolean>;
   conversationId: string;
   content: string;
   attachments?: MessageAttachment[];
@@ -52,6 +53,7 @@ export interface SendSingleChatMessageRequest extends SingleChatRuntimeContext {
 export interface RegenerateSingleChatTurnRequest extends SingleChatRuntimeContext {
   conversationId: string;
   editedContent?: string;
+  readEarlierHistory?: (request: import('../../shared/singleChatHistory').SingleChatPageRequest) => Promise<import('../../shared/singleChatHistory').SingleChatHistoryPage | undefined>;
 }
 
 function makeId(prefix: string) {
@@ -169,6 +171,7 @@ export async function sendSingleChatMessage({
   state,
   dispatch,
   bridge,
+  saveBeforeSend,
   conversationId,
   content,
   attachments,
@@ -201,7 +204,9 @@ export async function sendSingleChatMessage({
   if (partner?.sourceMode === 'existing_thread' && attachments?.length && !realExisting) return false;
   if (contextHandoff && (!realLocal && !realApi)) return false;
   if (!conversation || !partner || (!realLocal && !realApi && !realExisting)) {
-    dispatch({ type: 'sendChatMessage', conversationId, message: createSingleChatMessage(content, attachments, messageId, quote) });
+    const message = createSingleChatMessage(content, attachments, messageId, quote);
+    if (conversation && saveBeforeSend && !await saveBeforeSend(conversation, message)) return false;
+    dispatch({ type: 'sendChatMessage', conversationId, message, historySaved: Boolean(saveBeforeSend) });
     return true;
   }
   if (partner.sourceMode === 'local_cli' && partner.adapterType === 'codex_cli' && partner.connectionKind === 'local_codex' && conversation.sessionId) {
@@ -243,14 +248,16 @@ export async function sendSingleChatMessage({
     });
     return false;
   }
-  const clientMessageId = makeId('client-message');
   const visibleMessageId = messageId ?? makeId('message');
+  const clientMessageId = 'client-' + visibleMessageId;
   const visibleMessage = { ...createSingleChatMessage(content, attachments, visibleMessageId, quote), clientMessageId, status: 'sending' as const };
   const sourceMessage = { messageId: visibleMessage.id, authorType: 'user' as const, authorId: visibleMessage.authorId, content: visibleMessage.content, createdAt: visibleMessage.createdAt, occurredAt: visibleMessage.occurredAt };
+  if (saveBeforeSend && !await saveBeforeSend(conversation, visibleMessage)) return false;
   dispatch({
     type: 'sendChatMessage',
     conversationId,
     message: visibleMessage,
+    historySaved: Boolean(saveBeforeSend),
   });
   const runtimeContent = formatMessageWithQuote(content, quote);
   const fail = (error: ProtocolError) => dispatch({ type: 'messageSendFailed', conversationId, clientMessageId, error });
@@ -366,7 +373,7 @@ export async function sendSingleChatMessage({
   return true;
 }
 
-export function regenerateSingleChatTurn({ state, dispatch, bridge, conversationId, editedContent }: RegenerateSingleChatTurnRequest) {
+export function regenerateSingleChatTurn({ state, dispatch, bridge, conversationId, editedContent, readEarlierHistory }: RegenerateSingleChatTurnRequest) {
   const conversation = state.conversations.find((item) => item.id === conversationId);
   const partner = state.partners.find((item) => item.id === conversation?.partnerId);
   if (!conversation || !partner || conversation.activeRun || conversation.isDisabled || conversationWorkspaceMismatch(partner, conversation) || partner.sourceMode === 'existing_thread') return;
@@ -428,29 +435,52 @@ export function regenerateSingleChatTurn({ state, dispatch, bridge, conversation
   const grantIds = partner.workspaceGrantIds ?? [];
   const partnerRootGrantId = partner.partnerRootGrantId;
   if (!bridge.agents) return fail({ code: 'LOCAL_BRIDGE_UNAVAILABLE', message: '本地桥接暂不可用。', stage: 'transport', retryable: true });
-  const previousCodexTurnId = partner.adapterType === 'codex_cli'
-    ? [...history].reverse().find((message) => !isAsteriumUser(message.authorId) && Boolean(message.runId))?.runId
-    : undefined;
-  const canForkCodex = Boolean(partner.adapterType === 'codex_cli' && conversation.sessionId && previousCodexTurnId);
-  const command = {
-    protocolVersion: AGENT_PROTOCOL_VERSION, type: 'message.send', commandId: makeId('command'), partnerId: partner.id, conversationId,
-    connectionSource: partner.sourceMode, clientMessageId,
-    messageId,
-    sourceMessage,
-    sessionId: canForkCodex ? conversation.sessionId : undefined,
-    ...(canForkCodex ? { forkFromTurnId: previousCodexTurnId } : {}),
-    content: { type: 'text', text: canForkCodex ? runtimeContent : visibleContext(history, runtimeContent) },
-    execution: {
-      permissionMode: localPermissionMode(partner, conversation), planMode: conversation.planMode ?? 'default',
-      ...(partner.adapterType === 'codex_cli' && conversation.codexModel ? { codexModel: conversation.codexModel } : {}),
-    },
-    ...(attachments?.length ? { attachments } : {}),
-    runtimeContext: runtimeContext(partner, conversation, state.userProfile, state.partners),
-  } as const;
-  const send = bridge.agents.sendLocalCliMessage
-    ? bridge.agents.sendLocalCliMessage(partner.adapterType, partner.id, partnerRootGrantId, grantIds, command, partner.codexRuntimeId, partner.codexRuntime?.environment)
-    : bridge.agents.sendClaudeMessage(partner.id, partnerRootGrantId, grantIds, command);
-  void send
+  const agents = bridge.agents;
+  const codexTurn = (messages: Message[]) => partner.adapterType === 'codex_cli'
+    ? [...messages].reverse().find(message => !isAsteriumUser(message.authorId) && Boolean(message.runId))?.runId : undefined;
+  const send = (previous: Message[]) => {
+    const context = [...previous, ...history];
+    const previousCodexTurnId = codexTurn(context);
+    const canForkCodex = Boolean(partner.adapterType === 'codex_cli' && conversation.sessionId && previousCodexTurnId);
+    const command = {
+      protocolVersion: AGENT_PROTOCOL_VERSION, type: 'message.send', commandId: makeId('command'), partnerId: partner.id, conversationId,
+      connectionSource: partner.sourceMode, clientMessageId,
+      messageId, sourceMessage,
+      sessionId: canForkCodex ? conversation.sessionId : undefined,
+      ...(canForkCodex ? { forkFromTurnId: previousCodexTurnId } : {}),
+      content: { type: 'text', text: canForkCodex ? runtimeContent : visibleContext(context, runtimeContent) },
+      execution: {
+        permissionMode: localPermissionMode(partner, conversation), planMode: conversation.planMode ?? 'default',
+        ...(partner.adapterType === 'codex_cli' && conversation.codexModel ? { codexModel: conversation.codexModel } : {}),
+      },
+      ...(attachments?.length ? { attachments } : {}),
+      runtimeContext: runtimeContext(partner, conversation, state.userProfile, state.partners),
+    } as const;
+    return agents.sendLocalCliMessage
+      ? agents.sendLocalCliMessage(partner.adapterType, partner.id, partnerRootGrantId, grantIds, command, partner.codexRuntimeId, partner.codexRuntime?.environment)
+      : agents.sendClaudeMessage(partner.id, partnerRootGrantId, grantIds, command);
+  };
+  const needsPrefix = readEarlierHistory && !(conversation.sessionId && codexTurn(history));
+  const operation = needsPrefix
+    ? historyPrefix(readEarlierHistory, conversationId, conversation.messages[0]?.id).then(send)
+    : send([]);
+  void operation
     .then((receipt) => dispatch({ type: 'bindRunReceipt', conversationId, clientMessageId, ...receipt }))
     .catch(() => fail({ code: 'LOCAL_CLI_SEND_FAILED', message: '重新生成失败，请稍后重试。', stage: 'transport', retryable: true }));
+}
+
+
+async function historyPrefix(
+  read: NonNullable<RegenerateSingleChatTurnRequest['readEarlierHistory']>, conversationId: string, before: string | undefined,
+): Promise<Message[]> {
+  const pages: Message[][] = [];
+  while (before) {
+    const page = await read({ conversationId, before });
+    if (!page || (page.hasOlder && (!page.messages.length || page.messages[0].id === before))) {
+      throw new Error('SINGLE_CHAT_HISTORY_CONTEXT_UNAVAILABLE');
+    }
+    pages.push(page.messages);
+    before = page.hasOlder ? page.messages[0]?.id : undefined;
+  }
+  return pages.reverse().flat();
 }

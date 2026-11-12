@@ -40,6 +40,7 @@ interface TurnTimelineProps {
   onResolveAuthorization: (decision: 'allow_once' | 'deny', persistExtensionTrust?: boolean) => void;
   onResolveUserInput: (answers: Record<string, string[]>, customAnswers?: Record<string, string>, requestId?: string) => void | Promise<void>;
   onOpenArtifact: (artifactId: string) => void;
+  onArtifactContextMenu?: (artifactId: string, event: ReactMouseEvent<HTMLElement>) => void;
   onQuoteSelection?: (text: string, x: number, y: number) => void;
 }
 
@@ -58,7 +59,7 @@ type TimelineBlock =
   | { kind: 'delegation'; receipt: DelegationReceipt }
   | { kind: 'entry'; id: string; row: Exclude<ProcessItem, ActionItem | ReasoningItem | FileItem> };
 
-export function TurnTimeline({ message, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onQuoteSelection }: TurnTimelineProps) {
+export function TurnTimeline({ message, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
   const timeline = message.timeline ?? [];
   if (!timeline.length) return <div className="turn-timeline">
     {delegationReceipts.map(receipt => <Fragment key={receipt.id}>{receipt.card}</Fragment>)}
@@ -69,7 +70,11 @@ export function TurnTimeline({ message, delegationReceipts = [], partnerName, pe
 
   const blocks = buildTimelineBlocks(timeline, delegationReceipts, message.runState === 'completed');
 
-  return <div className="turn-timeline">
+  return <div className="turn-timeline" onContextMenu={onArtifactContextMenu && ((event) => {
+    if (event.defaultPrevented || !(event.target instanceof Element)) return;
+    const id = event.target.closest<HTMLButtonElement>('button[data-artifact-id]')?.dataset.artifactId;
+    if (id) onArtifactContextMenu(id, event);
+  })}>
     {blocks.map((block) => {
       if (block.kind === 'text') {
         const text = visibleAssistantText(block.text);
@@ -181,7 +186,7 @@ function TimelineRow({ row, partnerName = '伙伴', pendingAuthorization, pendin
   onResolveUserInput: (answers: Record<string, string[]>, customAnswers?: Record<string, string>, requestId?: string) => void | Promise<void>;
   onOpenArtifact: (artifactId: string) => void;
 }) {
-  if (row.kind === 'file') return <button className="timeline-file" type="button" onClick={() => onOpenArtifact(row.artifactId)}><FileCheck2 size={15} /><span><strong>{row.name}</strong><small>文件送到了</small></span><em>预览</em></button>;
+  if (row.kind === 'file') return <button className="timeline-file" type="button" data-artifact-id={row.artifactId} onClick={() => onOpenArtifact(row.artifactId)}><FileCheck2 size={15} /><span><strong>{row.name}</strong><small>文件送到了</small></span><em>预览</em></button>;
   if (row.kind === 'authorization') {
     const active = pendingAuthorization?.authorizationId === row.authorizationId;
     return <AuthorizationRow row={{ ...row, summary: partnerStatusLabel(row.summary, partnerName) }} active={active} interactive={pendingAuthorization?.resolution !== 'display_only'} targets={active ? pendingAuthorization?.targets : undefined} extensionTrust={active ? pendingAuthorization?.extensionTrust : undefined} onResolveAuthorization={onResolveAuthorization} />;
@@ -269,10 +274,10 @@ function OperationRow({ row, partnerName, onOpenArtifact }: { row: ActionRow; pa
   return <div className={`timeline-operation timeline-operation--plain timeline-operation--${category} state-${row.state}`}>
     <Icon size={13} />
     {previewFile
-      ? <button className="timeline-operation__label-button" type="button" onClick={() => onOpenArtifact(previewFile.artifactId)} title={`预览 ${previewFile.name}`}>{label}</button>
+      ? <button className="timeline-operation__label-button" type="button" data-artifact-id={previewFile.artifactId} onClick={() => onOpenArtifact(previewFile.artifactId)} title={`预览 ${previewFile.name}`}>{label}</button>
       : <span>{label}</span>}
     <OutcomeIcon state={row.state} />
-    {row.files.length > 1 && <div className="timeline-operation__previews">{row.files.map((file) => <button className="timeline-operation__preview" key={file.artifactId} type="button" onClick={() => onOpenArtifact(file.artifactId)} title={`预览 ${file.name}`}>预览</button>)}</div>}
+    {row.files.length > 1 && <div className="timeline-operation__previews">{row.files.map((file) => <button className="timeline-operation__preview" key={file.artifactId} type="button" data-artifact-id={file.artifactId} onClick={() => onOpenArtifact(file.artifactId)} title={`预览 ${file.name}`}>预览</button>)}</div>}
   </div>;
 }
 
@@ -604,6 +609,7 @@ function friendlyErrorLabel(summary: string, partnerName: string) {
 }
 
 function friendlyStatusLabel(summary: string, state: 'running' | 'success' | 'failure', partnerName: string) {
+  if (summary === '回复中断') return summary;
   if (/用户.*停止|已停止|取消/.test(summary)) return '已由用户停止';
   const namedSummary = partnerStatusLabel(summary, partnerName);
   if (state === 'running' && namedSummary !== summary) return namedSummary;

@@ -291,6 +291,8 @@ export interface ToolCompletedEvent extends AdapterEventBase {
   outcome: 'success' | 'failure';
   summary: string;
   detail?: string;
+  /** Set by the desktop after the output file has been saved. */
+  detailRef?: import('../toolOutput').ToolOutputReference;
 }
 
 export interface FileProducedEvent extends AdapterEventBase {

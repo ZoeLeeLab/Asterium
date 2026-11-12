@@ -404,10 +404,11 @@ export function loadPrototypeState(): PrototypeState {
   return createInitialState();
 }
 
-export function savePrototypeState(state: PrototypeState) {
-  const safeState: PrototypeState = {
-    ...state,
+export function prepareSingleChatProfile(state: PrototypeState, keepLegacyProjects = false): import('../../shared/singleChatHistory').SingleChatProfile {
+  return {
     version: 7,
+    activePartnerId: state.activePartnerId, activeConversationId: state.activeConversationId,
+    activeProjectId: state.activeProjectId, activeGroupChatId: state.activeGroupChatId,
     userProfile: { ...state.userProfile, id: ASTERIUM_USER_ID },
     partners: state.partners.map((partner) => {
       const safePartner = { ...partner } as Partner & Record<string, unknown>;
@@ -419,32 +420,87 @@ export function savePrototypeState(state: PrototypeState) {
       }
       return safePartner as Partner;
     }),
-    // Project metadata and tasks live in project-domain.v1.json. Existing
-    // values are retained in memory until the one-time Main migration succeeds.
-    projects: [],
-    conversations: state.conversations.map((conversation) => {
-      const safeConversation = { ...conversation };
-      delete safeConversation.activeRun;
-      delete safeConversation.workStatus;
-      delete safeConversation.awaitingFirstResponse;
-      delete safeConversation.pendingAuthorization;
-      delete safeConversation.pendingUserInput;
-      delete safeConversation.runNotice;
-      delete safeConversation.regenerationBackup;
-      delete safeConversation.failedRegenerationClientMessageId;
-      delete safeConversation.lastRunId;
-      delete safeConversation.lastSequence;
-      safeConversation.messages = safeConversation.messages.map((message) => {
-        const safeMessage = { ...message };
-        delete safeMessage.isStreaming;
-        return safeMessage;
-      });
-      return safeConversation;
-    }),
-    groupChats: state.groupChats.map((groupChat) => ({
-      ...groupChat,
-      // Group messages live in studio-rooms.v1.json, never localStorage.
-      messages: [],
+    projects: keepLegacyProjects ? state.projects : [],
+    groupChats: state.groupChats.map((groupChat) => ({ ...groupChat, messages: [] })),
+  };
+}
+
+export function prepareSingleChatMetadata(conversation: PrototypeState['conversations'][number]): import('../../shared/singleChatHistory').SingleChatMetadata {
+  const saved = { ...conversation };
+  const transient = [
+    'messages', 'activeRun', 'workStatus', 'awaitingFirstResponse', 'pendingAuthorization', 'pendingUserInput',
+    'runNotice', 'regenerationBackup', 'failedRegenerationClientMessageId', 'lastRunId', 'lastSequence',
+  ] as const;
+  for (const key of transient) delete (saved as Partial<typeof saved>)[key];
+  return saved;
+}
+
+export function prepareSingleChatMessage(message: PrototypeState['conversations'][number]['messages'][number]) {
+  const saved = { ...message };
+  delete saved.isStreaming;
+  return saved;
+}
+
+export function readLegacySingleChatHistory(): import('../../shared/singleChatHistory').SingleChatHistoryImport {
+  const raw = localStorage.getItem(STATE_KEY);
+  const state = raw === null ? createInitialState() : normalizeState(JSON.parse(raw));
+  if (!state) throw new Error('SINGLE_CHAT_HISTORY_LEGACY_INVALID');
+  return {
+    profile: prepareSingleChatProfile(state, true),
+    conversations: state.conversations.map(conversation => ({
+      ...prepareSingleChatMetadata(conversation), messages: conversation.messages.map(prepareSingleChatMessage),
+    })),
+  };
+}
+
+export function restoreSingleChatHistory(history: import('../../shared/singleChatHistory').SingleChatHistorySnapshot): PrototypeState {
+  const interrupted = new Set(history.interruptedConversationIds ?? []);
+  const state = normalizeState({
+    ...history.profile,
+    conversations: history.conversations.map(conversation => ({
+      ...conversation, messages: restoreSingleChatPageMessages(conversation.partnerId, conversation.messages, interrupted.has(conversation.id)),
+    })),
+  });
+  if (!state) throw new Error('SINGLE_CHAT_HISTORY_INVALID_PROFILE');
+  return state;
+}
+
+export function restoreSingleChatPageMessages(
+  partnerId: string, source: PrototypeState['conversations'][number]['messages'], interrupted: boolean,
+): PrototypeState['conversations'][number]['messages'] {
+  const messages = source.map(message => {
+    if (message.runState === 'running' || message.runState === 'waiting_authorization' || message.runState === 'waiting_user_input') {
+      const timeline = (message.timeline ?? []).map(item => 'state' in item && item.state === 'running' ? { ...item, state: 'failure' as const } : item);
+      return { ...message, runState: 'cancelled' as const, isStreaming: false, timeline: [
+        ...timeline, interruptionNotice(message.id, (timeline.at(-1)?.sequence ?? 0) + 1),
+      ] };
+    }
+    if (message.status !== 'sending') return message;
+    return {
+      ...message, status: 'failed' as const,
+      error: { code: 'SINGLE_CHAT_SEND_UNCERTAIN', message: '退出前的发送结果待确认。', stage: 'transport' as const, retryable: false },
+    };
+  });
+  const user = messages.at(-1);
+  if (interrupted && user && normalizeAsteriumUserAuthorId(user.authorId) === ASTERIUM_USER_ID) {
+    const id = user.id + ':interrupted';
+    messages.push({
+      id, authorId: partnerId, content: '', createdAt: user.createdAt,
+      runState: 'cancelled', timeline: [interruptionNotice(id, 1)],
+    });
+  }
+  return messages;
+}
+
+function interruptionNotice(id: string, sequence: number) {
+  return { id: id + ':recovery', sequence, kind: 'status' as const, state: 'failure' as const, summary: '回复中断' };
+}
+
+export function savePrototypeState(state: PrototypeState) {
+  const safeState: PrototypeState = {
+    ...prepareSingleChatProfile(state),
+    conversations: state.conversations.map(conversation => ({
+      ...prepareSingleChatMetadata(conversation), messages: conversation.messages.map(prepareSingleChatMessage),
     })),
   };
   try {

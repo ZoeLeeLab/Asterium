@@ -38,12 +38,13 @@ import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import { readClaudeSessionFile } from './adapters/claudeSessionFile';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, listCodexThreads, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, locateCodexHistoryTurn, listCodexModels, listCodexThreads, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
 import { WorkspaceGrantStore } from './security/WorkspaceGrantStore';
 import { ArtifactRegistry } from './security/ArtifactRegistry';
+import { createArtifactBrowserLink } from './security/ArtifactBrowserLink';
 import { ConversationAttachmentStore, MAX_MESSAGE_ATTACHMENTS } from './security/ConversationAttachmentStore';
 import { StudioAttachments } from './studio/StudioAttachments';
 import type { AppUpdateService } from './settings/AppUpdateService';
@@ -84,6 +85,8 @@ import { ProjectFileDeletionService } from './project/ProjectFileDeletionService
 import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
 import { ConversationDeletionService } from './conversation/ConversationDeletionService';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
+import { assertHistoryImport, assertHistoryPage, assertHistorySearch, assertHistoryWrite, assertToolOutputRequest, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
+import { mergeLegacySingleChats } from './conversation/singleChatHistoryProjection';
 import { assertSingleChatConversationSnapshots } from '../shared/singleChatMessages';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
 import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
@@ -366,7 +369,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     rootDirectory: () => path.join(app.getPath('userData'), 'conversation-attachments', 'v2'),
     legacyIndexPath: () => path.join(app.getPath('userData'), 'message-attachments.v1.json'),
   });
-  const singleChatMessages = new SingleChatMessageStore(() => path.join(app.getPath('userData'), 'single-chat-messages.v1.json'));
+  const singleChatHistory = new SingleChatHistoryStore(() => app.getPath('userData'));
+  const singleChatMessages = new SingleChatMessageStore(() => path.join(app.getPath('userData'), 'single-chat-messages.v1.json'), singleChatHistory);
   const studioAttachments = new StudioAttachments(messageAttachments, {
     workspaces: projectWorkspaces,
     rooms: studioRooms,
@@ -1531,6 +1535,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       if (!isRecord(item) || typeof item.partnerId !== 'string' || typeof item.conversationId !== 'string' || typeof item.nativeThreadId !== 'string'
         || !['local_cli', 'api_partner'].includes(String(item.source))) throw new Error('INVALID_SINGLE_BINDING_SYNC');
       if (await conversationDeletions.isDeleted(item.conversationId)) continue;
+      if (await singleChatHistory.isActive()) {
+        const committed = await singleChatHistory.readMetadata(item.conversationId);
+        if (!committed || committed.partnerId !== item.partnerId || committed.sessionId !== item.nativeThreadId) continue;
+      }
       await nativeBindings.registerSingle({
         partnerId: item.partnerId,
         conversationId: item.conversationId,
@@ -1555,6 +1563,19 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (typeof artifactId !== 'string') throw new Error('INVALID_ARTIFACT_ID');
     const error = await shell.openPath(await artifacts.pathFor(artifactId));
     if (error) throw new Error(error);
+  });
+  ipcMain.handle(AGENT_IPC.artifactOpenInBrowser, async (event, artifactId: unknown) => {
+    requireSender(event);
+    if (typeof artifactId !== 'string') throw new Error('INVALID_ARTIFACT_ID');
+    const path = await artifacts.pathFor(artifactId);
+    const { name, mediaType } = await artifacts.inspect(artifactId);
+    const link = await createArtifactBrowserLink({ path, name, mediaType });
+    try {
+      await shell.openExternal(link.url);
+    } catch (error) {
+      link.close();
+      throw error;
+    }
   });
   ipcMain.handle(AGENT_IPC.artifactReveal, async (event, artifactId: unknown) => {
     requireSender(event);
@@ -1747,8 +1768,76 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event);
     return conversationDeletions.listDeletedIds();
   });
+  const openSingleChatHistory = async (recent: unknown) => {
+    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
+    const history = await (recent ? singleChatHistory.openRecent() : singleChatHistory.open());
+    if (!history) return undefined;
+    const deleted = new Set(await conversationDeletions.listDeletedIds());
+    return { ...history, conversations: history.conversations.filter(conversation => !deleted.has(conversation.id)) };
+  };
+  ipcMain.handle(AGENT_IPC.conversationOpenHistory, async (event, recent: unknown) => {
+    requireSender(event);
+    return openSingleChatHistory(recent);
+  });
+  ipcMain.handle(AGENT_IPC.conversationMigrateHistory, async (event, value: unknown, recent: unknown) => {
+    requireSender(event);
+    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
+    await singleChatHistory.initialize(async () => {
+      assertHistoryImport(value);
+      const [projection, deletedConversationIds] = await Promise.all([singleChatMessages.listLegacy(), conversationDeletions.listDeletedIds()]);
+      return {
+        profile: value.profile,
+        conversations: mergeLegacySingleChats(value.conversations, projection),
+        deletedConversationIds,
+      };
+    });
+    const history = await openSingleChatHistory(recent);
+    if (!history) throw new Error('SINGLE_CHAT_HISTORY_ACTIVATION_MISSING');
+    return history;
+  });
+  ipcMain.handle(AGENT_IPC.conversationReadHistoryPage, async (event, value: unknown) => {
+    requireSender(event);
+    assertHistoryPage(value);
+    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
+    return singleChatHistory.readPage(value);
+  });
+  ipcMain.handle(AGENT_IPC.conversationReadToolOutput, async (event, value: unknown) => {
+    requireSender(event);
+    assertToolOutputRequest(value);
+    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
+    return singleChatHistory.readToolOutput(value);
+  });
+  ipcMain.handle(AGENT_IPC.conversationSearchHistory, async (event, value: unknown) => {
+    requireSender(event);
+    assertHistorySearch(value);
+    const result = await singleChatHistory.search(value);
+    const deleted = new Set(await conversationDeletions.listDeletedIds());
+    return {
+      ...result,
+      conversationIds: result.conversationIds.filter(id => !deleted.has(id)),
+      messageIds: value.conversationId && deleted.has(value.conversationId) ? [] : result.messageIds,
+      hasMore: result.hasMore && (!value.conversationId || !deleted.has(value.conversationId)),
+    };
+  });
+  ipcMain.handle(AGENT_IPC.conversationWriteHistory, async (event, value: unknown) => {
+    requireSender(event);
+    assertHistoryWrite(value);
+    const deleted = new Set(await conversationDeletions.listDeletedIds());
+    if (value.changes.some(change => deleted.has(change.conversationId) && change.upsert.some(message => message.status === 'sending'))) {
+      throw new Error('SINGLE_CHAT_HISTORY_CONVERSATION_DELETED');
+    }
+    const changes = value.changes.filter(change => !deleted.has(change.conversationId));
+    await singleChatHistory.write({ ...value, changes });
+    if (changes.some(change => change.busy === false && (change.upsert.length || change.remove.length))) {
+      void memoryFallbackInventory.refresh().catch(() => undefined);
+    }
+    if (changes.some(change => change.busy === false && (change.upsert.length || change.metadata?.isArchived || change.metadata?.isDisabled))) {
+      void diarySettings.reconcileSources().then(() => diaryScheduler.changed()).catch(() => undefined);
+    }
+  });
   ipcMain.handle(AGENT_IPC.conversationSyncMessages, async (event, value: unknown) => {
     requireSender(event);
+    if (await singleChatHistory.isActive()) return;
     assertSingleChatConversationSnapshots(value);
     await singleChatMessages.sync(value);
     await diarySettings.reconcileSources(); await diaryScheduler.changed();
@@ -1928,6 +2017,15 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     });
   };
   const transformRuntimeEvent = async (event: PartnerEvent, artifactBaseDirectory?: string) => {
+    if (event.type === 'tool.completed') {
+      // The reference is main-owned. Adapters can only supply the detail itself.
+      const clean = { ...event, detail: typeof event.detail === 'string' ? event.detail : undefined, detailRef: undefined };
+      if (event.route && event.route.scope !== 'single') return clean;
+      if (!clean.detail || clean.detail.length <= 4096) return clean;
+      // On failure leave the detail in the event. The checkpoint retries it and surfaces a storage failure.
+      const stored = await singleChatHistory.recordToolOutput(event.conversationId, clean.detail).catch(() => undefined);
+      return stored ? { ...clean, ...stored } : clean;
+    }
     if (event.type !== 'file.produced') return event;
     const registered = await projectFileDelivery.registerRuntimeFile(event, artifactBaseDirectory);
     if (!registered?.emitArtifactEvent) {
@@ -1970,6 +2068,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       else if (binding.nativeThreadId !== event.sessionId) throw new Error('NATIVE_THREAD_ROUTE_MISMATCH');
     },
     onBound: async (event, command) => {
+      await persistFirstSingleChatBinding(event, command);
       await automationHandles.runtime?.bound(command, { runId: event.runId, sessionId: event.sessionId });
       if (command.route?.scope === 'group') await studioRooms.bindRun(command.route.roomId, command.route.roundId, command.partnerId, event.runId, event.sessionId);
       await sessionBootstrapRecorder.onBound(event, command);
@@ -2023,6 +2122,16 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       await studioRooms.retryPassAfterRelease(receipt.runId).catch(() => undefined);
     },
   }, writerLeases);
+  async function persistFirstSingleChatBinding(event: Extract<PartnerEvent, { type: 'session.bound' }>, command: SendMessageCommand) {
+    if ((command.route && command.route.scope !== 'single') || command.connectionSource === 'existing_thread') return;
+    if (await singleChatHistory.bindInitialSession(command.conversationId, command.partnerId, event.sessionId)) {
+      await nativeBindings.registerSingle({
+        conversationId: command.conversationId, partnerId: command.partnerId,
+        source: command.connectionSource, nativeThreadId: event.sessionId,
+      });
+    }
+  }
+
   const useLegacyRunPath = process.env.ASTERIUM_USE_LEGACY_RUN_PATH === '1';
   const projectTaskRuntime = new ProjectTaskRuntime({
     catalog: studioRuntimeCatalog,
@@ -2148,6 +2257,65 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const threads = await listCodexThreads(runtime.executablePath, workingDirectory);
     const reserved = new Set(await nativeBindings.activeNativeThreadIds());
     return threads.filter((thread) => !reserved.has(thread.threadId));
+  });
+
+  type CodexHistoryRequest = import('../shared/codexHistory').CodexHistoryRequest;
+  type CodexHistorySearchRequest = import('../shared/codexHistory').CodexHistorySearchRequest;
+  const assertCodexHistoryBinding = async (request: CodexHistoryRequest) => {
+    const binding = await nativeBindings.getForScope(request.partnerId, 'single', request.conversationId);
+    if (binding?.source !== 'local_cli' || binding.state !== 'active' || binding.nativeThreadId !== request.threadId
+      || await conversationDeletions.isDeleted(request.conversationId)) throw new Error('CODEX_HISTORY_BINDING_UNAVAILABLE');
+  };
+  const resolveBoundCodexHistory = async (value: unknown) => {
+    if (!isRecord(value) || typeof value.conversationId !== 'string' || !value.conversationId.trim() || value.conversationId.length > 512
+      || typeof value.threadId !== 'string' || value.threadId.length > 512
+      || (value.cursor !== undefined && !isCodexHistoryCursor(value.cursor))
+      || (value.aroundTurnId !== undefined && (typeof value.aroundTurnId !== 'string' || !value.aroundTurnId.trim() || value.aroundTurnId.length > 512))
+      || !isLocalThreadLifecycleRequest({ ...value, adapterType: 'codex_cli', threadIds: [value.threadId] })) {
+      throw new Error('INVALID_CODEX_HISTORY_REQUEST');
+    }
+    const request = value as unknown as CodexHistoryRequest;
+    await assertCodexHistoryBinding(request);
+    const partnerRootGrantId = request.partnerRootGrantId ?? (await partnerWorkspaces.grantIds(request.partnerId))?.cwdGrantId;
+    return { request, ...await resolveCodexLifecycleRuntime({ ...request, partnerRootGrantId }) };
+  };
+
+  ipcMain.handle(AGENT_IPC.readCodexHistory, async (event, value: unknown) => {
+    requireSender(event);
+    const { request, runtime, workingDirectory } = await resolveBoundCodexHistory(value);
+    const page = request.aroundTurnId
+      ? await locateCodexHistoryTurn(runtime.executablePath, workingDirectory, request.threadId, request.aroundTurnId, request.cursor)
+      : await readCodexThreadHistory(runtime.executablePath, workingDirectory, request.threadId, request.cursor);
+    await assertCodexHistoryBinding(request);
+    return page;
+  });
+
+  const nativeHistorySearches = new WeakMap<Electron.WebContents, AbortController>();
+  ipcMain.handle(AGENT_IPC.searchCodexHistory, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.query !== 'string' || value.query.length > 512
+      || (value.after !== undefined && (!isRecord(value.after) || !Number.isSafeInteger(value.after.index)
+        || Number(value.after.index) < 0 || Number(value.after.index) >= 60
+        || (value.after.pageCursor !== undefined && !isCodexHistoryCursor(value.after.pageCursor))))) {
+      throw new Error('INVALID_CODEX_HISTORY_SEARCH');
+    }
+    const { sender } = event;
+    nativeHistorySearches.get(sender)?.abort();
+    const cancellation = new AbortController();
+    nativeHistorySearches.set(sender, cancellation);
+    const onDestroy = () => cancellation.abort();
+    sender.once('destroyed', onDestroy);
+    try {
+      const { request, runtime, workingDirectory } = await resolveBoundCodexHistory(value);
+      const query = value as unknown as CodexHistorySearchRequest;
+      const page = await searchCodexThreadHistory(runtime.executablePath, workingDirectory, query, cancellation.signal);
+      cancellation.signal.throwIfAborted();
+      await assertCodexHistoryBinding(request);
+      return page;
+    } finally {
+      sender.removeListener('destroyed', onDestroy);
+      if (nativeHistorySearches.get(sender) === cancellation) nativeHistorySearches.delete(sender);
+    }
   });
 
   ipcMain.handle(AGENT_IPC.listCodexModels, async (event, value: unknown) => {
@@ -3018,7 +3186,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       host.bindRun(receipt.runId, adapter);
       host.bindSession(command.partnerId, command.conversationId, receipt.sessionId, adapter);
       if (command.route?.scope === 'group') await studioRooms.bindRun(command.route.roomId, command.route.roundId, command.partnerId, receipt.runId, receipt.sessionId);
-      await sessionBootstrapRecorder.onBound(firstEvent as Extract<PartnerEvent, { type: 'session.bound' }>, command);
+      const bound = firstEvent as Extract<PartnerEvent, { type: 'session.bound' }>;
+      await persistFirstSingleChatBinding(bound, command);
+      await sessionBootstrapRecorder.onBound(bound, command);
       void (async () => {
         let lastSequence = firstEvent.sequence;
         try {
@@ -3250,6 +3420,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     runCoordinator.clearIdempotency();
     await host.dispose();
     await messageAttachments.dispose();
+    await singleChatHistory.flush();
     grants.clear();
   };
 }
@@ -3507,6 +3678,10 @@ function isLocalSendRequest(value: unknown): value is LocalCliSendRequest {
     && (value.codexRuntimeId === undefined || typeof value.codexRuntimeId === 'string')
     && (value.codexRuntimeEnvironment === undefined || ['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))
     && isRecord(value.command);
+}
+
+function isCodexHistoryCursor(value: unknown) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 2048;
 }
 
 function isLocalThreadLifecycleRequest(value: unknown): value is LocalThreadLifecycleRequest {

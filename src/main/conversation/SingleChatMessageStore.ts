@@ -1,3 +1,5 @@
+import type { SingleChatHistoryStore } from './SingleChatHistoryStore';
+import { fromIndexedMessage, projectSingleChat } from './singleChatHistoryProjection';
 import type { AtomicJsonStorePath } from '../storage/AtomicJsonStore';
 import { AtomicJsonStore } from '../storage/AtomicJsonStore';
 import { assertSingleChatConversationSnapshots, type SingleChatConversationSnapshot } from '../../shared/singleChatMessages';
@@ -10,7 +12,7 @@ interface SingleChatMessageFile {
 export class SingleChatMessageStore {
   private readonly storage: AtomicJsonStore<SingleChatMessageFile>;
 
-  constructor(filePath: AtomicJsonStorePath) {
+  constructor(filePath: AtomicJsonStorePath, private readonly history?: SingleChatHistoryStore) {
     this.storage = new AtomicJsonStore({
       filePath,
       empty: () => ({ version: 1, conversations: {} }),
@@ -20,6 +22,7 @@ export class SingleChatMessageStore {
 
   async sync(snapshots: SingleChatConversationSnapshot[]) {
     assertSingleChatConversationSnapshots(snapshots);
+    if (await this.history?.isActive()) return;
     await this.storage.runExclusive(async () => {
       const previous = await this.storage.readNow();
       const conversations = Object.fromEntries(snapshots.map((snapshot) => [snapshot.conversationId, structuredClone(snapshot)]));
@@ -35,11 +38,20 @@ export class SingleChatMessageStore {
   }
 
   async getConversation(conversationId: string) {
+    const active = await this.history?.readProjection(conversationId);
+    if (active) return active.conversations.map(item => projectSingleChat(item, active.profile, active.busy.has(item.id)))[0];
     const value = (await this.storage.read()).conversations[conversationId];
     return value ? structuredClone(value) : undefined;
   }
 
-  async list() {
+  async list(includesPartner?: (partnerId: string) => boolean) {
+    const active = await this.history?.readProjection(undefined, includesPartner);
+    if (active) return active.conversations.map(item => projectSingleChat(item, active.profile, active.busy.has(item.id)));
+    const legacy = await this.listLegacy();
+    return includesPartner ? legacy.filter(item => includesPartner(item.partnerId)) : legacy;
+  }
+
+  async listLegacy() {
     return structuredClone(Object.values((await this.storage.read()).conversations));
   }
 
@@ -50,6 +62,7 @@ export class SingleChatMessageStore {
 
   async upsertMessage(conversationId: string, partnerId: string, message: SingleChatConversationSnapshot['messages'][number]) {
     assertSingleChatConversationSnapshots([{ conversationId, partnerId, messages: [message] }]);
+    if (await this.history?.upsertManagedMessage(conversationId, partnerId, fromIndexedMessage(message))) return;
     await this.storage.runExclusive(async () => {
       const value = await this.storage.readNow();
       const current = value.conversations[conversationId];
@@ -81,6 +94,7 @@ export class SingleChatMessageStore {
   }
 
   async deleteConversation(conversationId: string) {
+    if (await this.history?.deleteConversation(conversationId)) return;
     await this.storage.runExclusive(async () => {
       const value = await this.storage.readNow();
       if (!(conversationId in value.conversations)) return;
