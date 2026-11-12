@@ -6,6 +6,7 @@ import { installWindowsScreenshotShortcut } from './settings/windowsScreenshotSh
 import { DesktopLifecycle } from './settings/DesktopLifecycle';
 import { windowsStartupRegistration } from './settings/windowsStartup';
 import appIcon from '../../assets/asterium-icon.png?inline';
+import windowIcon from '../../assets/asterium.window.png?inline';
 import path from 'node:path';
 import { registerTitlebarThemeChannel, installAppearanceRecovery } from './titlebar';
 import { registerAgentIpc } from './agentIpc';
@@ -104,7 +105,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 720,
     show: false,
-    icon: nativeImage.createFromDataURL(appIcon),
+    icon: nativeImage.createFromDataURL(windowIcon),
     backgroundColor: '#071321',
     titleBarStyle: 'hidden',
     titleBarOverlay: {

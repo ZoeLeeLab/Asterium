@@ -129,6 +129,7 @@ import { StudioWakeControlService } from './studio/StudioWakeControlService';
 import { StudioWakeEventStore } from './studio/StudioWakeEventStore';
 import { StudioWakeEvents } from './studio/StudioWakeEvents';
 import { RunCoordinator, sameEventRoute, streamFailureEvent, withCommandRoute } from './runtime/RunCoordinator';
+import { codexThreadInUseFailure } from '../shared/codexThreadInUse';
 import { WriterLeaseCoordinator } from './runtime/WriterLeaseCoordinator';
 import { SessionCompactionService } from './runtime/SessionCompactionService';
 import { compactApiSession } from './api/ApiSessionCompactor';
@@ -3258,7 +3259,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         await nativeBindings.invalidateGroupTurn(command).catch(() => undefined);
         await studioRooms.failPreparedTurn(command.route.roomId, command.route.roundId, command.partnerId).catch(() => undefined);
       }
-      delivery(command, 'failed', {
+      delivery(command, 'failed', codexThreadInUseFailure(error) ?? {
         code: 'ADAPTER_START_FAILED',
         message: '无法启动伙伴会话。',
         stage: 'adapter',

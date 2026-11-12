@@ -1,9 +1,48 @@
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
+  CodexAppServerClient,
   CodexEventMapper,
   approvalResponse,
   mapCodexApprovalRequest,
 } from '../../src/main/adapters/codexAppServerProtocol';
+import { CODEX_THREAD_IN_USE } from '../../src/shared/codexThreadInUse';
+
+describe('Codex app-server thread resume', () => {
+  it('identifies a refused resume for the requested thread before a turn starts', async () => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exitCode: 0,
+    });
+    let occupied = true;
+    let code = -32600;
+    let writerThreadId = 'thread-1';
+    child.stdin.on('data', (data: Buffer) => {
+      const { id, method } = JSON.parse(data.toString());
+      if (id === undefined) return;
+      const result = method === 'initialize' || !occupied
+        ? { result: { thread: { id: 'thread-1' } } }
+        : { error: { code, message: `thread ${writerThreadId} already has an active writer` } };
+      child.stdout.write(`${JSON.stringify({ id, ...result })}\n`);
+    });
+    const client = new CodexAppServerClient('codex', '.', () => child as unknown as ChildProcessWithoutNullStreams);
+    try {
+      await client.start();
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).rejects.toThrow(CODEX_THREAD_IN_USE);
+      await expect(client.request('turn/start', { threadId: 'thread-1' })).rejects.toThrow('CODEX_RPC_ERROR');
+      code = -32603;
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).rejects.toThrow('CODEX_RPC_ERROR');
+      code = -32600;
+      writerThreadId = 'thread-2';
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).rejects.toThrow('CODEX_RPC_ERROR');
+      occupied = false;
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).resolves.toEqual({ thread: { id: 'thread-1' } });
+    } finally {
+      await client.close();
+    }
+  });
+});
 
 describe('Codex app-server protocol mapping', () => {
   it('maps streamed text and preserves reasoning summaries for expansion', () => {

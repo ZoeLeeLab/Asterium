@@ -1,4 +1,5 @@
 import type { ToolOutputReference } from '../../../shared/toolOutput';
+import type { ContextHandoff } from '../../../shared/contextHandoff';
 import type {
   ArtifactAvailability,
   ArtifactRegistrationMethod,
@@ -33,6 +34,7 @@ export interface Message {
   content: string;
   attachments?: MessageAttachment[];
   quote?: MessageQuote;
+  retryContextHandoff?: ContextHandoff;
   createdAt: string;
   occurredAt?: string;
   status?: MessageDeliveryState;

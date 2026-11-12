@@ -1,6 +1,6 @@
 import { useNativeCodexHistory } from '../app/nativeCodexHistory';
 import { useSingleChatTimeline } from '../app/useSingleChatTimeline';
-import { supportsContextHandoff } from '../app/singleChatRuntime';
+import { canRetryCodexMessage, supportsContextHandoff } from '../app/singleChatRuntime';
 import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
 import type { CyberBossChatFileCapabilities } from '../../shared/cyberBossChatAttachments';
 import { MessageAttachmentCards } from '../components/chat/MessageAttachmentCards';
@@ -81,6 +81,7 @@ export function ChatPage() {
     selectConversation,
     chatHistoryPage,
     chatHistoryLoading,
+    chatHistorySaving,
     selectProject,
     createConversation,
     renameConversation,
@@ -93,6 +94,7 @@ export function ChatPage() {
     setConversationCodexModel,
     prepareConversationWorkspace,
     sendChatMessage,
+    retryCodexMessage,
     selectGroupChat,
     contextHandoffDraft,
     setContextHandoffDraft,
@@ -302,9 +304,12 @@ export function ChatPage() {
     if (activeConversationId && compaction) dismissChatCompaction(activeConversationId, compaction);
   }, [activeConversationId, compaction, dismissChatCompaction]);
   const compacting = compaction?.state === 'running' || Boolean(activeConversation && chatMaintenanceRunning[activeConversation.id]);
+  const lastStoredMessage = storedConversation?.messages.at(-1);
+  const retryableCodexMessage = !historyDetached && !chatHistoryLoading && !compacting
+    && canRetryCodexMessage(activePartner, storedConversation, lastStoredMessage) ? lastStoredMessage : undefined;
   const nativeThreadUnavailable = activeConversation?.nativeThreadState === 'unavailable' || activeConversation?.nativeThreadState === 'deleted';
   const canRegenerate = !historyDetached && !chatHistoryLoading && activePartner?.sourceMode !== 'existing_thread'
-    && !compacting
+    && !compacting && !retryableCodexMessage
     && !activeConversation?.activeRun && !activeConversation?.isDisabled && !workspaceMismatch && !latestUserMessage?.isGuidance;
   const cyberBossChat = activePartner?.sourceMode === 'existing_thread';
   const cyberBossConnected = cyberBossChat && !activePartner.isPrototype && activePartner.configured && activePartner.connectionStatus === 'connected';
@@ -1168,6 +1173,11 @@ export function ChatPage() {
                           </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onArtifactContextMenu={openArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
                         </div>
                       </div>
+                      {retryableCodexMessage?.id === message.id && <div className="run-notice message-retry">
+                        <CircleAlert size={14} aria-hidden="true" />
+                        <span role="status">{message.error?.message}</span>
+                        <button className="text-button" type="button" disabled={chatHistorySaving} onClick={() => void retryCodexMessage(activeConversation.id, message.id)}>重试</button>
+                      </div>}
                       {showStreamTail && <span className="stream-tail" role="status" aria-label={`${author?.publicIdentity.displayName ?? '伙伴'}仍在工作`}><i /><i /><i /></span>}
                       {!receiptOnly && <div className="message-actions"><button className={copiedMessageId === message.id ? 'copied' : ''} type="button" onClick={() => void copyMessage(message)} title="复制本段对话">{copiedMessageId === message.id ? <Check size={14} /> : <Copy size={14} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{canQuote && <button type="button" onClick={() => quoteWholeMessage(message)} title="引用这段回复"><Quote size={14} /><span>引用</span></button>}{canRegenerate && mine && isLatestUser && <button type="button" onClick={() => { setEditingMessageId(message.id); setEditingText(message.content); }} title="编辑并重新生成"><Pencil size={14} /><span>编辑并重新生成</span></button>}{canRegenerate && !mine && isLatestAssistant && <button type="button" onClick={() => regenerateChatTurn(activeConversation.id)} title="重新生成"><RotateCcw size={14} /><span>重新生成</span></button>}</div>}
                     </div>

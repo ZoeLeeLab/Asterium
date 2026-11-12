@@ -15,6 +15,7 @@ import {
   type SendMessageReceipt,
 } from '../../shared/agentProtocol';
 import { isPartnerEvent } from '../../shared/agentProtocolValidation';
+import { codexThreadInUseFailure } from '../../shared/codexThreadInUse';
 import { conversationWriterScope, WriterLeaseCoordinator, type WriterLease } from './WriterLeaseCoordinator';
 
 export interface RunCoordinatorHooks {
@@ -94,7 +95,7 @@ export class RunCoordinator {
     } catch (error) {
       lease.release();
       await this.hooks.onStartFailure?.(error, command);
-      this.hooks.deliver(command, 'failed', {
+      this.hooks.deliver(command, 'failed', codexThreadInUseFailure(error) ?? {
         code: 'ADAPTER_START_FAILED',
         message: '无法启动伙伴会话。',
         stage: 'adapter',

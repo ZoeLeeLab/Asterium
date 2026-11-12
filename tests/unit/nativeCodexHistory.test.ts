@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import type { CodexHistoryTurn } from '../../src/shared/codexHistory';
+import { codexThreadInUseFailure } from '../../src/shared/codexThreadInUse';
 import { mergeNativeCodexMessages } from '../../src/renderer/app/nativeCodexHistory';
 import { ASTERIUM_USER_ID } from '../../src/shared/identity';
 import type { Conversation } from '../../src/renderer/types/domain';
@@ -38,6 +39,23 @@ it('reuses a local user message when only its native answer survived', () => {
     { id: 'answer', kind: 'assistant', text: '已从原线程恢复' },
   ] }];
   expect(mergeNativeCodexMessages(current, turns).map(message => message.content)).toEqual(['开始', '已从原线程恢复']);
+});
+
+it('keeps a refused local message separate from an identical prompt accepted in Codex', () => {
+  const current: Conversation = {
+    id: 'fixture-chat', partnerId: 'fixture-partner', title: '', updatedAt: '',
+    messages: [{
+      id: 'refused', authorId: ASTERIUM_USER_ID, content: '继续', createdAt: '00:00', status: 'failed',
+      error: codexThreadInUseFailure(new Error('CODEX_THREAD_IN_USE')),
+    }],
+  };
+  const turns: CodexHistoryTurn[] = [{ id: 'native-turn', state: 'completed', items: [
+    { id: 'prompt', kind: 'user', text: '继续' },
+    { id: 'answer', kind: 'assistant', text: '继续整理中' },
+  ] }];
+  const messages = mergeNativeCodexMessages(current, turns);
+  expect(messages.filter(message => message.authorId === ASTERIUM_USER_ID)).toHaveLength(2);
+  expect(messages.find(message => message.id === 'refused')).toBe(current.messages[0]);
 });
 
 it('shows native-only turns in chronological order and leaves an active live turn alone', () => {

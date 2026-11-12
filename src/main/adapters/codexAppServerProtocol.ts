@@ -2,6 +2,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child
 import readline from 'node:readline';
 import { promisify } from 'node:util';
 import type { ProtocolError } from '../../shared/agentProtocol';
+import { CODEX_THREAD_IN_USE } from '../../shared/codexThreadInUse';
 import { MarkdownArtifactParser } from './markdownArtifactParser';
 
 const execFileAsync = promisify(execFile);
@@ -76,7 +77,11 @@ async function stopChild(child: ChildProcessWithoutNullStreams) {
 export class CodexAppServerClient implements CodexAppServerTransport {
   private child?: ChildProcessWithoutNullStreams;
   private lines?: readline.Interface;
-  private readonly pending = new Map<JsonRpcId, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  private readonly pending = new Map<JsonRpcId, {
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+    resumeThreadId?: string;
+  }>();
   private readonly messageListeners = new Set<(message: CodexRpcMessage) => void>();
   private readonly closeListeners = new Set<(error: Error) => void>();
   private nextRequestId = 0;
@@ -133,7 +138,8 @@ export class CodexAppServerClient implements CodexAppServerTransport {
     if (!this.child || this.closing) return Promise.reject(new Error('CODEX_APP_SERVER_NOT_CONNECTED'));
     const id = ++this.nextRequestId;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: (value) => resolve(value as T), reject });
+      const resumeThreadId = method === 'thread/resume' && typeof params?.threadId === 'string' ? params.threadId : undefined;
+      this.pending.set(id, { resolve: (value) => resolve(value as T), reject, resumeThreadId });
       try {
         this.write({ id, method, params });
       } catch (error) {
@@ -179,8 +185,12 @@ export class CodexAppServerClient implements CodexAppServerTransport {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(`CODEX_RPC_ERROR: ${safeText(message.error.message, 'unknown error')}`));
-      else pending.resolve(message.result);
+      if (message.error) {
+        const detail = safeText(message.error.message, 'unknown error');
+        const occupied = pending.resumeThreadId && message.error.code === -32600
+          && detail === `thread ${pending.resumeThreadId} already has an active writer`;
+        pending.reject(new Error(occupied ? CODEX_THREAD_IN_USE : `CODEX_RPC_ERROR: ${detail}`));
+      } else pending.resolve(message.result);
       return;
     }
     for (const listener of this.messageListeners) listener(message);

@@ -77,7 +77,7 @@ export type PrototypeAction =
   | { type: 'restoreGroupChat'; groupChatId: string }
   | { type: 'removeGroupChat'; groupChatId: string }
   | { type: 'toggleGroupMember'; groupChatId: string; partnerId: string }
-  | { type: 'sendChatMessage'; conversationId: string; message: Message; historySaved?: boolean }
+  | { type: 'sendChatMessage'; conversationId: string; message: Message; historySaved?: boolean; retryOfClientMessageId?: string }
   | { type: 'sendChatGuidance'; conversationId: string; runId: RunId; message: Message; waitForApplication?: boolean }
   | { type: 'rejectChatGuidance'; conversationId: string; clientMessageId: string }
   | { type: 'addConversationArtifact'; conversationId: string; artifact: ConversationArtifact }

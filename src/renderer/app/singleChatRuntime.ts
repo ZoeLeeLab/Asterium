@@ -1,4 +1,5 @@
 import type { ContextHandoff } from '../../shared/contextHandoff';
+import { CODEX_THREAD_IN_USE, codexThreadInUseFailure } from '../../shared/codexThreadInUse';
 import type { AsteriumAgentsApi, AsteriumAttachmentsApi } from '../../shared/desktopBridge';
 import { ASTERIUM_USER_ID, isAsteriumUser } from '../../shared/identity';
 import {
@@ -48,6 +49,7 @@ export interface SendSingleChatMessageRequest extends SingleChatRuntimeContext {
   workspaceDecision?: WorkspaceSwitchDecision;
   contextHandoff?: ContextHandoff;
   quote?: MessageQuote;
+  retryOf?: Message;
 }
 
 export interface RegenerateSingleChatTurnRequest extends SingleChatRuntimeContext {
@@ -167,6 +169,16 @@ function localPermissionMode(partner: Extract<Partner, { sourceMode: 'local_cli'
   return partner.adapterType === 'claude_code' && requested === 'automatic' ? 'manual' : requested;
 }
 
+export function canRetryCodexMessage(partner: Partner | undefined, conversation: Conversation | undefined, message: Message | undefined) {
+  return Boolean(partner?.sourceMode === 'local_cli' && partner.adapterType === 'codex_cli' && partner.connectionKind === 'local_codex' && !partner.isRemoved
+    && conversation?.sessionId && !conversation.isDisabled && !conversation.isArchived
+    && !conversation.activeRun && !conversation.awaitingFirstResponse
+    && conversation.nativeThreadState !== 'deleted' && conversation.nativeThreadState !== 'archived'
+    && !conversationWorkspaceMismatch(partner, conversation)
+    && message && isAsteriumUser(message.authorId) && message.clientMessageId
+    && conversation.messages.at(-1) === message && message.status === 'failed' && message.error?.code === CODEX_THREAD_IN_USE);
+}
+
 export async function sendSingleChatMessage({
   state,
   dispatch,
@@ -179,9 +191,11 @@ export async function sendSingleChatMessage({
   workspaceDecision,
   quote,
   contextHandoff,
+  retryOf,
 }: SendSingleChatMessageRequest): Promise<boolean> {
   let conversation = state.conversations.find((item) => item.id === conversationId);
   let partner = state.partners.find((item) => item.id === conversation?.partnerId);
+  if (retryOf && !canRetryCodexMessage(partner, conversation, retryOf)) return false;
   const explicitlyStartingNewNativeThread = workspaceDecision === 'new_session_in_current_cwd';
   if (partner?.isRemoved || conversation?.isDisabled) return false;
   if (conversation && partner?.sourceMode === 'local_cli' && conversationWorkspaceMismatch(partner, conversation)) {
@@ -248,9 +262,15 @@ export async function sendSingleChatMessage({
     });
     return false;
   }
-  const visibleMessageId = messageId ?? makeId('message');
-  const clientMessageId = 'client-' + visibleMessageId;
-  const visibleMessage = { ...createSingleChatMessage(content, attachments, visibleMessageId, quote), clientMessageId, status: 'sending' as const };
+  const visibleMessageId = retryOf?.id ?? messageId ?? makeId('message');
+  const clientMessageId = retryOf ? makeId('client-retry') : 'client-' + visibleMessageId;
+  const visibleMessage: Message = {
+    ...(retryOf ?? createSingleChatMessage(content, attachments, visibleMessageId, quote)),
+    ...(contextHandoff && partner.sourceMode === 'local_cli' && partner.adapterType === 'codex_cli' ? { retryContextHandoff: contextHandoff } : {}),
+    clientMessageId,
+    status: 'sending',
+    error: undefined,
+  };
   const sourceMessage = { messageId: visibleMessage.id, authorType: 'user' as const, authorId: visibleMessage.authorId, content: visibleMessage.content, createdAt: visibleMessage.createdAt, occurredAt: visibleMessage.occurredAt };
   if (saveBeforeSend && !await saveBeforeSend(conversation, visibleMessage)) return false;
   dispatch({
@@ -258,6 +278,7 @@ export async function sendSingleChatMessage({
     conversationId,
     message: visibleMessage,
     historySaved: Boolean(saveBeforeSend),
+    ...(retryOf?.clientMessageId ? { retryOfClientMessageId: retryOf.clientMessageId } : {}),
   });
   const runtimeContent = formatMessageWithQuote(content, quote);
   const fail = (error: ProtocolError) => dispatch({ type: 'messageSendFailed', conversationId, clientMessageId, error });
@@ -363,7 +384,7 @@ export async function sendSingleChatMessage({
   const send = bridge.agents.sendLocalCliMessage
     ? bridge.agents.sendLocalCliMessage(partner.adapterType, partner.id, partnerRootGrantId, grantIds, command, partner.codexRuntimeId, partner.codexRuntime?.environment)
     : bridge.agents.sendClaudeMessage(partner.id, partnerRootGrantId, grantIds, command);
-  void send.then((receipt) => dispatch({ type: 'bindRunReceipt', conversationId, clientMessageId, ...receipt })).catch((error) => fail({
+  void send.then((receipt) => dispatch({ type: 'bindRunReceipt', conversationId, clientMessageId, ...receipt })).catch((error) => fail(codexThreadInUseFailure(error) ?? {
     code: 'LOCAL_CLI_SEND_FAILED',
     message: error instanceof Error && error.message.includes('PARTNER_ROOT_GRANT_REQUIRED') ? '伙伴配置来源授权已失效，请在伙伴管理中重新导入。' : `消息未能发送给 ${partner.adapterType === 'codex_cli' ? 'Codex' : 'Claude Code'}。`,
     stage: 'transport',
