@@ -239,9 +239,14 @@ describe('local Codex renderer flow', () => {
   it('lets the user choose an existing Codex thread and imports it into a new chat window', async () => {
     const sentCommands: SendMessageCommand[] = [];
     let directoryAvailable = false;
-    const chooseCodexThread = vi.fn(async () => ({
-      selectionId: 'selection-imported', threadId: 'thread-imported', title: '已有研究线程',
-      cwd: 'K:\\qa\\thread-import', updatedAt: '2026-09-11T12:00:00.000Z', directoryAvailable,
+    const chooseCodexThreadDirectory = vi.fn(async () => ({
+      date: '2026-09-03', unavailableCount: 0, threads: [
+        { selectionId: 'selection-imported', threadId: 'thread-imported', title: '已有研究线程',
+          cwd: 'K:\\qa\\thread-import', updatedAt: '2026-09-11T12:00:00.000Z', directoryAvailable,
+          currentRecord: { date: '2026-09-07' } },
+        { selectionId: 'selection-other', threadId: 'thread-other', title: '同日另一条线程',
+          cwd: 'K:\\qa\\other', directoryAvailable: true },
+      ],
     }));
     const confirmCodexThreadImport = vi.fn(async (_selectionId: string, partnerId: string) => ({
       kind: 'conversation' as const,
@@ -262,7 +267,7 @@ describe('local Codex renderer flow', () => {
           { runtimeId: 'runtime-desktop', executablePath: 'C:\\desktop\\codex.exe', executableLabel: 'codex.exe', environment: 'desktop_app' as const, environmentLabel: 'Codex 桌面应用', codexHome: 'C:\\Users\\fixture-user\\.codex', installed: true, loggedIn: true, version: '0.153.4', authMethod: 'using ChatGPT' },
         ],
       })),
-      chooseCodexThread,
+      chooseCodexThreadDirectory,
       confirmCodexThreadImport,
       codexImportedWorkspaceStatus: vi.fn(async () => ({ directory: 'K:\\qa\\thread-import', available: directoryAvailable })),
       chooseCodexImportedDirectory,
@@ -292,14 +297,21 @@ describe('local Codex renderer flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '导入配置来源' }));
     expect(await screen.findByText('J:\\qa\\partner-source')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '导入已有线程' }));
-    fireEvent.click(await screen.findByRole('button', { name: '确认选择' }));
-    expect(chooseCodexThread).toHaveBeenCalledWith('runtime-global');
+    const confirmSelection = await screen.findByRole('button', { name: '确认选择' });
+    expect(confirmSelection).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /同日另一条线程/ })).toBeInTheDocument();
+    expect(screen.getByText('将续接 Codex 当前记录（2026-09-07）')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /已有研究线程/ }));
+    fireEvent.click(confirmSelection);
+    expect(chooseCodexThreadDirectory).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeId: 'runtime-global', runtimeEnvironment: 'global_cli',
+    }));
     expect(confirmCodexThreadImport).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText(/显示名称/), { target: { value: '续接伙伴' } });
     fireEvent.change(screen.getByLabelText('称呼或 @ 名称'), { target: { value: '续接伙伴' } });
     fireEvent.click(screen.getByRole('button', { name: '确认邀请本地伙伴' }));
     const chooseDirectory = await screen.findByRole('button', { name: '重新选择目录' });
-    expect(confirmCodexThreadImport).toHaveBeenCalledTimes(1);
+    expect(confirmCodexThreadImport).toHaveBeenCalledExactlyOnceWith('selection-imported', expect.any(String), 'manual');
     expect(screen.getByRole('textbox', { name: '请先重新选择工作目录' })).toBeDisabled();
     fireEvent.click(chooseDirectory);
     await waitFor(() => expect(chooseCodexImportedDirectory).toHaveBeenCalledWith(expect.any(String), 'conversation-imported'));

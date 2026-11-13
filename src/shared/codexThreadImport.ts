@@ -1,3 +1,15 @@
+export interface CodexThreadDirectoryRequest {
+  runtimeId?: string;
+  runtimeEnvironment?: import('./contracts/connections').CodexRuntimeInfo['environment'];
+  codexHome?: string;
+}
+
+export interface CodexThreadDirectoryPreview {
+  date: string;
+  threads: CodexThreadImportPreview[];
+  unavailableCount: number;
+}
+
 export interface CodexThreadImportPreview {
   selectionId: string;
   threadId: string;
@@ -5,6 +17,7 @@ export interface CodexThreadImportPreview {
   cwd: string;
   updatedAt?: string;
   directoryAvailable: boolean;
+  currentRecord?: { date?: string };
 }
 
 export interface ImportedCodexWorkspace {

@@ -80,7 +80,7 @@ function applyWorkspaceState(partner: LocalCliPartner | ApiPartner, workspace: P
   };
 }
 
-import type { CodexThreadImportPreview } from '../../shared/codexThreadImport';
+import type { CodexThreadDirectoryPreview, CodexThreadImportPreview } from '../../shared/codexThreadImport';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -118,7 +118,9 @@ export function SettingsPage() {
   const [, setApiCredentialConfigured] = useState(false);
   const [cli, setCli] = useState<CliDetectionResult | CodexDetectionResult>();
   const [selectedCodexRuntimeId, setSelectedCodexRuntimeId] = useState('');
-  const [codexThreadPreview, setCodexThreadPreview] = useState<CodexThreadImportPreview>();
+  const [codexThreadDirectory, setCodexThreadDirectory] = useState<CodexThreadDirectoryPreview>();
+  const [codexThreadSelectionId, setCodexThreadSelectionId] = useState<string>();
+  const codexThreadPreview = codexThreadDirectory?.threads.find(thread => thread.selectionId === codexThreadSelectionId);
   const [pendingCodexImport, setPendingCodexImport] = useState<CodexThreadImportPreview>();
   const [codexImportError, setCodexImportError] = useState('');
   const [selectedClaudeSession, setSelectedClaudeSession] = useState<{ sessionId: string; sessionFilePath: string }>();
@@ -194,7 +196,8 @@ export function SettingsPage() {
     setApiCredentialConfigured(false);
     setCli(undefined);
     setSelectedCodexRuntimeId('');
-    setCodexThreadPreview(undefined);
+    setCodexThreadDirectory(undefined);
+    setCodexThreadSelectionId(undefined);
     setPendingCodexImport(undefined);
     setSelectedClaudeSession(undefined);
     setGrants([]);
@@ -466,15 +469,20 @@ export function SettingsPage() {
   const loadCodexThread = async () => {
     setThreadsBusy(true);
     setFormError('');
-    setCodexThreadPreview(undefined);
+    setCodexThreadDirectory(undefined);
+    setCodexThreadSelectionId(undefined);
     setCodexImportError('');
     try {
-      const choose = window.asteriumAgents?.chooseCodexThread;
+      const choose = window.asteriumAgents?.chooseCodexThreadDirectory;
       if (!choose) throw new Error('当前桌面桥接尚未提供 Codex 线程导入能力');
-      const runtimeId = selectedCodexRuntimeId || (editingPartner?.sourceMode === 'local_cli' ? editingPartner.codexRuntimeId : undefined);
-      if (!runtimeId) throw new Error('请先检测并选择 Codex 运行时。');
-      const preview = await choose(runtimeId);
-      if (preview) setCodexThreadPreview(preview);
+      const partner = editingPartner?.sourceMode === 'local_cli' && editingPartner.adapterType === 'codex_cli' ? editingPartner : undefined;
+      const runtimeId = selectedCodexRuntimeId || partner?.codexRuntimeId;
+      const selectedRuntime = cli && isCodexDetectionResult(cli)
+        ? cli.runtimes.find(runtime => runtime.runtimeId === runtimeId) : undefined;
+      const runtime = selectedRuntime ?? partner?.codexRuntime;
+      if (!runtimeId && !runtime?.environment) throw new Error('请先检测并选择 Codex 运行时。');
+      const directory = await choose({ runtimeId, runtimeEnvironment: runtime?.environment, codexHome: runtime?.codexHome || undefined });
+      if (directory) setCodexThreadDirectory(directory);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : '读取 Codex 线程失败');
     } finally {
@@ -491,7 +499,7 @@ export function SettingsPage() {
       const result = await confirm(preview.selectionId, partner.id, partner.defaultPermissionMode ?? 'manual');
       if (result.kind === 'bound_elsewhere') throw new Error('这条 Codex 线程已绑定工作室或其他会话。');
       openImportedConversation(result.conversation);
-      setCodexThreadPreview(undefined);
+      setCodexThreadDirectory(undefined);
       setPendingCodexImport(undefined);
       navigate('/chat');
     } catch (error) {
@@ -972,22 +980,35 @@ export function SettingsPage() {
         </>}
       </section>
 
-      {codexThreadPreview && <Modal title="导入已有线程" onClose={() => { if (!threadsBusy) setCodexThreadPreview(undefined); }}>
-        <div className="modal-body">
-          <strong>{codexThreadPreview.title}</strong>
-          <p>{codexThreadPreview.cwd}</p>
-          <p>{codexThreadPreview.updatedAt ? new Date(codexThreadPreview.updatedAt).toLocaleString('zh-CN') : '更新时间未知'}</p>
-          <small>{codexThreadPreview.threadId}</small>
-          {!codexThreadPreview.directoryAvailable && <p className="form-error">原工作目录不可访问。打开历史后，请重新选择目录。</p>}
-          {codexImportError && <p className="form-error" role="alert">{codexImportError}</p>}
+      {codexThreadDirectory && <Modal title="导入已有线程" onClose={() => { if (!threadsBusy) setCodexThreadDirectory(undefined); }}>
+        <div className="modal-body codex-import-body">
+          {codexThreadDirectory.threads.length > 0 ? <fieldset className="codex-import-list" disabled={threadsBusy}>
+            <legend>{codexThreadDirectory.date} 的线程</legend>
+            {codexThreadDirectory.threads.map(thread => <label key={thread.selectionId} className="codex-import-option">
+              <input type="radio" name="codex-import-thread" checked={thread.selectionId === codexThreadSelectionId} onChange={() => {
+                setCodexThreadSelectionId(thread.selectionId);
+                setCodexImportError('');
+              }} />
+              <span>
+                <strong>{thread.title}</strong>
+                <small>{thread.updatedAt ? '最后更新 ' + new Date(thread.updatedAt).toLocaleString('zh-CN') : '更新时间未知'}</small>
+                <small className="codex-import-cwd" title={thread.cwd}>{thread.cwd}</small>
+                {thread.currentRecord && <small>将续接 Codex 当前记录{thread.currentRecord.date ? `（${thread.currentRecord.date}）` : ''}</small>}
+                {!thread.directoryAvailable && <small className="codex-import-warning">原目录不可访问，打开后可重新选择。</small>}
+              </span>
+            </label>)}
+          </fieldset> : <p>{codexThreadDirectory.date} 没有可导入的 Codex 线程。</p>}
+          {codexThreadDirectory.unavailableCount > 0 && <p className="codex-import-warning">有 {codexThreadDirectory.unavailableCount} 项记录无法确认，暂时无法导入。</p>}
+          {codexImportError && <p className="codex-import-warning" role="alert">{codexImportError}</p>}
         </div>
         <footer className="modal-footer">
-          <button className="secondary-button" type="button" disabled={threadsBusy} onClick={() => setCodexThreadPreview(undefined)}>取消</button>
-          <button className="primary-button" type="button" disabled={threadsBusy} onClick={() => {
+          <button className="secondary-button" type="button" disabled={threadsBusy} onClick={() => setCodexThreadDirectory(undefined)}>取消</button>
+          <button className="primary-button" type="button" disabled={threadsBusy || !codexThreadPreview} onClick={() => {
+            if (!codexThreadPreview) return;
             if (editingPartner) void openCodexImport(codexThreadPreview, editingPartner);
             else {
               setPendingCodexImport(codexThreadPreview);
-              setCodexThreadPreview(undefined);
+              setCodexThreadDirectory(undefined);
               setLocal(current => ({ ...current, sessionMode: 'resume' }));
               setFormDirty(true);
             }

@@ -225,6 +225,18 @@
 .partner-root-field > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .workspace-regrant { margin-top: 9px; padding: 9px; border-radius: var(--radius-sm); background: var(--surface-soft); }
 .workspace-regrant strong { color: var(--text); font-size: calc(9px * var(--ui-font-scale,1)); }
+.codex-import-body { font-size: calc(12px * var(--ui-font-scale,1)); text-align: left; }
+.codex-import-list { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.codex-import-list legend { margin-bottom: 6px; color: var(--muted); }
+.codex-import-option { display: flex; align-items: flex-start; gap: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--button-surface); cursor: pointer; }
+.codex-import-option:has(input:checked) { border-color: var(--button-selected-border); background: var(--button-selected); }
+.codex-import-option > input { flex: none; margin: 2px 0 0; }
+.codex-import-option > span { display: grid; flex: 1; min-width: 0; gap: 1px; line-height: 1.35; }
+.codex-import-option strong { font-size: calc(12px * var(--ui-font-scale,1)); overflow-wrap: anywhere; }
+.codex-import-option small { color: var(--muted); font-size: calc(10px * var(--ui-font-scale,1)); }
+.codex-import-cwd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.codex-import-body .codex-import-warning { color: var(--danger); overflow-wrap: anywhere; }
+.codex-import-body > .codex-import-warning { margin-top: 6px; }
 .codex-runtime-list, .codex-thread-picker { display: grid; gap: 7px; margin-top: 10px; }
 .runtime-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--text-strong); font-size: calc(10px * var(--ui-font-scale,1)); }
 .runtime-list-heading small, .codex-thread-picker > small, .thread-mode-note small { color: var(--muted); font-size: calc(8px * var(--ui-font-scale,1)); }

@@ -222,20 +222,46 @@ export async function detectCodexCli(): Promise<CodexInstallation> {
   };
 }
 
+async function readThreadMetadata(client: CodexAppServerTransport, threadId: string, signal: AbortSignal) {
+  const { thread } = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: false }), signal);
+  if (!isRecord(thread) || thread.id !== threadId || !text(thread.cwd)) throw new Error('CODEX_THREAD_METADATA_INVALID');
+  const timestamp = typeof thread.updatedAt === 'number' ? new Date(thread.updatedAt * 1000) : undefined;
+  return {
+    cwd: text(thread.cwd),
+    title: text(thread.name) || text(thread.preview).replace(/\s+/g, ' ').slice(0, 100) || '未命名 Codex 线程',
+    updatedAt: timestamp && Number.isFinite(timestamp.getTime()) ? timestamp.toISOString() : undefined,
+    file: text(thread.path),
+  };
+}
+
 export async function readCodexThreadMetadata(executablePath: string, workingDirectory: string, threadId: string, createTransport: CreateCodexTransport = defaultCreateTransport) {
   const client = createTransport(executablePath, workingDirectory);
   const signal = AbortSignal.timeout(10_000);
   try {
     await abortable(client.start(), signal);
-    const { thread } = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: false }), signal);
-    if (!isRecord(thread) || thread.id !== threadId || !text(thread.cwd)) throw new Error('CODEX_THREAD_METADATA_INVALID');
-    const timestamp = typeof thread.updatedAt === 'number' ? new Date(thread.updatedAt * 1000) : undefined;
-    return {
-      cwd: text(thread.cwd),
-      title: text(thread.name) || '未命名 Codex 线程',
-      updatedAt: timestamp && Number.isFinite(timestamp.getTime()) ? timestamp.toISOString() : undefined,
-      file: text(thread.path),
-    };
+    return await readThreadMetadata(client, threadId, signal);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+export async function readCodexThreadsMetadata(executablePath: string, workingDirectory: string, threadIds: string[], createTransport: CreateCodexTransport = defaultCreateTransport) {
+  const client = createTransport(executablePath, workingDirectory);
+  const results: Array<{ threadId: string; metadata?: Awaited<ReturnType<typeof readThreadMetadata>> }> = [];
+  try {
+    await abortable(client.start(), AbortSignal.timeout(10_000));
+    const batchSize = 8;
+    for (let offset = 0; offset < threadIds.length; offset += batchSize) {
+      const ids = threadIds.slice(offset, offset + batchSize);
+      const signal = AbortSignal.timeout(10_000);
+      const batch = await Promise.allSettled(ids.map(threadId => readThreadMetadata(client, threadId, signal)));
+      for (const [index, result] of batch.entries()) {
+        results.push({ threadId: ids[index], metadata: result.status === 'fulfilled' ? result.value : undefined });
+      }
+      // A stalled server would otherwise leave each remaining batch waiting for the same timeout.
+      if (signal.aborted || !client.connected) break;
+    }
+    return results;
   } finally {
     await client.close().catch(() => undefined);
   }

@@ -31,16 +31,16 @@ import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { app, BrowserWindow, clipboard, dialog, safeStorage, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { createAttachmentThumbnail } from './security/attachmentThumbnail';
 import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import { readClaudeSessionFile } from './adapters/claudeSessionFile';
-import { readCodexSessionHeader, sameCodexPath } from './adapters/codexSessionFile';
-import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type CodexThreadImportPreview, type CodexThreadImportResult, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
+import { codexSessionDirectoryDate, readCodexSessionDirectory, readCodexSessionHeader, sameCodexPath, sameCodexSessionRecord } from './adapters/codexSessionFile';
+import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type CodexThreadDirectoryPreview, type CodexThreadImportPreview, type CodexThreadImportResult, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, listCodexModels, readCodexThreadMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, listCodexModels, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -2286,12 +2286,17 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return codexInstallation;
   });
 
-  const codexImportSelections = new WeakMap<Electron.WebContents, {
-    runtime: CodexRuntimeInfo;
+  type CodexImportSelection = {
     file: string;
     preview: CodexThreadImportPreview;
     canonicalDirectory?: string;
+  };
+  const codexImportSelections = new WeakMap<Electron.WebContents, {
+    runtime: CodexRuntimeInfo;
+    entries: Map<string, CodexImportSelection>;
   }>();
+
+  const lastCodexImportDirectory = new WeakMap<Electron.WebContents, { codexHome: string; parent: string }>();
 
   async function availableImportedDirectory(directory: string, canonicalDirectory?: string) {
     if (!path.isAbsolute(directory)) return undefined;
@@ -2319,6 +2324,22 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return runtime;
   }
 
+  async function resolveCodexDirectoryRuntime(runtimeId?: string, environment?: CodexRuntimeInfo['environment'], codexHome?: string) {
+    const matches = (installation: CodexInstallation) => {
+      const runtimes = installation.runtimes.filter(runtime => !codexHome || sameCodexPath(runtime.codexHome, codexHome));
+      return resolveCodexRuntime(runtimes.filter(runtime => runtime.loggedIn), runtimeId, environment);
+    };
+    const hadCachedRuntimes = Boolean(codexInstallation?.runtimes.length);
+    let runtime = matches(await ensureCodexInstallation());
+    const stillInstalled = runtime && await access(runtime.executablePath).then(() => true, () => false);
+    if (!stillInstalled && hadCachedRuntimes) {
+      codexInstallation = await detectCodexCli();
+      runtime = matches(codexInstallation);
+    }
+    if (!runtime) throw new Error('找不到与伙伴配置相符且已登录的 Codex 运行时，请重新检测并选择。');
+    return runtime;
+  }
+
   async function resolveImportedCodexRuntime(workspace: ImportedCodexWorkspace) {
     const runtime = await resolveSelectedCodexRuntime(workspace.runtimeId, workspace.runtimeEnvironment);
     if (!sameCodexPath(runtime.codexHome, workspace.codexHome)) throw new Error('CODEX_IMPORTED_HOME_CHANGED');
@@ -2338,46 +2359,81 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return { binding, workspace: binding.importedCodexWorkspace };
   }
 
-  async function inspectCodexSelection(filePath: string, runtime: CodexRuntimeInfo, selectionId: string) {
-    const { file, threadId } = await readCodexSessionHeader(filePath, runtime.codexHome);
-    const { cwd, title, updatedAt, file: nativeFile } = await readCodexThreadMetadata(runtime.executablePath, os.homedir(), threadId);
-    if (!path.isAbsolute(cwd) || (nativeFile && !sameCodexPath(file, await realpath(nativeFile)))) {
-      throw new Error('所选文件与 Codex 中的原线程不一致，请重新选择。');
-    }
-    const canonicalDirectory = await availableImportedDirectory(cwd);
-    const preview: CodexThreadImportPreview = { selectionId, threadId, title, updatedAt, cwd, directoryAvailable: Boolean(canonicalDirectory) };
-    return { file, preview, canonicalDirectory };
+  async function validateCodexCurrentFile(runtime: CodexRuntimeInfo, threadId: string, nativeFile: string, cwd: string) {
+    if (!path.isAbsolute(cwd) || !path.isAbsolute(nativeFile)) throw new Error('CODEX_THREAD_METADATA_INVALID');
+    const { file, threadId: recordedId } = await readCodexSessionHeader(nativeFile, runtime.codexHome);
+    if (threadId !== recordedId) throw new Error('CODEX_THREAD_METADATA_INVALID');
+    return file;
   }
 
-  ipcMain.handle(AGENT_IPC.chooseCodexThread, async (event, value: unknown) => {
+  ipcMain.handle(AGENT_IPC.chooseCodexThreadDirectory, async (event, value: unknown): Promise<CodexThreadDirectoryPreview | null> => {
     const window = requireSender(event);
-    if (!isRecord(value) || typeof value.runtimeId !== 'string') throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
+    if (!isRecord(value) || (value.runtimeId !== undefined && typeof value.runtimeId !== 'string')
+      || (value.codexHome !== undefined && (typeof value.codexHome !== 'string' || !path.isAbsolute(value.codexHome)))) {
+      throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
+    }
+    const environment = value.runtimeEnvironment;
+    if (environment !== undefined && environment !== 'global_cli' && environment !== 'desktop_app'
+      && environment !== 'vscode_extension' && environment !== 'path') throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
     codexImportSelections.delete(event.sender);
-    const runtime = await resolveSelectedCodexRuntime(value.runtimeId);
+    const runtime = await resolveCodexDirectoryRuntime(value.runtimeId, environment, value.codexHome);
+    const lastDirectory = lastCodexImportDirectory.get(event.sender);
+    const defaultPath = lastDirectory && sameCodexPath(lastDirectory.codexHome, runtime.codexHome)
+      && await stat(lastDirectory.parent).then(entry => entry.isDirectory(), () => false)
+      ? lastDirectory.parent : path.join(runtime.codexHome, 'sessions');
     const result = await dialog.showOpenDialog(window, {
-      title: '导入已有线程',
-      defaultPath: path.join(runtime.codexHome, 'sessions'),
-      properties: ['openFile', 'showHiddenFiles'],
-      filters: [{ name: 'Codex 线程', extensions: ['jsonl'] }],
+      title: '选择 Codex 线程的年、月或日文件夹',
+      buttonLabel: '读取线程',
+      defaultPath,
+      properties: ['openDirectory', 'showHiddenFiles', 'dontAddToRecent'],
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    const { file, preview, canonicalDirectory } = await inspectCodexSelection(result.filePaths[0], runtime, randomUUID());
-    codexImportSelections.set(event.sender, { runtime, file, preview, canonicalDirectory });
-    return preview;
+    const directory = await readCodexSessionDirectory(result.filePaths[0], runtime.codexHome);
+    lastCodexImportDirectory.set(event.sender, { codexHome: runtime.codexHome, parent: path.dirname(directory.directory) });
+    const entries = new Map<string, CodexImportSelection>();
+    const threadIds = [...directory.filesByThreadId.keys()];
+    const records = threadIds.length
+      ? await readCodexThreadsMetadata(runtime.executablePath, os.homedir(), threadIds) : [];
+    for (const { threadId, metadata } of records) {
+      if (!metadata) continue;
+      try {
+        const { cwd, title, updatedAt } = metadata;
+        const file = await validateCodexCurrentFile(runtime, threadId, metadata.file, cwd);
+        const canonicalDirectory = await availableImportedDirectory(cwd);
+        const matchingFiles = directory.filesByThreadId.get(threadId) ?? [];
+        const currentRecord = matchingFiles.some(candidate => sameCodexPath(candidate, file)) ? undefined
+          : { date: codexSessionDirectoryDate(path.dirname(file), directory.sessions) };
+        const preview: CodexThreadImportPreview = {
+          selectionId: randomUUID(), threadId, title, cwd, updatedAt, directoryAvailable: Boolean(canonicalDirectory), currentRecord,
+        };
+        entries.set(preview.selectionId, { file, preview, canonicalDirectory });
+      } catch {
+        // A bad record does not hide other threads from the selected period.
+      }
+    }
+    const threads = [...entries.values()].map(({ preview }) => preview)
+      .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.title.localeCompare(b.title, 'zh-CN'));
+    codexImportSelections.set(event.sender, { runtime, entries });
+    return { date: directory.date, threads, unavailableCount: directory.unavailableCount + threadIds.length - entries.size };
   });
 
   ipcMain.handle(AGENT_IPC.confirmCodexThreadImport, async (event, value: unknown): Promise<CodexThreadImportResult> => {
     requireSender(event);
     if (!isRecord(value) || typeof value.selectionId !== 'string' || typeof value.partnerId !== 'string'
       || (value.permissionMode !== 'read_only' && value.permissionMode !== 'manual' && value.permissionMode !== 'automatic' && value.permissionMode !== 'full')) throw new Error('INVALID_CODEX_THREAD_IMPORT');
-    const selection = codexImportSelections.get(event.sender);
-    if (!selection || selection.preview.selectionId !== value.selectionId) throw new Error('请重新选择 Codex 线程文件。');
+    const batch = codexImportSelections.get(event.sender);
+    const selection = batch?.entries.get(value.selectionId);
+    if (!batch || !selection) throw new Error('请重新选择 Codex 日期文件夹及线程。');
     const partner = studioRuntimeCatalog.partner(value.partnerId);
     if (!partner?.available || partner.runtime.kind !== 'local' || partner.runtime.adapterType !== 'codex_cli'
       || !await partnerProfiles.runtimeProfile(value.partnerId)) throw new Error('请先保存本地 Codex 伙伴。');
-    const { runtime } = selection;
-    const { preview, canonicalDirectory } = await inspectCodexSelection(selection.file, runtime, selection.preview.selectionId);
-    if (preview.threadId !== selection.preview.threadId || !sameCodexPath(preview.cwd, selection.preview.cwd)
+    const { runtime } = batch;
+    const { preview } = selection;
+    const current = await readCodexThreadMetadata(runtime.executablePath, os.homedir(), preview.threadId);
+    const currentFile = await validateCodexCurrentFile(runtime, preview.threadId, current.file, current.cwd);
+    if (!sameCodexSessionRecord(currentFile, selection.file)) throw new Error('Codex 当前使用的记录已变化，请重新选择日期文件夹。');
+    const canonicalDirectory = await availableImportedDirectory(current.cwd);
+    if (!sameCodexPath(current.cwd, preview.cwd)
       || (canonicalDirectory && (!selection.canonicalDirectory || !sameCodexPath(canonicalDirectory, selection.canonicalDirectory)))) {
       throw new Error('原线程的目录已变化，请重新选择并确认。');
     }

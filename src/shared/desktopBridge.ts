@@ -133,7 +133,7 @@ export interface AsteriumAgentsApi {
   listCodexModels?: (request: import('./codexModels').CodexModelListRequest) => Promise<import('./codexModels').CodexModelOption[]>;
   searchCodexHistory?: (request: import('./codexHistory').CodexHistorySearchRequest) => Promise<import('./codexHistory').CodexHistorySearchPage>;
   readCodexHistory?: (request: import('./codexHistory').CodexHistoryRequest) => Promise<import('./codexHistory').CodexHistoryPage>;
-  chooseCodexThread?: (runtimeId: string) => Promise<import('./codexThreadImport').CodexThreadImportPreview | null>;
+  chooseCodexThreadDirectory?: (request: import('./codexThreadImport').CodexThreadDirectoryRequest) => Promise<import('./codexThreadImport').CodexThreadDirectoryPreview | null>;
   confirmCodexThreadImport?: (selectionId: string, partnerId: string, permissionMode: PermissionMode) => Promise<import('./codexThreadImport').CodexThreadImportResult>;
   codexImportedWorkspaceStatus?: (partnerId: string, conversationId: string) => Promise<import('./codexThreadImport').CodexImportedWorkspaceStatus>;
   chooseCodexImportedDirectory?: (partnerId: string, conversationId: string) => Promise<import('./codexThreadImport').CodexImportedWorkspaceStatus | null>;

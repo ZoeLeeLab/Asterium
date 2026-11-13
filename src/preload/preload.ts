@@ -100,7 +100,7 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
   listCodexModels: (request: import('../shared/codexModels').CodexModelListRequest): Promise<import('../shared/codexModels').CodexModelOption[]> => ipcRenderer.invoke(AGENT_IPC.listCodexModels, request),
   searchCodexHistory: (request: import('../shared/codexHistory').CodexHistorySearchRequest): Promise<import('../shared/codexHistory').CodexHistorySearchPage> => ipcRenderer.invoke(AGENT_IPC.searchCodexHistory, request),
   readCodexHistory: (request: import('../shared/codexHistory').CodexHistoryRequest): Promise<import('../shared/codexHistory').CodexHistoryPage> => ipcRenderer.invoke(AGENT_IPC.readCodexHistory, request),
-  chooseCodexThread: (runtimeId: string) => ipcRenderer.invoke(AGENT_IPC.chooseCodexThread, { runtimeId }),
+  chooseCodexThreadDirectory: (request: import('../shared/codexThreadImport').CodexThreadDirectoryRequest) => ipcRenderer.invoke(AGENT_IPC.chooseCodexThreadDirectory, request),
   confirmCodexThreadImport: (selectionId: string, partnerId: string, permissionMode: import('../shared/agentProtocol').PermissionMode) => ipcRenderer.invoke(AGENT_IPC.confirmCodexThreadImport, { selectionId, partnerId, permissionMode }),
   codexImportedWorkspaceStatus: (partnerId: string, conversationId: string) => ipcRenderer.invoke(AGENT_IPC.codexImportedWorkspaceStatus, { partnerId, conversationId }),
   chooseCodexImportedDirectory: (partnerId: string, conversationId: string) => ipcRenderer.invoke(AGENT_IPC.chooseCodexImportedDirectory, { partnerId, conversationId }),
