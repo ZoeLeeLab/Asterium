@@ -11,6 +11,27 @@ import {
 import { CODEX_THREAD_IN_USE } from '../../src/shared/codexThreadInUse';
 
 describe('Codex app-server thread resume', () => {
+  it('waits for the native writer to exit after closing stdin', async () => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exitCode: null as number | null,
+    });
+    child.stdin.on('data', (data: Buffer) => {
+      const { id } = JSON.parse(data.toString());
+      if (id !== undefined) child.stdout.write(`${JSON.stringify({ id, result: {} })}\n`);
+    });
+    const client = new CodexAppServerClient('codex', '.', () => child as unknown as ChildProcessWithoutNullStreams);
+    await client.start();
+    const closing = client.close();
+    expect(child.stdin.writableEnded).toBe(true);
+    const closed = closing.then(() => true);
+    expect(await Promise.race([closed, Promise.resolve(false)])).toBe(false);
+    child.stdin.emit('error', new Error('pipe already closed'));
+    child.exitCode = 0;
+    child.emit('exit', 0);
+    await closing;
+    expect(client.connected).toBe(false);
+  });
+
   it('identifies a refused resume for the requested thread before a turn starts', async () => {
     const child = Object.assign(new EventEmitter(), {
       stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exitCode: 0,

@@ -86,6 +86,10 @@ export class NativeThreadBindingStore {
     });
   }
 
+  async pendingCodexImports() {
+    return (await this.storage.read()).bindings.filter(binding => binding.state === 'pending' && binding.importedCodexWorkspace);
+  }
+
   async updateImportedCodexDirectory(bindingId: string, expectedDirectory: string, directory: string, canonicalDirectory: string) {
     return this.mutate(async () => {
       const data = await this.readUnlocked();
@@ -148,6 +152,7 @@ export class NativeThreadBindingStore {
       const data = await this.readUnlocked();
       const binding = data.bindings.find((item) => item.bindingId === bindingId);
       if (!binding || binding.state === 'invalid') throw new Error('NATIVE_BINDING_NOT_PENDING');
+      if (binding.state === 'active' && binding.nativeThreadId === nativeThreadId) return binding;
       const collision = data.bindings.find((item) => item.bindingId !== bindingId && item.nativeThreadId === nativeThreadId && item.state !== 'invalid');
       if (collision) throw new Error('NATIVE_THREAD_ALREADY_BOUND');
       binding.nativeThreadId = nativeThreadId;

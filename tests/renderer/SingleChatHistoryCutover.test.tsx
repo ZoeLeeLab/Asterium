@@ -266,8 +266,10 @@ it('reopens a refused Codex send and retries the same saved message on the origi
   view.unmount();
   mount();
   const restoredRetry = await screen.findByRole('button', { name: '重试' });
-  await waitFor(() => expect(restoredRetry).toBeEnabled());
-  fireEvent.click(restoredRetry);
+  await waitFor(() => {
+    expect(restoredRetry).toBeEnabled();
+    fireEvent.click(restoredRetry);
+  });
   await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
   const [first, second] = send.mock.calls.map(call => call[4]);
   expect(second).toMatchObject({

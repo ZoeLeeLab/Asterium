@@ -137,7 +137,7 @@ import { SessionCompactionService } from './runtime/SessionCompactionService';
 import { compactApiSession } from './api/ApiSessionCompactor';
 import { assertSessionCompactRequest } from '../shared/sessionCompaction';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
-import { confirmNativeProfileReload } from './runtime/NativeProfileReload';
+import { confirmNativeProfileReload, NativeProfileReloadError } from './runtime/NativeProfileReload';
 import { StudioOrchestrator } from './studio/StudioOrchestrator';
 import { persistedPartnerProfileSeed, shouldPersistPartnerProfileSeed, StudioRuntimeCatalog } from './studio/StudioRuntimeCatalog';
 import {
@@ -675,14 +675,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (partner.runtime.kind !== 'local') throw new Error('COMPACT_NOT_SUPPORTED');
     const adapter = await localMaintenanceAdapter(request);
     if (!adapter.capabilities.compaction || !adapter.compactSession) throw new Error('COMPACT_NOT_SUPPORTED');
-    return adapter.compactSession(request.sessionId, signal, binding.bootstrap);
+    try {
+      return await adapter.compactSession(request.sessionId, signal, binding.bootstrap);
+    } finally {
+      if (binding.importedCodexWorkspace) await adapter.dispose?.();
+    }
   });
   async function localMaintenanceAdapter(request: { partnerId: string; conversationId: string; sessionId: string }) {
     const partner = studioRuntimeCatalog.partner(request.partnerId);
     if (!partner?.available || partner.runtime.kind !== 'local') throw new Error('SESSION_COMMAND_UNAVAILABLE');
     const runtime = partner.runtime;
-    const workspace = await partnerWorkspaces.grantIds(request.partnerId);
-    const imported = runtime.adapterType === 'codex_cli' ? await importedCodexBinding(request.partnerId, request.conversationId, request.sessionId) : undefined;
+    const imported = await importedCodexBinding(request.partnerId, request.conversationId, request.sessionId);
+    if (imported && runtime.adapterType !== 'codex_cli') throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
     if (imported) {
       const root = await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
       if (!root) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
@@ -691,6 +695,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         partnerId: request.partnerId, conversationId: request.conversationId, partnerRoot: root, additionalDirectories: [] });
       return runtimeFactory.getLocal({ adapterType: 'codex_cli', adapterKey, executablePath: selected.executablePath, partnerRoot: root, additionalDirectories: [], importedCodexThread: true });
     }
+    const workspace = await partnerWorkspaces.grantIds(request.partnerId);
     const rootGrant = workspace?.cwdGrantId ?? runtime.partnerRootGrantId;
     if (!rootGrant) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
     const partnerRoot = await resolveWorkspaceGrant(rootGrant);
@@ -739,8 +744,20 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         };
       }
       if (!request.sessionId) throw new Error('SESSION_COMMAND_UNAVAILABLE');
-      const adapter = await localMaintenanceAdapter({ ...request, sessionId: request.sessionId });
-      return confirmNativeProfileReload(adapter, request.sessionId, kind, previous, next, signal, recoverFirst);
+      const imported = await importedCodexBinding(request.partnerId, request.conversationId, request.sessionId);
+      let adapter: PartnerAdapter;
+      try {
+        adapter = await localMaintenanceAdapter({ ...request, sessionId: request.sessionId });
+      } catch (error) {
+        throw new NativeProfileReloadError(error, recoverFirst);
+      }
+      try {
+        const result = await confirmNativeProfileReload(adapter, request.sessionId, kind, previous, next, signal, recoverFirst);
+        return { ...result, release: imported ? () => adapter.dispose?.() : undefined };
+      } catch (error) {
+        if (imported) await adapter.dispose?.();
+        throw error;
+      }
     },
   });
   const sessionCommands = new SessionCommandService({ bindings: nativeBindings, catalog: studioRuntimeCatalog, messages: singleChatMessages, leases: writerLeases, compactions: sessionCompactions, reload: (request) => profileReloads.execute(request), isDeleted: (id) => conversationDeletions.isDeleted(id) });
@@ -1786,7 +1803,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const history = await (recent ? singleChatHistory.openRecent() : singleChatHistory.open());
     if (!history) return undefined;
     const deleted = new Set(await conversationDeletions.listDeletedIds());
-    return { ...history, conversations: history.conversations.filter(conversation => !deleted.has(conversation.id)) };
+    const conversations = history.conversations.filter(conversation => !deleted.has(conversation.id));
+    const pending = await nativeBindings.pendingCodexImports();
+    if (pending.length) {
+      const committed = new Map(conversations.filter(conversation => conversation.importedCodexThread).map(conversation => [conversation.id, conversation]));
+      for (const binding of pending) {
+        const conversation = committed.get(binding.conversationId);
+        if (conversation && binding.nativeThreadId && conversation.partnerId === binding.partnerId && conversation.sessionId === binding.nativeThreadId) {
+          await nativeBindings.activate(binding.bindingId, binding.nativeThreadId);
+        }
+      }
+    }
+    return { ...history, conversations };
   };
   ipcMain.handle(AGENT_IPC.conversationOpenHistory, async (event, recent: unknown) => {
     requireSender(event);
@@ -2262,6 +2290,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     runtime: CodexRuntimeInfo;
     file: string;
     preview: CodexThreadImportPreview;
+    canonicalDirectory?: string;
   }>();
 
   async function availableImportedDirectory(directory: string, canonicalDirectory?: string) {
@@ -2332,8 +2361,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       filters: [{ name: 'Codex 线程', extensions: ['jsonl'] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    const { file, preview } = await inspectCodexSelection(result.filePaths[0], runtime, randomUUID());
-    codexImportSelections.set(event.sender, { runtime, file, preview });
+    const { file, preview, canonicalDirectory } = await inspectCodexSelection(result.filePaths[0], runtime, randomUUID());
+    codexImportSelections.set(event.sender, { runtime, file, preview, canonicalDirectory });
     return preview;
   });
 
@@ -2344,21 +2373,22 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const selection = codexImportSelections.get(event.sender);
     if (!selection || selection.preview.selectionId !== value.selectionId) throw new Error('请重新选择 Codex 线程文件。');
     const partner = studioRuntimeCatalog.partner(value.partnerId);
-    if ((partner && (partner.runtime.kind !== 'local' || partner.runtime.adapterType !== 'codex_cli' || !partner.available))
+    if (!partner?.available || partner.runtime.kind !== 'local' || partner.runtime.adapterType !== 'codex_cli'
       || !await partnerProfiles.runtimeProfile(value.partnerId)) throw new Error('请先保存本地 Codex 伙伴。');
     const { runtime } = selection;
     const { preview, canonicalDirectory } = await inspectCodexSelection(selection.file, runtime, selection.preview.selectionId);
-    if (preview.threadId !== selection.preview.threadId || !sameCodexPath(preview.cwd, selection.preview.cwd)) {
+    if (preview.threadId !== selection.preview.threadId || !sameCodexPath(preview.cwd, selection.preview.cwd)
+      || (canonicalDirectory && (!selection.canonicalDirectory || !sameCodexPath(canonicalDirectory, selection.canonicalDirectory)))) {
       throw new Error('原线程的目录已变化，请重新选择并确认。');
     }
     const binding = await nativeBindings.reserveCodexImport(value.partnerId, preview.threadId, {
-      originalCwd: preview.cwd, directory: preview.cwd, canonicalDirectory, runtimeId: runtime.runtimeId,
+      originalCwd: preview.cwd, directory: preview.cwd, canonicalDirectory: selection.canonicalDirectory, runtimeId: runtime.runtimeId,
       runtimeEnvironment: runtime.environment, codexHome: runtime.codexHome,
     });
     if (binding.scope !== 'single' || binding.source !== 'local_cli') return { kind: 'bound_elsewhere', scope: binding.scope };
     if (binding.state === 'active') {
       const metadata = await singleChatHistory.readMetadata(binding.conversationId);
-      if (!metadata || metadata.sessionId !== preview.threadId || await conversationDeletions.isDeleted(binding.conversationId)) {
+      if (!metadata || metadata.partnerId !== binding.partnerId || metadata.sessionId !== preview.threadId || await conversationDeletions.isDeleted(binding.conversationId)) {
         throw new Error('原线程已有绑定，但对应单聊暂不可用。');
       }
       return { kind: 'conversation', conversation: { ...metadata, messages: [] } };
@@ -2401,6 +2431,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const lease = writerLeases.tryAcquire({ kind: 'conversation', partnerId: binding.partnerId, conversationId: binding.conversationId }, `codex-directory:${randomUUID()}`);
     if (!lease) throw new Error('CODEX_IMPORTED_CONVERSATION_BUSY');
     try {
+      if (await conversationDeletions.isDeleted(binding.conversationId)) throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
       await nativeBindings.updateImportedCodexDirectory(binding.bindingId, workspace.directory, directory, canonical);
     } finally {
       lease.release();
@@ -3238,9 +3269,15 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         importedCodexThread: Boolean(imported),
       });
       adapter.updateRuntimeContext?.(request.command);
+      const validateBeforeStart = imported ? async () => {
+        const { partnerId, conversationId, sessionId } = request.command;
+        const current = await importedCodexBinding(partnerId, conversationId, sessionId);
+        const directory = current && await availableImportedDirectory(current.workspace.directory, current.workspace.canonicalDirectory);
+        if (!directory || !sameCodexPath(directory, partnerRoot)) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
+      } : undefined;
       return useLegacyRunPath
-        ? startAdapterRun(adapter, request.command, Boolean(imported), partnerRoot)
-        : runCoordinator.start(adapter, request.command, { artifactBaseDirectory: partnerRoot, disposeAfter: Boolean(imported) });
+        ? startAdapterRun(adapter, request.command, Boolean(imported), partnerRoot, validateBeforeStart)
+        : runCoordinator.start(adapter, request.command, { artifactBaseDirectory: partnerRoot, disposeAfter: Boolean(imported), validateBeforeStart });
     });
   }
 
@@ -3337,14 +3374,24 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return claudeInstallation;
   }
 
-  async function startAdapterRun(adapter: PartnerAdapter, command: SendMessageCommand, disposeAfter = false, artifactBaseDirectory?: string) {
+  async function startAdapterRun(adapter: PartnerAdapter, command: SendMessageCommand, disposeAfter = false, artifactBaseDirectory?: string, validateBeforeStart?: () => Promise<void>) {
     if (/^(compact|reload):/.test(writerLeases.ownerFor({ kind: 'conversation', partnerId: command.partnerId, conversationId: command.conversationId }) ?? '')) throw new Error('COMPACT_CONVERSATION_BUSY');
     const lease = await writerLeases.acquire({ kind: 'conversation', partnerId: command.partnerId, conversationId: command.conversationId }, `legacy:${command.commandId}`);
-    if (command.sessionId) { try { await hydrateManagedRuntimeProfile(command); } catch (error) { lease.release(); throw error; } }
-    delivery(command, 'awaiting_confirmation');
-    const iterator = adapter.sendMessage(command)[Symbol.asyncIterator]();
+    const release = async () => {
+      try {
+        if (disposeAfter) await adapter.dispose?.();
+      } finally {
+        lease.release();
+      }
+    };
+    let iterator: AsyncIterator<PartnerEvent> | undefined;
     try {
-      const first = await iterator.next();
+      await validateBeforeStart?.();
+      if (command.sessionId) await hydrateManagedRuntimeProfile(command);
+      delivery(command, 'awaiting_confirmation');
+      const stream = adapter.sendMessage(command)[Symbol.asyncIterator]();
+      iterator = stream;
+      const first = await stream.next();
       if (first.done || !isPartnerEvent(first.value) || first.value.type !== 'session.bound') throw new Error('ADAPTER_SESSION_NOT_BOUND');
       const firstEvent = withCommandRoute(first.value, command);
       if (!sameEventRoute(firstEvent, command)) throw new Error('ADAPTER_EVENT_ROUTE_MISMATCH');
@@ -3367,7 +3414,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         let lastSequence = firstEvent.sequence;
         try {
           for (;;) {
-            const next = await iterator.next();
+            const next = await stream.next();
             if (next.done) break;
             if (!isPartnerEvent(next.value)) continue;
             const routedEvent = withCommandRoute(next.value, command);
@@ -3417,8 +3464,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
           });
         } finally {
           host.releaseRun(receipt.runId);
-          lease.release();
-          if (disposeAfter) await adapter.dispose?.();
+          await stream.return?.().catch(() => undefined);
+          await release().catch(() => undefined);
           if (command.route?.scope === 'group' && studioRooms.hasPendingPassRetry(receipt.runId)) {
             studioOrchestration.orchestrator?.markPassCorrection(command.route.roomId, command.route.roundId, command.partnerId);
             await studioRooms.retryPassAfterRelease(receipt.runId).catch(() => undefined);
@@ -3427,7 +3474,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       })();
       return receipt;
     } catch (error) {
-      lease.release();
+      await iterator?.return?.().catch(() => undefined);
+      await release().catch(() => undefined);
       if (command.route?.scope === 'group') {
         await nativeBindings.invalidateGroupTurn(command).catch(() => undefined);
         await studioRooms.failPreparedTurn(command.route.roomId, command.route.roundId, command.partnerId).catch(() => undefined);

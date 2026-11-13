@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CodexImportedWorkspaceStatus } from '../../shared/codexThreadImport';
 import type { Conversation } from '../types/domain';
 
@@ -9,13 +9,15 @@ export function useImportedCodexWorkspace(conversation: Conversation | undefined
   const [status, setStatus] = useState<{ id: string; workspace: CodexImportedWorkspaceStatus }>();
   const [choosingId, setChoosingId] = useState<string>();
   const [error, setError] = useState<{ id: string; message: string }>();
+  const revision = useRef(0);
   const check = useCallback(async () => {
     if (!id || !partnerId) return true;
+    const requested = ++revision.current;
     try {
       const read = window.asteriumAgents?.codexImportedWorkspaceStatus;
       if (!read) return false;
       const workspace = await read(partnerId, id);
-      setStatus({ id, workspace });
+      if (requested === revision.current) setStatus({ id, workspace });
       return workspace.available;
     } catch {
       return false;
@@ -36,7 +38,10 @@ export function useImportedCodexWorkspace(conversation: Conversation | undefined
     setError(undefined);
     try {
       const workspace = await window.asteriumAgents?.chooseCodexImportedDirectory?.(partnerId, id);
-      if (workspace) setStatus({ id, workspace });
+      if (workspace) {
+        revision.current++;
+        setStatus({ id, workspace });
+      }
     } catch {
       setError({ id, message: '无法使用这个目录，请选择可访问的项目目录。' });
     } finally {

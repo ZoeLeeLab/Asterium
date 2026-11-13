@@ -62,6 +62,19 @@ export type SpawnCodex = (executable: string, args: string[], options: {
 const defaultSpawnCodex: SpawnCodex = (executable, args, options) => spawn(executable, args, options);
 
 async function stopChild(child: ChildProcessWithoutNullStreams) {
+  // Let Codex finish persisting its rollout before falling back to process termination.
+  const exited = await new Promise<boolean>(resolve => {
+    const finish = (value: boolean) => {
+      clearTimeout(timer);
+      child.off('exit', onExit);
+      resolve(value);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), 1500);
+    child.once('exit', onExit);
+    if (!child.stdin.destroyed) child.stdin.end();
+  });
+  if (exited) return;
   if (process.platform === 'win32' && child.pid) {
     try {
       await execFileAsync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000 });
@@ -124,6 +137,9 @@ export class CodexAppServerClient implements CodexAppServerTransport {
     child.stderr.on('data', (chunk: string) => { this.stderr = `${this.stderr}${chunk}`.slice(-2000); });
     this.lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
     this.lines.on('line', (line) => this.handleLine(line));
+    child.stdin.on('error', (error) => {
+      if (this.child === child) this.handleClose(error);
+    });
     child.once('error', (error) => this.handleClose(error));
     child.once('close', (code) => this.handleClose(new Error(`Codex app-server exited (${code ?? 'unknown'}): ${singleLine(this.stderr)}`)));
 

@@ -1290,9 +1290,9 @@ export function ChatPage() {
           onUpdatePartner={updatePartner}
           onUpdateWorkspaceGrants={updatePartnerWorkspaceGrants}
           codexModelPicker={activeConversation && activePartner?.sourceMode === 'local_cli' && activePartner.connectionKind === 'local_codex'
-            && activePartner.codexRuntimeId && (activeConversation.partnerRootGrantId || activePartner.partnerRootGrantId)
+            && (activeConversation.importedCodexThread || (activePartner.codexRuntimeId && (activeConversation.partnerRootGrantId || activePartner.partnerRootGrantId)))
             && window.asteriumAgents?.listCodexModels ? <CodexModelPicker
-              key={JSON.stringify([activePartner.codexRuntimeId, activePartner.codexRuntime?.environment, activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId])}
+              key={JSON.stringify([activePartner.codexRuntimeId, activePartner.codexRuntime?.environment, activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId, activeConversation.importedCodexThread ? [activeConversation.id, importedWorkspace.workspace?.directory] : undefined])}
               partnerRootGrantId={activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId}
               {...(activeConversation.importedCodexThread ? { conversationId: activeConversation.id, partnerId: activePartner.id } : {})}
               codexRuntimeId={activePartner.codexRuntimeId}

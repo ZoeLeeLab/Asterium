@@ -3,8 +3,8 @@ import path from 'node:path';
 
 function comparablePath(value: string) {
   if (process.platform !== 'win32') return path.resolve(value);
-  const prefix = String.fromCharCode(92, 92, 63, 92);
-  const normalized = value.startsWith(prefix + 'UNC' + path.sep)
+  const prefix = '\\\\?\\';
+  const normalized = value.slice(0, prefix.length + 4).toUpperCase() === prefix + 'UNC' + path.sep
     ? path.sep.repeat(2) + value.slice(prefix.length + 4)
     : value.startsWith(prefix) ? value.slice(prefix.length) : value;
   return path.resolve(normalized).toLowerCase();

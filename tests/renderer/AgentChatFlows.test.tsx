@@ -237,7 +237,7 @@ describe('local Codex renderer flow', () => {
   });
 
   it('lets the user choose an existing Codex thread and imports it into a new chat window', async () => {
-    let sentCommand: SendMessageCommand | undefined;
+    const sentCommands: SendMessageCommand[] = [];
     let directoryAvailable = false;
     const chooseCodexThread = vi.fn(async () => ({
       selectionId: 'selection-imported', threadId: 'thread-imported', title: '已有研究线程',
@@ -269,7 +269,8 @@ describe('local Codex renderer flow', () => {
       selectWorkspace: vi.fn(async () => ({ grantId: 'grant-partner', displayPath: 'J:\\qa\\partner-source' })),
       sendClaudeMessage: vi.fn(),
       sendLocalCliMessage: vi.fn(async (_adapterType, _partnerId, _partnerRootGrantId, _grantIds, command) => {
-        sentCommand = command;
+        sentCommands.push(command);
+        if (sentCommands.length === 1) throw new Error('CODEX_THREAD_IN_USE');
         return { runId: 'turn-imported', sessionId: 'thread-imported' };
       }),
       cancelRun: vi.fn(async () => undefined),
@@ -306,7 +307,14 @@ describe('local Codex renderer flow', () => {
     fireEvent.change(input, { target: { value: '继续之前的话题' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
 
-    await waitFor(() => expect(sentCommand).toMatchObject({ conversationId: 'conversation-imported', sessionId: 'thread-imported', content: { text: '继续之前的话题' } }));
+    const retry = await screen.findByRole('button', { name: '重试' });
+    await waitFor(() => expect(retry).toBeEnabled());
+    fireEvent.click(retry);
+    await waitFor(() => expect(sentCommands).toHaveLength(2));
+    const [first, retried] = sentCommands;
+    expect(first).toMatchObject({ conversationId: 'conversation-imported', sessionId: 'thread-imported', content: { text: '继续之前的话题' } });
+    expect(retried).toMatchObject({ conversationId: first.conversationId, sessionId: first.sessionId, messageId: first.messageId });
+    expect(retried.clientMessageId).not.toBe(first.clientMessageId);
     expect(window.asteriumAgents.sendLocalCliMessage).toHaveBeenCalledWith('codex_cli', expect.any(String), 'grant-partner', [], expect.any(Object), 'runtime-global', 'global_cli');
   });
 

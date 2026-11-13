@@ -229,10 +229,11 @@ export async function readCodexThreadMetadata(executablePath: string, workingDir
     await abortable(client.start(), signal);
     const { thread } = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: false }), signal);
     if (!isRecord(thread) || thread.id !== threadId || !text(thread.cwd)) throw new Error('CODEX_THREAD_METADATA_INVALID');
+    const timestamp = typeof thread.updatedAt === 'number' ? new Date(thread.updatedAt * 1000) : undefined;
     return {
       cwd: text(thread.cwd),
       title: text(thread.name) || '未命名 Codex 线程',
-      updatedAt: typeof thread.updatedAt === 'number' && Number.isFinite(thread.updatedAt) ? new Date(thread.updatedAt * 1000).toISOString() : undefined,
+      updatedAt: timestamp && Number.isFinite(timestamp.getTime()) ? timestamp.toISOString() : undefined,
       file: text(thread.path),
     };
   } finally {
@@ -240,10 +241,10 @@ export async function readCodexThreadMetadata(executablePath: string, workingDir
   }
 }
 
-export async function getImportedCodexThreadLifecycle(executablePath: string, workingDirectory: string, codexHome: string, threadId: string): Promise<NativeThreadLifecycleResult> {
+export async function getImportedCodexThreadLifecycle(executablePath: string, workingDirectory: string, codexHome: string, threadId: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<NativeThreadLifecycleResult> {
   const checkedAt = new Date().toISOString();
   try {
-    const { file } = await readCodexThreadMetadata(executablePath, workingDirectory, threadId);
+    const { file } = await readCodexThreadMetadata(executablePath, workingDirectory, threadId, createTransport);
     const archived = file && sameCodexPath(path.dirname(file), path.join(codexHome, 'archived_sessions'));
     return { threadId, state: archived ? 'archived' : 'active', checkedAt };
   } catch (error) {

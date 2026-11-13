@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, rename, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { BrowserWindow, IpcMain } from 'electron';
@@ -10,16 +10,21 @@ import { DESKTOP_IPC as AGENT_IPC } from '../../src/shared/desktopIpc';
 import { AGENT_PROTOCOL_VERSION } from '../../src/shared/agentProtocol';
 import type { CodexAppServerTransport, CodexRpcMessage } from '../../src/main/adapters/codexAppServerProtocol';
 import { createInitialState } from '../../src/renderer/data/initialState';
+import { prepareSingleChatProfile } from '../../src/renderer/app/persistence';
+import { NativeThreadBindingStore } from '../../src/main/studio/NativeThreadBindingStore';
+import { CODEX_THREAD_IN_USE } from '../../src/shared/codexThreadInUse';
 
 const state = vi.hoisted(() => ({
   root: '',
   home: '',
   cwd: '',
   file: '',
-  threadId: '00000001-0000-4000-8000-000000000001',
+  threadId: '00000000-0000-7000-8000-000000000001',
   selections: [] as string[],
   requests: [] as Array<{ cwd: string; method: string; params?: Record<string, unknown> }>,
   runtimeId: 'test-codex-runtime',
+  writerInUse: false,
+  closeCount: 0,
 }));
 
 vi.mock('electron', () => ({
@@ -51,6 +56,10 @@ vi.mock('../../src/main/adapters/CodexCliAdapter', async (importOriginal) => {
     }),
     readCodexThreadMetadata: (...args: Parameters<typeof actual.readCodexThreadMetadata>) =>
       actual.readCodexThreadMetadata(args[0], args[1], args[2], (_executable, cwd) => transport(cwd)),
+    getImportedCodexThreadLifecycle: (...args: Parameters<typeof actual.getImportedCodexThreadLifecycle>) =>
+      actual.getImportedCodexThreadLifecycle(args[0], args[1], args[2], args[3], (_executable, cwd) => transport(cwd)),
+    searchCodexThreadHistory: (...args: Parameters<typeof actual.searchCodexThreadHistory>) =>
+      actual.searchCodexThreadHistory(args[0], args[1], args[2], args[3], (_executable, cwd) => transport(cwd)),
     readCodexThreadHistory: (...args: Parameters<typeof actual.readCodexThreadHistory>) =>
       actual.readCodexThreadHistory(args[0], args[1], args[2], args[3], (_executable, cwd) => transport(cwd)),
     CodexCliAdapter: class extends actual.CodexCliAdapter {
@@ -67,7 +76,7 @@ function transport(cwd: string): CodexAppServerTransport {
   return {
     connected: true,
     start: async () => {},
-    close: async () => {},
+    close: async () => { state.closeCount++; },
     respond: () => {},
     onClose: () => () => {},
     onMessage: (handler) => {
@@ -78,9 +87,12 @@ function transport(cwd: string): CodexAppServerTransport {
       state.requests.push({ cwd, method, params });
       if (method === 'thread/read') return { thread: { id: state.threadId, cwd: state.cwd, path: state.file, name: '合成历史', updatedAt: 1_800_000_000 } } as T;
       if (method === 'thread/turns/list') {
-        return { data: [{ id: 'history-turn', items: [{ type: 'userMessage', id: 'history-message', content: [{ type: 'text', text: '测试历史' }] }] }] } as T;
+        return { data: [{ id: params?.cursor ? 'older-turn' : 'history-turn', items: [{ type: 'userMessage', id: 'history-message', content: [{ type: 'text', text: params?.cursor ? '更早的历史' : '测试历史' }] }] }], nextCursor: params?.cursor ? null : 'older-cursor' } as T;
       }
-      if (method === 'thread/resume') return { thread: { id: params?.threadId }, model: 'gpt-test' } as T;
+      if (method === 'thread/resume') {
+        if (state.writerInUse && params?.threadId === state.threadId) throw new Error(CODEX_THREAD_IN_USE);
+        return { thread: { id: params?.threadId }, model: 'gpt-test' } as T;
+      }
       if (method === 'turn/start') {
         const threadId = params?.threadId;
         const turnId = 'new-turn-' + state.requests.length;
@@ -124,8 +136,7 @@ it('imports a different working directory, recovers it after a rename, and keeps
   } });
   let dispose = create();
   try {
-    const { conversations: _conversations, ...profile } = createInitialState();
-    await invoke(AGENT_IPC.conversationMigrateHistory, { profile, conversations: [] });
+    await invoke(AGENT_IPC.conversationMigrateHistory, { profile: prepareSingleChatProfile(createInitialState()), conversations: [] });
     const partnerId = 'partner-codex-fixture';
     const savePartner = () => invoke(AGENT_IPC.savePartnerProfile, {
       partnerId, publicIdentity: { displayName: '测试 Codex', mentionName: '测试', introduction: '', expertise: '' },
@@ -153,10 +164,27 @@ it('imports a different working directory, recovers it after a rename, and keeps
     }));
     expect(preview).toMatchObject({ threadId: state.threadId, cwd: state.cwd, directoryAvailable: true });
     const confirm = () => invoke<import('../../src/shared/codexThreadImport').CodexThreadImportResult>(AGENT_IPC.confirmCodexThreadImport, { partnerId, permissionMode: 'manual', selectionId: preview?.selectionId });
-    const [first, repeated] = await Promise.all([confirm(), confirm()]);
+    const failActivation = vi.spyOn(NativeThreadBindingStore.prototype, 'activate').mockRejectedValueOnce(new Error('simulated interruption'));
+    try {
+      await expect(confirm()).rejects.toThrow('simulated interruption');
+    } finally {
+      failActivation.mockRestore();
+    }
+    await dispose();
+    dispose = create();
+    await savePartner();
+    const restored = await invoke<import('../../src/shared/singleChatHistory').SingleChatHistorySnapshot>(AGENT_IPC.conversationOpenHistory, true);
+    const recovered = restored.conversations.find(conversation => conversation.importedCodexThread);
+    expect(recovered?.sessionId).toBe(state.threadId);
+    state.selections.push(state.file);
+    const reopened = await choose();
+    if (!reopened) throw new Error('Expected a selected thread');
+    const reopen = () => invoke<import('../../src/shared/codexThreadImport').CodexThreadImportResult>(AGENT_IPC.confirmCodexThreadImport, { partnerId, permissionMode: 'manual', selectionId: reopened.selectionId });
+    const [first, repeated] = await Promise.all([reopen(), reopen()]);
     expect(first).toEqual(repeated);
     if (first.kind !== 'conversation') throw new Error('Expected an imported conversation');
     const conversationId = first.conversation.id;
+    expect(conversationId).toBe(recovered?.id);
 
     const send = (id: string, threadId: string, clientId: string) => invoke(AGENT_IPC.sendMessage, {
       adapterType: 'codex_cli', partnerId, partnerRootGrantId: grant.grantId, workspaceGrantIds: [], codexRuntimeId: state.runtimeId,
@@ -167,11 +195,18 @@ it('imports a different working directory, recovers it after a rename, and keeps
 
     await send('ordinary-chat', 'ordinary-thread', 'ordinary-message');
     await waitForRun(1);
+    const beforeRetry = state.closeCount;
+    state.writerInUse = true;
+    await expect(send(conversationId, state.threadId, 'occupied')).rejects.toThrow(CODEX_THREAD_IN_USE);
+    expect(state.closeCount).toBe(beforeRetry + 1);
+    state.writerInUse = false;
     await send(conversationId, state.threadId, 'before-rename');
     await waitForRun(2);
+    await vi.waitFor(() => expect(state.closeCount).toBe(beforeRetry + 2));
     expect(state.requests.filter(request => request.method === 'thread/resume')).toMatchObject([
-      { cwd: partnerCwd, params: { threadId: 'ordinary-thread', cwd: partnerCwd } },
-      { cwd: state.cwd, params: { threadId: state.threadId, cwd: state.cwd, excludeTurns: true } },
+      { cwd: await realpath(partnerCwd), params: { threadId: 'ordinary-thread', cwd: partnerCwd } },
+      { cwd: await realpath(state.cwd), params: { threadId: state.threadId, cwd: await realpath(state.cwd), excludeTurns: true } },
+      { cwd: await realpath(state.cwd), params: { threadId: state.threadId, cwd: await realpath(state.cwd), excludeTurns: true } },
     ]);
 
     await rename(state.cwd, moved);
@@ -179,7 +214,13 @@ it('imports a different working directory, recovers it after a rename, and keeps
     await expect(invoke(AGENT_IPC.codexImportedWorkspaceStatus, status)).resolves.toEqual({ directory: state.cwd, available: false });
     await expect(send(conversationId, state.threadId, 'blocked')).rejects.toThrow('CODEX_IMPORTED_DIRECTORY_UNAVAILABLE');
     const history = await invoke(AGENT_IPC.readCodexHistory, { ...status, threadId: state.threadId });
-    expect(history).toMatchObject({ turns: [{ id: 'history-turn' }] });
+    expect(history).toMatchObject({ turns: [{ id: 'history-turn' }], nextCursor: 'older-cursor' });
+    await expect(invoke(AGENT_IPC.readCodexHistory, { ...status, threadId: state.threadId, cursor: 'older-cursor' })).resolves.toMatchObject({ turns: [{ id: 'older-turn' }] });
+    await expect(invoke(AGENT_IPC.searchCodexHistory, { ...status, threadId: state.threadId, query: '更早的历史' })).resolves.toMatchObject({ hits: [{ turnId: 'older-turn' }] });
+    await expect(invoke(AGENT_IPC.getLocalThreadLifecycles, { ...status, adapterType: 'codex_cli', threadIds: [state.threadId] })).resolves.toMatchObject([{ state: 'active' }]);
+    await expect(invoke(AGENT_IPC.chooseCodexImportedDirectory, status)).resolves.toBeNull();
+    state.selections.push(state.root);
+    await expect(invoke(AGENT_IPC.chooseCodexImportedDirectory, status)).rejects.toThrow('不可访问');
     state.selections.push(moved);
     await expect(invoke(AGENT_IPC.chooseCodexImportedDirectory, status)).resolves.toEqual({ directory: moved, available: true });
 
@@ -189,8 +230,10 @@ it('imports a different working directory, recovers it after a rename, and keeps
     await send(conversationId, state.threadId, 'after-restart');
     await waitForRun(3);
     expect(state.requests.filter(request => request.method === 'thread/resume').at(-1)).toMatchObject({
-      cwd: moved, params: { threadId: state.threadId, cwd: moved, excludeTurns: true },
+      cwd: await realpath(moved), params: { threadId: state.threadId, cwd: await realpath(moved), excludeTurns: true },
     });
+    expect(state.requests.filter(request => request.method === 'thread/start' || request.method === 'thread/fork')).toEqual([]);
+    expect(await readFile(state.file, 'utf8')).toContain('invalid body is not parsed');
   } finally {
     await dispose();
     await testRm(root, { recursive: true, force: true });

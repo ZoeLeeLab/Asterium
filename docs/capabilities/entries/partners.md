@@ -29,6 +29,7 @@
   ],
   "tests": [
     "tests/unit/codexCliAdapter.test.ts",
+    "tests/unit/codexThreadImport.test.ts",
     "tests/unit/nativeCodexHistory.test.ts",
     "tests/renderer/SingleChatHistoryCutover.test.tsx",
     "tests/unit/apiAgentRuntime.test.ts",
@@ -91,7 +92,11 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 
 在 Codex 伙伴设置中点击「导入已有线程」，从所选运行时的 `sessions` 目录选择 `.jsonl`。星丛只预览线程元数据，确认后打开单聊并继续原线程 ID。此单聊使用自己的目录，伙伴原来的配置来源继续作为普通单聊的默认目录。重复选择已绑定单聊时打开原窗口。
 
-目录不可访问时可以查看历史。点击「重新选择目录」为此单聊授权可访问的目录，继续使用同一条线程。普通单聊和其他伙伴保留原有目录与授权。
+目录不可访问时可以查看、搜索和翻页。点击「重新选择目录」为此单聊授权可访问的目录，继续使用同一条线程。普通单聊和其他伙伴保留原有目录与授权。
+
+当前分支的导入实现入口是 `src/main/adapters/codexSessionFile.ts` 和 `src/shared/codexThreadImport.ts`。
+
+Codex 桌面端占用写入时，可在释放原会话后使用消息旁的「重试」。导入的对话可继续发消息和引用，编辑并重新生成会涉及改变原生线程，因此导入的对话暂不提供该操作。已归档的线程须先在 Codex 恢复，再从 `sessions` 选择。
 
 ## 本机 Codex 单聊模型切换（当前工作区）
 
