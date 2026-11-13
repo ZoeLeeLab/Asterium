@@ -130,6 +130,7 @@ export function ChatPage() {
   const stopFollowingLatest = useCallback(() => { followLatestMessageRef.current = false; }, []);
   const deferredGuidanceSendingRef = useRef(new Set<string>());
   const pendingSendRef = useRef<{ key: string; messageId: string; attachments?: MessageAttachment[] } | undefined>(undefined);
+  const cancelWorkspaceSendRef = useRef<(() => void) | undefined>(undefined);
   const [overlay, setOverlay] = useState<ChatOverlay>(null);
   const [query, setQuery] = useState('');
   const availablePartners = state.partners.filter((partner) => !partner.isRemoved);
@@ -271,6 +272,7 @@ export function ChatPage() {
   const [pendingQuote, setPendingQuote] = useState<MessageQuote>();
   const [quoteMenu, setQuoteMenu] = useState<{ quote: MessageQuote; x: number; y: number } | null>(null);
   const [workspaceSendRequest, setWorkspaceSendRequest] = useState<{
+    conversationId: string;
     content: string;
     pending: PendingMessageAttachment[];
     quote?: MessageQuote;
@@ -377,6 +379,7 @@ export function ChatPage() {
       const sent = await sendChatMessage(activeConversation.id, content, prepared.attachments, prepared.messageId, workspaceDecision, quote, activeHandoff);
       if (!sent) return false;
       pendingSendRef.current = undefined;
+      if (selections.length) void window.asteriumAttachments?.discard(selections).catch(() => undefined);
       historyWindow.returnToLatest();
       returnToLatestNative();
       setPendingQuote(undefined);
@@ -406,9 +409,10 @@ export function ChatPage() {
     if (activeConversation?.importedCodexThread) {
       return importedWorkspace.check().then(available => available && commitAndSend(content, pending, quote));
     }
-    if (!workspaceMismatch) return commitAndSend(content, pending, quote);
+    if (!workspaceMismatch || !activeConversation) return commitAndSend(content, pending, quote);
     return new Promise<boolean>((resolve) => {
-      setWorkspaceSendRequest({ content, pending: [...pending], ...(quote ? { quote } : {}), resolve });
+      cancelWorkspaceSendRef.current = () => resolve(false);
+      setWorkspaceSendRequest({ conversationId: activeConversation.id, content, pending: [...pending], ...(quote ? { quote } : {}), resolve });
     });
   };
 
@@ -451,21 +455,28 @@ export function ChatPage() {
 
   const closeWorkspaceDecision = () => {
     if (workspaceDecisionBusy) return;
-    workspaceSendRequest?.resolve(false);
+    cancelWorkspaceSendRef.current?.();
+    cancelWorkspaceSendRef.current = undefined;
     setWorkspaceSendRequest(null);
     setComposerFocusKey((value) => value + 1);
   };
 
   const chooseWorkspaceDecision = async (decision: WorkspaceSwitchDecision) => {
-    if (!workspaceSendRequest || !activeConversation || workspaceDecisionBusy) return;
+    if (!workspaceSendRequest || workspaceSendRequest.conversationId !== activeConversationId || workspaceDecisionBusy) return;
     setWorkspaceDecisionBusy(true);
+    cancelWorkspaceSendRef.current = undefined;
     const request = workspaceSendRequest;
-    const prepared = await prepareConversationWorkspace(activeConversation.id, decision);
-    const sent = prepared ? await commitAndSend(request.content, request.pending, request.quote, decision) : false;
-    request.resolve(sent);
-    setWorkspaceSendRequest(null);
-    setWorkspaceDecisionBusy(false);
-    setComposerFocusKey((value) => value + 1);
+    let sent = false;
+    try {
+      if (await prepareConversationWorkspace(request.conversationId, decision)) sent = await commitAndSend(request.content, request.pending, request.quote, decision);
+    } catch {
+      // Keep the draft available for another send attempt.
+    } finally {
+      request.resolve(sent);
+      setWorkspaceSendRequest(current => current === request ? null : current);
+      setWorkspaceDecisionBusy(false);
+      setComposerFocusKey((value) => value + 1);
+    }
   };
 
   const openUserAttachment = async (attachmentId: string) => {
@@ -593,6 +604,11 @@ export function ChatPage() {
     };
   }, [activeConversationId]);
 
+  useEffect(() => () => {
+    cancelWorkspaceSendRef.current?.();
+    cancelWorkspaceSendRef.current = undefined;
+  }, [activeConversationId]);
+
   const pageHistoryAtEdge = (root: HTMLDivElement, direction: number) => {
     if (conversationSearchOpen) return;
     if (direction < 0 && root.scrollTop <= 56) {
@@ -667,6 +683,7 @@ export function ChatPage() {
     setAttachmentMenu(null);
     setQuoteMenu(null);
     setPendingQuote(undefined);
+    setWorkspaceSendRequest(null);
     setExpandedAttachmentSources({});
   }, [activeConversationId]);
 
@@ -1408,7 +1425,7 @@ export function ChatPage() {
 
       {overlay === 'save-artifact' && <Modal title="保存到项目" description="文件会保存到项目文件夹，并显示在「项目文件交付」。" onClose={() => { if (!artifactProjectBusy) { setArtifactProjectTarget(null); setOverlay(null); } }}><div className="modal-body"><label className="modal-field">选择项目<select value={artifactProjectId} onChange={(event) => { setArtifactProjectId(event.target.value); setArtifactProjectError(''); }}><option value="">新建项目…</option>{state.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>{!artifactProjectId && <label className="modal-field">新项目名称<input value={newArtifactProjectName} onChange={(event) => { setNewArtifactProjectName(event.target.value); setArtifactProjectError(''); }} autoFocus /></label>}{artifactProjectError && <p className="modal-error">{artifactProjectError}</p>}</div><footer className="modal-footer"><button className="secondary-button" type="button" disabled={artifactProjectBusy} onClick={() => { setArtifactProjectTarget(null); setOverlay(null); }}>取消</button><button className="primary-button" type="button" disabled={artifactProjectBusy || (!artifactProjectId && !newArtifactProjectName.trim())} onClick={() => void saveArtifactToProject()}>{artifactProjectBusy ? '正在保存…' : '保存到项目'}</button></footer></Modal>}
 
-      {workspaceSendRequest && (
+      {workspaceSendRequest && workspaceSendRequest.conversationId === activeConversationId && (
         <Modal title="这条对话绑定了另一个工作区" description="请选择继续使用旧原生线程，或在当前 cwd 下为这条可见对话建立独立线程。" onClose={closeWorkspaceDecision}>
           <div className="modal-body">
             <p><strong>旧 cwd：</strong>{activeConversation?.partnerRoot || '不可用'}</p>

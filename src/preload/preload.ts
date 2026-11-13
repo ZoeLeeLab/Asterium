@@ -400,6 +400,12 @@ contextBridge.exposeInMainWorld('asteriumMemory', {
     cancel: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportCancel, input),
     undo: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportUndo, input),
   } satisfies import('../shared/memoryImport').MemoryImportApi,
+  backup: {
+    export: partnerId => ipcRenderer.invoke(AGENT_IPC.memoryBackupExport, partnerId),
+    choose: partnerId => ipcRenderer.invoke(AGENT_IPC.memoryBackupChoose, partnerId),
+    import: (partnerId, id) => ipcRenderer.invoke(AGENT_IPC.memoryBackupImport, partnerId, id),
+    cancel: (partnerId, id) => ipcRenderer.invoke(AGENT_IPC.memoryBackupCancel, partnerId, id),
+  },
   query: (request: MemoryArchiveQuery) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveQuery, request),
   briefing: (partnerId: string) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveBriefing, partnerId),
   create: (request: MemoryArchiveCreateRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveCreate, request),
@@ -408,6 +414,7 @@ contextBridge.exposeInMainWorld('asteriumMemory', {
   softDelete: (request: MemoryArchiveMutationRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveSoftDelete, request),
   restore: (request: MemoryArchiveMutationRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveRestore, request),
   purge: (request: MemoryArchiveMutationRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchivePurge, request),
+  purgeArchived: request => ipcRenderer.invoke(AGENT_IPC.memoryArchiveBulkPurge, request),
   readSource: (request: MemoryArchiveSourceReadRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveReadSource, request),
   onChanged: (listener: (change: MemoryArchiveChange) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, value: MemoryArchiveChange) => listener(value);

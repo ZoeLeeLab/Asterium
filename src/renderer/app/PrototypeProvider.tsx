@@ -1,5 +1,6 @@
 import type { ContextHandoff } from '../../shared/contextHandoff';
 import { useAppearance } from './useAppearance';
+import { clearAttachmentDraft } from './attachmentDrafts';
 import type { AppearanceSettings, AppearanceUpdate } from './appearance';
 /* eslint-disable react-refresh/only-export-components -- reducer and hook are intentionally colocated with this small prototype provider. */
 import type { SessionCommandName, SessionStatus } from '../../shared/sessionCommands';
@@ -1855,6 +1856,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
         if (partner.sourceMode === 'api_partner') await window.asteriumAgents?.deleteApiSession?.(partner.id, conversation.id);
         await window.asteriumAttachments?.deleteConversation(conversationId);
       }
+      clearAttachmentDraft(`chat:${conversationId}`);
       dispatch({ type: 'deleteConversationPermanently', conversationId });
     }
     return { ok: true };
@@ -2293,6 +2295,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     },
     removeGroupChat: async (groupChatId) => {
       await window.asteriumStudio?.removeRoom(groupChatId);
+      clearAttachmentDraft(`studio:${groupChatId}`);
       const nextRooms = { ...studioRoomsRef.current };
       delete nextRooms[groupChatId];
       studioRoomsRef.current = nextRooms;

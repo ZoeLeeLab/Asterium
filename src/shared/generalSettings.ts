@@ -1,20 +1,21 @@
 import { z } from 'zod';
 
-// Reserve Chromium's clipboard, redo, and developer tools combinations.
-const customScreenshotShortcuts = Array.from('ABDEFGHKLMNOPQRSTUWXY0123456789', key => `Ctrl+Shift+${key}` as const);
-export const SCREENSHOT_SHORTCUTS = ['system', ...customScreenshotShortcuts] as const;
-const screenshotShortcut = z.enum(SCREENSHOT_SHORTCUTS);
+export const WINDOWS_SCREENSHOT_SHORTCUT = 'Ctrl+Shift+A';
+
+// Preserve the saved preference so older builds can still read it after a downgrade.
+const legacyScreenshotShortcuts = Array.from('ABDEFGHKLMNOPQRSTUWXY0123456789', key => `Ctrl+Shift+${key}` as const);
+const legacyScreenshotShortcut = z.enum(['system', ...legacyScreenshotShortcuts] as const);
 
 const notifications = z.object({ completed: z.boolean(), approval: z.boolean(), automationFailed: z.boolean() }).strict();
 export const generalSettingsSchema = z.object({
   launchAtLogin: z.boolean(), closeAction: z.enum(['tray', 'quit']), sendShortcut: z.enum(['enter', 'ctrl_enter']),
-  screenshotShortcut: screenshotShortcut.default('system'),
+  screenshotShortcut: legacyScreenshotShortcut.default('system'),
   notifications, language: z.literal('zh-CN'),
   sandboxEnabled: z.boolean().default(false), sandboxAllowNetwork: z.boolean().default(false),
   checkUpdatesAtStartup: z.boolean().default(true), includePrereleaseUpdates: z.boolean().default(true),
   defaultProjectRoot: z.string().min(1).optional(),
 }).strict();
-export const generalSettingsUpdateSchema = generalSettingsSchema.omit({ notifications: true }).partial().extend({ notifications: notifications.partial().optional(), screenshotShortcut: screenshotShortcut.optional(), sandboxEnabled: z.boolean().optional(), sandboxAllowNetwork: z.boolean().optional(), defaultProjectRoot: z.string().min(1).nullable().optional() }).strict();
+export const generalSettingsUpdateSchema = generalSettingsSchema.omit({ notifications: true, screenshotShortcut: true }).partial().extend({ notifications: notifications.partial().optional(), sandboxEnabled: z.boolean().optional(), sandboxAllowNetwork: z.boolean().optional(), defaultProjectRoot: z.string().min(1).nullable().optional() }).strict();
 export type GeneralSettings = z.infer<typeof generalSettingsSchema>;
 export type GeneralSettingsUpdate = z.infer<typeof generalSettingsUpdateSchema>;
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {

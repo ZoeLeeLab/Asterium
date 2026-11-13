@@ -2,6 +2,8 @@ import { Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { MEMORY_IMPORT_MAX_CHARS, type MemoryImportCandidate, type MemoryImportReceipt, type MemoryImportPreview, type MemoryImportUndo } from '../../../shared/memoryImport';
 import type { MemoryFallbackSettings } from '../../../shared/memoryFallback';
+import type { MemoryBackupPreview, MemoryBackupReceipt } from '../../../shared/memoryBackup';
+import { Modal } from '../ui/Modal';
 import { memoryTypeLabels } from './memoryLabels';
 
 function importError(error: unknown) {
@@ -33,8 +35,9 @@ function importError(error: unknown) {
   return '操作未完成。请检查提炼模型和网络，或稍后重试。';
 }
 
-export function MemoryImportPanel({ partnerId }: { partnerId: string }) {
+export function MemoryImportPanel({ partnerId, partnerName = '当前伙伴' }: { partnerId: string; partnerName?: string }) {
   const api = window.asteriumMemory?.importText;
+  const backup = window.asteriumMemory?.backup;
   const fallback = window.asteriumMemoryFallback;
   const [config, setConfig] = useState<MemoryFallbackSettings>();
   const [text, setText] = useState('');
@@ -48,11 +51,63 @@ export function MemoryImportPanel({ partnerId }: { partnerId: string }) {
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const batch = useRef<string | undefined>(undefined);
+  const backupId = useRef<string | undefined>(undefined);
+  const mounted = useRef(false);
+  const [backupPreview, setBackupPreview] = useState<MemoryBackupPreview>();
+  const [backupReceipt, setBackupReceipt] = useState<MemoryBackupReceipt>();
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState('');
+  const cancelBackupButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => () => {
     if (batch.current) void api?.cancel({ partnerId, batchId: batch.current }).catch(() => undefined);
     batch.current = undefined;
   }, [api, partnerId]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (backupId.current) void backup?.cancel(partnerId, backupId.current).catch(() => undefined);
+      backupId.current = undefined;
+    };
+  }, [backup, partnerId]);
+
+  async function chooseBackup() {
+    if (!backup || backupBusy) return;
+    setBackupBusy(true); setBackupError(''); setBackupReceipt(undefined);
+    try {
+      const selected = await backup.choose(partnerId);
+      if (!selected) return;
+      if (!mounted.current) { await backup.cancel(partnerId, selected.id); return; }
+      backupId.current = selected.id;
+      setBackupPreview(selected);
+    } catch (failure) {
+      if (mounted.current) setBackupError(memoryBackupError(failure));
+    } finally { if (mounted.current) setBackupBusy(false); }
+  }
+
+  function cancelBackup() {
+    if (backupBusy) return;
+    if (backupId.current) void backup?.cancel(partnerId, backupId.current).catch(() => undefined);
+    backupId.current = undefined;
+    setBackupPreview(undefined);
+    setBackupError('');
+  }
+
+  async function importBackup() {
+    if (!backup || !backupPreview || backupBusy) return;
+    setBackupBusy(true); setBackupError('');
+    try {
+      const result = await backup.import(partnerId, backupPreview.id);
+      if (!mounted.current) return;
+      backupId.current = undefined;
+      setBackupPreview(undefined);
+      setBackupReceipt(result);
+    } catch (failure) {
+      if (mounted.current) setBackupError(memoryBackupError(failure));
+    } finally { if (mounted.current) setBackupBusy(false); }
+  }
 
   if (!api || !fallback) return null;
 
@@ -149,9 +204,14 @@ export function MemoryImportPanel({ partnerId }: { partnerId: string }) {
 
   const selected = candidates?.filter(item => item.selected) ?? [];
   const incomplete = Boolean(previewSummary && (previewSummary.rejectedCount || previewSummary.failedBatchCount));
-  return <details className="memory-briefing-card" onToggle={event => { if (event.currentTarget.open) void refresh(); }}>
-    <summary><strong>导入旧对话</strong><small>提炼后由你确认</small></summary>
+  return <><details className="memory-briefing-card" onToggle={event => { if (event.currentTarget.open) void refresh(); }}>
+    <summary><strong>导入旧对话</strong><small>{backup ? '支持记忆备份' : '提炼后由你确认'}</small></summary>
     <div className="memory-fallback-content"><div className="memory-editor memory-import-editor">
+      {backup && <div className="memory-editor-wide memory-import-file">
+        <button className="secondary-button" type="button" disabled={backupBusy} onClick={() => void chooseBackup()}><Upload size={15} />导入星丛记忆</button>
+        {backupReceipt && <small role="status">已恢复 {backupReceipt.added} 条记忆，跳过 {backupReceipt.skipped} 条已有记录。</small>}
+        {!backupPreview && backupError && <small role="alert" className="modal-error">{backupError}</small>}
+      </div>}
       {receipt ? <>
         <p className="memory-editor-wide" role="status">已导入 {receipt.added} 条，跳过 {receipt.skipped} 条。{undo && `已移入归档库 ${undo.removed} 条，保留 ${undo.retained} 条已修改或被引用的记忆。`}</p>
         <footer className="memory-editor-wide">
@@ -208,5 +268,21 @@ export function MemoryImportPanel({ partnerId }: { partnerId: string }) {
       </>}
       {error && <p className="form-error memory-editor-wide" role="alert">{error}</p>}
     </div></div>
-  </details>;
+  </details>
+    {backupPreview && <Modal title="导入记忆备份" onClose={cancelBackup} initialFocusRef={cancelBackupButton}>
+      <div className="modal-body"><p>将 {backupPreview.fileName} 中的 {backupPreview.total} 条记忆导入「{partnerName}」{backupPreview.archived ? `，其中 ${backupPreview.archived} 条留在归档库` : ''}。已有记录会保留。</p>
+        {backupError && <p className="modal-error" role="alert">{backupError}</p>}
+      </div>
+      <footer className="modal-footer"><button type="button" ref={cancelBackupButton} className="secondary-button" disabled={backupBusy} onClick={cancelBackup}>取消</button><button type="button" className="primary-button" disabled={backupBusy || !backupPreview.total} onClick={() => void importBackup()}>{backupBusy ? '正在导入…' : '确认导入备份'}</button></footer>
+    </Modal>}
+  </>;
+}
+
+function memoryBackupError(error: unknown) {
+  const detail = error instanceof Error ? error.message : '';
+  if (detail.includes('MEMORY_BACKUP_INVALID')) return '备份文件损坏，或格式有误。';
+  if (detail.includes('MEMORY_BACKUP_TOO_LARGE')) return '备份文件超过可导入大小。';
+  if (detail.includes('MEMORY_BACKUP_VERSION_UNSUPPORTED')) return '此备份版本需要新版星丛。';
+  if (detail.includes('MEMORY_BACKUP_PREVIEW_EXPIRED')) return '备份预览已失效，请重新选择文件。';
+  return '未能导入备份，请检查文件和目标伙伴后重试。';
 }

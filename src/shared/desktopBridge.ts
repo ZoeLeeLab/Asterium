@@ -108,6 +108,7 @@ import type { SingleChatConversationSnapshot } from './singleChatMessages';
 import type {
   MemoryArchiveBriefing,
   MemoryArchiveChange,
+  MemoryArchiveBulkPurgeRequest,
   MemoryArchiveCommentRequest,
   MemoryArchiveCreateRequest,
   MemoryArchiveMutationRequest,
@@ -334,6 +335,7 @@ export interface AsteriumProjectNotebooksApi {
 
 export interface AsteriumMemoryApi {
   importText?: import('./memoryImport').MemoryImportApi;
+  backup?: import('./memoryBackup').MemoryBackupApi;
   query: (request: MemoryArchiveQuery) => Promise<MemoryArchiveQueryResult>;
   briefing: (partnerId: string) => Promise<MemoryArchiveBriefing>;
   create: (request: MemoryArchiveCreateRequest) => Promise<MemoryRecord>;
@@ -342,6 +344,7 @@ export interface AsteriumMemoryApi {
   softDelete: (request: MemoryArchiveMutationRequest) => Promise<MemoryRecord>;
   restore: (request: MemoryArchiveMutationRequest) => Promise<MemoryRecord>;
   purge: (request: MemoryArchiveMutationRequest) => Promise<MemoryRecord>;
+  purgeArchived?: (request: MemoryArchiveBulkPurgeRequest) => Promise<number>;
   readSource: (request: MemoryArchiveSourceReadRequest) => Promise<Array<{ index: number; result: MemorySourceReadResult }>>;
   onChanged: (listener: (change: MemoryArchiveChange) => void) => () => void;
 }

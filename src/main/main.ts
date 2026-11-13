@@ -122,7 +122,7 @@ function createWindow() {
   });
 
   installAppearanceRecovery(mainWindow);
-  installWindowsScreenshotShortcut(mainWindow, () => generalSettings.current().screenshotShortcut);
+  installWindowsScreenshotShortcut(mainWindow);
   mainWindow.on('page-title-updated', event => { event.preventDefault(); mainWindow?.setTitle(environment.label); });
   mainWindow.once('ready-to-show', () => mainWindow?.show());
 
