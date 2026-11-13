@@ -42,17 +42,23 @@ export function buildNativeLifecycleSyncGroups(partners: Partner[], conversation
   return partners.flatMap((partner) => {
     if (partner.sourceMode !== 'local_cli' || partner.adapterType !== 'codex_cli' || partner.connectionKind !== 'local_codex' || partner.isRemoved) return [];
     const byGrant = new Map<string, NativeLifecycleSyncGroup['conversations']>();
+    const imported: NativeLifecycleSyncGroup[] = [];
     for (const conversation of conversations) {
       if (conversation.partnerId !== partner.id || !conversation.sessionId) continue;
+      if (conversation.importedCodexThread) {
+        imported.push({ request: nativeLifecycleRequest(partner, [conversation.sessionId], undefined, conversation.id),
+          conversations: [{ conversationId: conversation.id, threadId: conversation.sessionId, nativeThreadState: conversation.nativeThreadState }] });
+        continue;
+      }
       const grantId = conversation.partnerRootGrantId ?? partner.partnerRootGrantId ?? '';
       const group = byGrant.get(grantId) ?? [];
       group.push({ conversationId: conversation.id, threadId: conversation.sessionId, nativeThreadState: conversation.nativeThreadState });
       byGrant.set(grantId, group);
     }
-    return [...byGrant.entries()].map(([grantId, items]) => ({
+    return [...imported, ...[...byGrant.entries()].map(([grantId, items]) => ({
       request: nativeLifecycleRequest(partner, [...new Set(items.map((item) => item.threadId))], grantId || undefined),
       conversations: items,
-    }));
+    }))];
   });
 }
 
@@ -608,6 +614,9 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
           : partner),
       };
     case 'createConversation':
+      if (state.conversations.some(conversation => conversation.id === action.conversation.id)) {
+        return prototypeReducer(state, { type: 'selectConversation', conversationId: action.conversation.id });
+      }
       return {
         ...state,
         conversations: [action.conversation, ...state.conversations],
@@ -1219,6 +1228,7 @@ interface PrototypeContextValue {
   removePartner: (partnerId: string) => void;
   trashRemovedPartnerData: (partnerId: string) => Promise<boolean>;
   createConversation: (partnerId: string, title?: string, sessionId?: string) => string;
+  openImportedConversation: (conversation: Conversation) => void;
   renameConversation: (conversationId: string, title: string) => void;
   archiveConversation: (conversationId: string) => Promise<ConversationLifecycleOutcome>;
   archivePartnerConversations: (partnerId: string) => void;
@@ -2015,6 +2025,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'createConversation', conversation });
       return conversation.id;
     },
+    openImportedConversation: (conversation) => dispatch({ type: 'createConversation', conversation }),
     renameConversation: (conversationId, title) => dispatch({ type: 'renameConversation', conversationId, title }),
     archiveConversation: (conversationId) => changeConversationLifecycle(conversationId, 'archive'),
     archivePartnerConversations: (partnerId) => dispatch({ type: 'archivePartnerConversations', partnerId, archivedAt: new Date().toISOString() }),

@@ -10,6 +10,7 @@ import { statSync } from 'node:fs';
 import { access, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { sameCodexPath } from './codexSessionFile';
 import { promisify } from 'node:util';
 import { AUTOMATION_TOOL_DESCRIPTION, automationToolJsonSchema } from '../../shared/automationTool';
 import type { AsteriumRuntimeToolController, AttachmentPathResolver, PartnerAdapter } from './PartnerAdapter';
@@ -50,7 +51,6 @@ import {
   type CancelRunCommand,
   type CodexDetectionResult,
   type CodexRuntimeInfo,
-  type CodexThreadSummary,
   type NativeThreadLifecycleAction,
   type NativeThreadLifecycleResult,
   type PartnerEvent,
@@ -222,21 +222,33 @@ export async function detectCodexCli(): Promise<CodexInstallation> {
   };
 }
 
-export async function listCodexThreads(executablePath: string, workingDirectory: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<CodexThreadSummary[]> {
+export async function readCodexThreadMetadata(executablePath: string, workingDirectory: string, threadId: string, createTransport: CreateCodexTransport = defaultCreateTransport) {
   const client = createTransport(executablePath, workingDirectory);
+  const signal = AbortSignal.timeout(10_000);
   try {
-    await client.start();
-    const result = await client.request<{ data?: unknown }>('thread/list', {
-      cwd: workingDirectory,
-      limit: 100,
-      sortKey: 'updated_at',
-      sortDirection: 'desc',
-      sourceKinds: CODEX_THREAD_SOURCE_KINDS,
-      archived: false,
-    });
-    return parseCodexThreads(result, workingDirectory);
+    await abortable(client.start(), signal);
+    const { thread } = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: false }), signal);
+    if (!isRecord(thread) || thread.id !== threadId || !text(thread.cwd)) throw new Error('CODEX_THREAD_METADATA_INVALID');
+    return {
+      cwd: text(thread.cwd),
+      title: text(thread.name) || '未命名 Codex 线程',
+      updatedAt: typeof thread.updatedAt === 'number' && Number.isFinite(thread.updatedAt) ? new Date(thread.updatedAt * 1000).toISOString() : undefined,
+      file: text(thread.path),
+    };
   } finally {
     await client.close().catch(() => undefined);
+  }
+}
+
+export async function getImportedCodexThreadLifecycle(executablePath: string, workingDirectory: string, codexHome: string, threadId: string): Promise<NativeThreadLifecycleResult> {
+  const checkedAt = new Date().toISOString();
+  try {
+    const { file } = await readCodexThreadMetadata(executablePath, workingDirectory, threadId);
+    const archived = file && sameCodexPath(path.dirname(file), path.join(codexHome, 'archived_sessions'));
+    return { threadId, state: archived ? 'archived' : 'active', checkedAt };
+  } catch (error) {
+    if (isCodexThreadMissingError(error)) return { threadId, state: 'deleted', checkedAt, message: '原生线程已被删除。' };
+    return { threadId, state: 'unavailable', checkedAt, message: '暂时无法确认这个原生线程的状态。' };
   }
 }
 
@@ -585,22 +597,6 @@ async function listAllCodexThreadIds(client: CodexAppServerTransport, workingDir
   return ids;
 }
 
-export function parseCodexThreads(result: unknown, workingDirectory: string): CodexThreadSummary[] {
-  const value = isRecord(result) ? result : {};
-  const data = Array.isArray(value.data) ? value.data : [];
-  return data.filter(isRecord).map((thread) => {
-    const updatedAt = typeof thread.updatedAt === 'number' && Number.isFinite(thread.updatedAt)
-      ? new Date(thread.updatedAt * 1000).toISOString()
-      : undefined;
-    return {
-      threadId: text(thread.id),
-      title: text(thread.name) || text(thread.preview) || '未命名 Codex 线程',
-      cwd: text(thread.cwd) || workingDirectory,
-      updatedAt,
-    };
-  }).filter((thread) => Boolean(thread.threadId) && path.resolve(thread.cwd).toLowerCase() === path.resolve(workingDirectory).toLowerCase());
-}
-
 type StreamInput = { kind: 'raw'; message: CodexRpcMessage } | { kind: 'mapped'; event: CodexMappedEvent };
 
 interface ActiveRun {
@@ -682,6 +678,7 @@ export class CodexCliAdapter implements PartnerAdapter {
     private readonly resolveAttachment?: AttachmentPathResolver,
     private runtimeTools?: AsteriumRuntimeToolController,
     private readonly protectedRoots: readonly string[] = [],
+    private readonly importedThread = false,
   ) {}
 
   replaceRuntimeTools(runtimeTools: AsteriumRuntimeToolController) {
@@ -1037,6 +1034,7 @@ export class CodexCliAdapter implements PartnerAdapter {
           threadId: requestedSessionId,
           cwd: this.workingDirectory,
           ...this.runtimeWorkspaceRoots(runtimeWorkspaceDirectories),
+          ...(this.importedThread ? { excludeTurns: true } : {}),
         });
         const id = text(result?.thread?.id) || requestedSessionId;
         if (id !== requestedSessionId) throw new Error('CODEX_RESUMED_THREAD_MISMATCH');

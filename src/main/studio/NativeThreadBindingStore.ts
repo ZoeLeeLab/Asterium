@@ -67,12 +67,50 @@ export class NativeThreadBindingStore {
     });
   }
 
+  async reserveCodexImport(partnerId: string, nativeThreadId: string, workspace: NonNullable<NativeThreadBinding['importedCodexWorkspace']>) {
+    return this.mutate(async () => {
+      const data = await this.readUnlocked();
+      const existing = data.bindings.find((item) => item.nativeThreadId === nativeThreadId
+        && (item.scope !== 'single' || item.state !== 'invalid'));
+      if (existing) return existing;
+      const now = new Date().toISOString();
+      const binding: NativeThreadBinding = {
+        bindingId: randomUUID(), partnerId, nativeThreadId, source: 'local_cli',
+        scope: 'single', conversationId: `conversation-${randomUUID()}`,
+        generation: 1, state: 'pending', createdAt: now, updatedAt: now,
+        importedCodexWorkspace: workspace,
+      };
+      data.bindings.push(binding);
+      await this.writeUnlocked(data);
+      return binding;
+    });
+  }
+
+  async updateImportedCodexDirectory(bindingId: string, expectedDirectory: string, directory: string, canonicalDirectory: string) {
+    return this.mutate(async () => {
+      const data = await this.readUnlocked();
+      const binding = data.bindings.find((item) => item.bindingId === bindingId && item.state === 'active');
+      const workspace = binding?.importedCodexWorkspace;
+      if (!binding || !workspace || workspace.directory !== expectedDirectory) throw new Error('CODEX_IMPORTED_DIRECTORY_CHANGED');
+      binding.importedCodexWorkspace = { ...workspace, directory, canonicalDirectory };
+      binding.updatedAt = new Date().toISOString();
+      await this.writeUnlocked(data);
+    });
+  }
+
   async registerSingle(input: { partnerId: string; source: ConnectionSource; conversationId: string; nativeThreadId: string }) {
     return this.mutate(async () => {
       const data = await this.readUnlocked();
       const current = data.bindings.find((item) => item.partnerId === input.partnerId && item.scope === 'single'
         && item.conversationId === input.conversationId && item.state !== 'invalid');
       if (current?.state === 'active' && current.nativeThreadId === input.nativeThreadId) return current;
+      if (current?.importedCodexWorkspace) {
+        if (current.nativeThreadId !== input.nativeThreadId) throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
+        current.state = 'active';
+        current.updatedAt = new Date().toISOString();
+        await this.writeUnlocked(data);
+        return current;
+      }
 
       const collision = data.bindings.find((item) => item.nativeThreadId === input.nativeThreadId
         && (item.scope !== 'single' || item.state !== 'invalid')

@@ -12,7 +12,6 @@ import type {
   ClaudeSessionImport,
   CodexDetectionResult,
   CodexRuntimeInfo,
-  CodexThreadSummary,
   ConversationAttachmentInfo,
   CredentialStatus,
   ExistingThreadConnection,
@@ -25,6 +24,7 @@ import type {
   PartnerProfilesSyncResult,
   PartnerWorkspaceState,
   PendingMessageAttachment,
+  PermissionMode,
   RendererAgentEvent,
   ResolveAuthorizationCommand,
   ResolveUserInputCommand,
@@ -133,7 +133,10 @@ export interface AsteriumAgentsApi {
   listCodexModels?: (request: import('./codexModels').CodexModelListRequest) => Promise<import('./codexModels').CodexModelOption[]>;
   searchCodexHistory?: (request: import('./codexHistory').CodexHistorySearchRequest) => Promise<import('./codexHistory').CodexHistorySearchPage>;
   readCodexHistory?: (request: import('./codexHistory').CodexHistoryRequest) => Promise<import('./codexHistory').CodexHistoryPage>;
-  listCodexThreads?: (runtimeId: string, workspaceGrantId: string) => Promise<CodexThreadSummary[]>;
+  chooseCodexThread?: (runtimeId: string) => Promise<import('./codexThreadImport').CodexThreadImportPreview | null>;
+  confirmCodexThreadImport?: (selectionId: string, partnerId: string, permissionMode: PermissionMode) => Promise<import('./codexThreadImport').CodexThreadImportResult>;
+  codexImportedWorkspaceStatus?: (partnerId: string, conversationId: string) => Promise<import('./codexThreadImport').CodexImportedWorkspaceStatus>;
+  chooseCodexImportedDirectory?: (partnerId: string, conversationId: string) => Promise<import('./codexThreadImport').CodexImportedWorkspaceStatus | null>;
   getLocalThreadLifecycles?: (request: LocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult[]>;
   changeLocalThreadLifecycle?: (request: ChangeLocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult>;
   importClaudeSession?: () => Promise<ClaudeSessionImport | null>;

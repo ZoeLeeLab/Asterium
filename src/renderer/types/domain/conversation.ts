@@ -98,6 +98,7 @@ export interface Conversation {
   /** Successful assistant completion received while this conversation was not visible. */
   unreadCompletedAt?: string;
   sessionId?: SessionId;
+  importedCodexThread?: boolean;
   runtimeModel?: RuntimeModelObservation;
   codexModel?: import('../../../shared/codexModels').CodexModelSelection;
   nativeThreadState?: NativeThreadLifecycleState;

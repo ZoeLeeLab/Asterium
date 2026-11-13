@@ -222,6 +222,22 @@ export class SingleChatHistoryStore {
     });
   }
 
+  createImportedCodexConversation(metadata: SingleChatMetadata) {
+    return this.exclusive(async () => {
+      const manifest = await this.readManifest();
+      if (!manifest || manifest.deleted.includes(metadata.id)) throw new Error('SINGLE_CHAT_HISTORY_IMPORT_UNAVAILABLE');
+      if (manifest.chats.includes(metadata.id)) {
+        const existing = (await this.readTip(metadata.id)).metadata;
+        if (existing.partnerId !== metadata.partnerId || existing.sessionId !== metadata.sessionId || !existing.importedCodexThread) {
+          throw new Error('SINGLE_CHAT_HISTORY_IMPORT_CONFLICT');
+        }
+        return existing;
+      }
+      await this.applyChange(manifest, { conversationId: metadata.id, metadata, upsert: [], remove: [] });
+      return metadata;
+    });
+  }
+
   bindInitialSession(conversationId: string, partnerId: string, sessionId: string) {
     return this.exclusive(async () => {
       const manifest = await this.readManifest();

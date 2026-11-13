@@ -1,3 +1,4 @@
+import { useImportedCodexWorkspace } from '../app/useImportedCodexWorkspace';
 import { useNativeCodexHistory } from '../app/nativeCodexHistory';
 import { useSingleChatTimeline } from '../app/useSingleChatTimeline';
 import { canRetryCodexMessage, supportsContextHandoff } from '../app/singleChatRuntime';
@@ -146,6 +147,8 @@ export function ChatPage() {
   const historyDetached = historyWindow.detached || nativeHistory.detached;
   const returnToLatestNative = nativeHistory.returnToLatest;
   const activeConversation = nativeHistory.conversation;
+  const importedWorkspace = useImportedCodexWorkspace(activeConversation);
+  const importedDirectoryUnavailable = importedWorkspace.workspace?.available === false;
   const activeConversationId = activeConversation?.id;
   const searchHistory = window.asteriumConversations?.searchHistory;
   const searchNative = nativeHistory.search;
@@ -308,7 +311,7 @@ export function ChatPage() {
   const retryableCodexMessage = !historyDetached && !chatHistoryLoading && !compacting
     && canRetryCodexMessage(activePartner, storedConversation, lastStoredMessage) ? lastStoredMessage : undefined;
   const nativeThreadUnavailable = activeConversation?.nativeThreadState === 'unavailable' || activeConversation?.nativeThreadState === 'deleted';
-  const canRegenerate = !historyDetached && !chatHistoryLoading && activePartner?.sourceMode !== 'existing_thread'
+  const canRegenerate = !activeConversation?.importedCodexThread && !historyDetached && !chatHistoryLoading && activePartner?.sourceMode !== 'existing_thread'
     && !compacting && !retryableCodexMessage
     && !activeConversation?.activeRun && !activeConversation?.isDisabled && !workspaceMismatch && !latestUserMessage?.isGuidance;
   const cyberBossChat = activePartner?.sourceMode === 'existing_thread';
@@ -399,6 +402,9 @@ export function ChatPage() {
       }).catch(() => undefined);
       setPendingQuote(undefined);
       return true;
+    }
+    if (activeConversation?.importedCodexThread) {
+      return importedWorkspace.check().then(available => available && commitAndSend(content, pending, quote));
     }
     if (!workspaceMismatch) return commitAndSend(content, pending, quote);
     return new Promise<boolean>((resolve) => {
@@ -1213,6 +1219,11 @@ export function ChatPage() {
               {!partnerRemoved && activePartner && activePartner.sourceMode !== 'existing_thread' && <button className="primary-button" type="button" onClick={() => activePartner && ensureConversation(activePartner.id)}>新建对话</button>}
             </div>
           )}
+        {importedDirectoryUnavailable && <div className="run-notice run-notice--failed" role="status">
+          <CircleAlert size={15} /><span>工作目录不可访问：{importedWorkspace.workspace?.directory}</span>
+          <button className="text-button" type="button" disabled={importedWorkspace.choosing} onClick={() => void importedWorkspace.choose()}>重新选择目录</button>
+          {importedWorkspace.error && <span>{importedWorkspace.error}</span>}
+        </div>}
         {activeConversation?.nativeThreadNotice && <div className={`run-notice run-notice--${activeConversation.nativeThreadNotice.state === 'error' ? 'failed' : 'cancelled'}`} role="status"><CircleAlert size={15} /><span>{activeConversation.nativeThreadNotice.message}</span></div>}
         {commandResult && <SessionCommandNotice result={commandResult} onDismiss={dismissCommandResult} />}
         {compaction && <SessionCommandNotice result={compaction} onDismiss={dismissCompaction} label="会话压缩状态" />}
@@ -1229,7 +1240,7 @@ export function ChatPage() {
         <Composer
           key={cyberBossChat ? `${activeConversation?.id}:${cyberBossThreadId}` : activeConversation?.id ?? 'no-conversation'}
           draftKey={activeConversation ? `chat:${activeConversation.id}` : undefined}
-          placeholder={canStageGuidance ? `输入补充要求，Enter 后暂存…` : nativeThreadUnavailable ? '原生线程暂不可用，请先查看上方提示' : workspaceMismatch ? '发送时将确认切换到当前工作区的新 session' : activeConversation?.isDisabled ? '这条会话已停用' : activeConversation ? `给 ${activePartner?.publicIdentity.displayName ?? '伙伴'} 发送消息…` : '请先新建一段对话'}
+          placeholder={canStageGuidance ? `输入补充要求，Enter 后暂存…` : importedDirectoryUnavailable ? '请先重新选择工作目录' : nativeThreadUnavailable ? '原生线程暂不可用，请先查看上方提示' : workspaceMismatch ? '发送时将确认切换到当前工作区的新 session' : activeConversation?.isDisabled ? '这条会话已停用' : activeConversation ? `给 ${activePartner?.publicIdentity.displayName ?? '伙伴'} 发送消息…` : '请先新建一段对话'}
           onSend={sendWithAttachments}
           busy={Boolean(activeConversation?.activeRun) || compacting}
           allowBusySend={canStageGuidance && !compacting}
@@ -1239,7 +1250,7 @@ export function ChatPage() {
           onSendPendingGuidance={() => void sendPendingGuidance()}
           onDiscardPendingGuidance={discardPendingGuidance}
           pendingGuidanceSendDisabled={Boolean(activeConversation?.activeRun && (activeConversation.pendingAuthorization || activeConversation.pendingUserInput))}
-          disabled={partnerRemoved || !activeConversation || activeConversation.isDisabled || nativeThreadUnavailable || compacting}
+          disabled={partnerRemoved || !activeConversation || activeConversation.isDisabled || nativeThreadUnavailable || importedDirectoryUnavailable || compacting}
           attachmentsEnabled={attachmentsEnabled}
           allowLocalReferences={attachmentsEnabled ? true : undefined}
           attachmentCapabilities={activePartner?.attachmentCapabilities}
@@ -1283,6 +1294,7 @@ export function ChatPage() {
             && window.asteriumAgents?.listCodexModels ? <CodexModelPicker
               key={JSON.stringify([activePartner.codexRuntimeId, activePartner.codexRuntime?.environment, activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId])}
               partnerRootGrantId={activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId}
+              {...(activeConversation.importedCodexThread ? { conversationId: activeConversation.id, partnerId: activePartner.id } : {})}
               codexRuntimeId={activePartner.codexRuntimeId}
               codexRuntimeEnvironment={activePartner.codexRuntime?.environment}
               selection={activeConversation.codexModel}
