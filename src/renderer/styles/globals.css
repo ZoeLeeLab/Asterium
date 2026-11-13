@@ -158,7 +158,7 @@ h1, h2, h3, p { margin: 0; }
 .conversation-action--danger:hover:not(:disabled) { color: #ff8d9b; background: rgba(238, 89, 107, 0.12); }
 .empty-conversation { display: flex; align-items: center; width: 100%; min-height: 30px; padding: 4px 10px; border: 0; border-radius: var(--radius-sm); color: var(--muted); background: transparent; text-align: left; font-size: calc(11px * var(--ui-font-scale,1)); }
 .empty-conversation:hover { color: var(--accent-strong); background: var(--surface-hover); }
-.conversation-icon { display: grid; place-items: center; width: 22px; height: 18px; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: calc(8px * var(--ui-font-scale,1)); }
+.conversation-icon { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 18px; border: 1px solid currentColor; border-radius: var(--radius-sm); font-size: calc(8px * var(--ui-font-scale,1)); }
 .search-empty { padding: 18px 8px; color: var(--muted); font-size: calc(10px * var(--ui-font-scale,1)); text-align: center; }
 .profile-row { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding: 12px 5px 2px; border-top: 1px solid var(--border); }
 .profile-row > span:not(.avatar) { flex: 1; }
@@ -281,6 +281,9 @@ h1, h2, h3, p { margin: 0; }
 .message-quote-card--composer { margin: 0 2px 3px; }
 .message-quote-card--guidance { margin: 2px 0; }
 .delivery-state { position: absolute; right: calc(100% + 6px); bottom: 4px; color: var(--muted); font-size: calc(8px * var(--ui-font-scale,1)); line-height: 1; white-space: nowrap; }
+.message-retry { max-width: 100%; margin: 5px 0 0; }
+.message-retry > svg, .message-retry > button { flex-shrink: 0; }
+.message-retry > button { padding: 2px 4px; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .stream-tail { display: inline-flex; width: 30px; height: 16px; align-items: center; justify-content: center; gap: 3px; margin: 3px 5px 0; color: var(--accent); }
 .stream-tail i { width: 4px; height: 4px; border-radius: 1px; background: currentColor; opacity: .3; transform: rotate(45deg) scale(.72); animation: stream-tail-twinkle 1.2s ease-in-out infinite; }
 .stream-tail i:nth-child(2) { animation-delay: .16s; }

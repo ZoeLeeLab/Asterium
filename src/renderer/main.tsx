@@ -12,6 +12,7 @@ import './styles/appearance.css';
 import './styles/rainy-study.css';
 import './styles/sea-letter.css';
 import './styles/olympian-garden.css';
+import './styles/alice-wonderland.css';
 import './styles/scenic-materials.css';
 import './styles/appearance-customization.css';
 import './styles/automations.css';

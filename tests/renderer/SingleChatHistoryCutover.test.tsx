@@ -11,6 +11,7 @@ import { STATE_KEY } from '../../src/renderer/app/persistence';
 import type { CodexHistoryRequest, CodexHistorySearchRequest } from '../../src/shared/codexHistory';
 import type { ApiPartner } from '../../src/renderer/types/domain';
 import { AGENT_PROTOCOL_VERSION, type RendererAgentEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
+import { CODEX_THREAD_IN_USE } from '../../src/shared/codexThreadInUse';
 import { autoTestOutput } from '../helpers/autoTest.mjs';
 import { createTestState } from '../fixtures/applicationState';
 
@@ -232,4 +233,50 @@ it('reveals a native-only search result without replacing the latest local conve
   fireEvent.change(input, { target: { value: '本地当前记录' } });
   expect(await screen.findByText('星丛本地当前记录', {}, { timeout: 5000 })).toBeInTheDocument();
   expect(screen.queryByText('仅在原线程的旧记录')).not.toBeInTheDocument();
+});
+
+it('reopens a refused Codex send and retries the same saved message on the original thread', async () => {
+  const state = createTestState();
+  const partner = state.partners[0];
+  if (partner.sourceMode !== 'local_cli') throw new Error('expected a local partner');
+  state.partners[0] = { ...partner, isPrototype: false, connectionKind: 'local_codex', adapterType: 'codex_cli', codexRuntimeId: 'fixture-runtime' };
+  const id = state.activeConversationId;
+  const chat = state.conversations.find(item => item.id === id)!;
+  chat.sessionId = 'fixture-original-thread';
+  chat.messages = [];
+  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  const { history, migrate } = connect(path.join(autoTestOutput(), 'codex-occupied'));
+  const send = vi.fn<NonNullable<NonNullable<typeof window.asteriumAgents>['sendLocalCliMessage']>>(async (_adapter, _partner, _grant, _grants, command) => {
+    const messages = (await history.readConversation(id))!.conversation.messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ id: command.messageId, clientMessageId: command.clientMessageId, status: 'sending' });
+    if (send.mock.calls.length === 1) throw new Error('Error invoking remote method: Error: ' + CODEX_THREAD_IN_USE);
+    return { runId: 'fixture-retry-run', sessionId: 'fixture-original-thread' };
+  });
+  window.asteriumAgents!.sendLocalCliMessage = send;
+  const view = mount();
+  const input = await screen.findByRole('textbox', { name: /发送消息/ });
+  fireEvent.change(input, { target: { value: '保留这条发送记录' } });
+  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  const initialRetry = await screen.findByRole('button', { name: '重试' });
+  await waitFor(() => expect(initialRetry).toBeEnabled());
+  expect((await history.readConversation(id))?.conversation.messages[0]).toMatchObject({
+    status: 'failed', error: { code: CODEX_THREAD_IN_USE },
+  });
+  view.unmount();
+  mount();
+  const restoredRetry = await screen.findByRole('button', { name: '重试' });
+  await waitFor(() => {
+    expect(restoredRetry).toBeEnabled();
+    fireEvent.click(restoredRetry);
+  });
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+  const [first, second] = send.mock.calls.map(call => call[4]);
+  expect(second).toMatchObject({
+    sessionId: first.sessionId, messageId: first.messageId, sourceMessage: first.sourceMessage, content: first.content,
+  });
+  expect(second.clientMessageId).not.toBe(first.clientMessageId);
+  await waitFor(() => expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument());
+  expect(screen.getAllByText('保留这条发送记录')).toHaveLength(1);
+  expect(migrate).toHaveBeenCalledOnce();
 });

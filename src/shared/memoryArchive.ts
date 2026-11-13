@@ -90,6 +90,7 @@ export interface MemoryRecord {
 export interface MemoryArchiveQuery {
   partnerId: string;
   includeDeleted?: boolean;
+  archivedOnly?: boolean;
   text?: string;
   tags?: string[];
   types?: MemoryType[];
@@ -149,6 +150,11 @@ export interface MemoryArchiveMutationRequest {
   partnerId: string;
   memoryId: string;
   expectedUpdatedAt: string;
+}
+
+export interface MemoryArchiveBulkPurgeRequest {
+  partnerId: string;
+  records: Array<Pick<MemoryArchiveMutationRequest, 'memoryId' | 'expectedUpdatedAt'>>;
 }
 
 export interface MemoryArchiveSourceReadRequest {

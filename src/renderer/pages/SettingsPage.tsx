@@ -24,7 +24,7 @@ import { SkillSettingsView } from '../components/extensions/SkillSettingsView';
 import { McpSettingsView } from '../components/extensions/McpSettingsView';
 import { MemorySettingsView } from '../components/memory/MemorySettingsView';
 import { PARTNER_SETTINGS_NAVIGATION, type PartnerSettingsNavigation } from '../app/partnerSettingsNavigation';
-import { COMMON_IMAGE_MIME_TYPES, type CliDetectionResult, type CodexDetectionResult, type CodexRuntimeInfo, type CodexThreadSummary, type PartnerProfileManagement, type PartnerWorkspaceState, type PermissionMode, type WorkspaceGrant } from '../../shared/agentProtocol';
+import { COMMON_IMAGE_MIME_TYPES, type CliDetectionResult, type CodexDetectionResult, type CodexRuntimeInfo, type PartnerProfileManagement, type PartnerWorkspaceState, type PermissionMode, type WorkspaceGrant } from '../../shared/agentProtocol';
 import { resolveCodexRuntime } from '../../shared/codexRuntimeSelection';
 import type { ApiPartner, Conversation, ExistingThreadPartner, GroupChat, LocalCliPartner, Partner, Project, PublicIdentity } from '../types/domain';
 import type { ProjectNotebook } from '../../shared/projectNotebook';
@@ -80,12 +80,14 @@ function applyWorkspaceState(partner: LocalCliPartner | ApiPartner, workspace: P
   };
 }
 
+import type { CodexThreadDirectoryPreview, CodexThreadImportPreview } from '../../shared/codexThreadImport';
+
 export function SettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const shortcut = new URLSearchParams(location.search);
   const shortcutPartnerId = shortcut.get('partner') ?? '';
-  const { state, refreshProfiles, addPartner, updatePartner, removePartner, trashRemovedPartnerData, createConversation, ensureConversation, restoreConversation, deleteConversationPermanently, restoreGroupChat, removeGroupChat, rebindPartnerRoot, theme } = usePrototype();
+  const { state, refreshProfiles, addPartner, updatePartner, removePartner, trashRemovedPartnerData, createConversation, openImportedConversation, ensureConversation, restoreConversation, deleteConversationPermanently, restoreGroupChat, removeGroupChat, rebindPartnerRoot, theme } = usePrototype();
   const activePartners = state.partners.filter((partner) => !partner.isRemoved);
   const [mode, setMode] = useState<FormMode>('existing_thread');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => settingsDestination(location.pathname, location.search));
@@ -116,8 +118,11 @@ export function SettingsPage() {
   const [, setApiCredentialConfigured] = useState(false);
   const [cli, setCli] = useState<CliDetectionResult | CodexDetectionResult>();
   const [selectedCodexRuntimeId, setSelectedCodexRuntimeId] = useState('');
-  const [codexThreads, setCodexThreads] = useState<CodexThreadSummary[]>([]);
-  const [selectedCodexThreadId, setSelectedCodexThreadId] = useState('');
+  const [codexThreadDirectory, setCodexThreadDirectory] = useState<CodexThreadDirectoryPreview>();
+  const [codexThreadSelectionId, setCodexThreadSelectionId] = useState<string>();
+  const codexThreadPreview = codexThreadDirectory?.threads.find(thread => thread.selectionId === codexThreadSelectionId);
+  const [pendingCodexImport, setPendingCodexImport] = useState<CodexThreadImportPreview>();
+  const [codexImportError, setCodexImportError] = useState('');
   const [selectedClaudeSession, setSelectedClaudeSession] = useState<{ sessionId: string; sessionFilePath: string }>();
   const [threadsBusy, setThreadsBusy] = useState(false);
   const [grants, setGrants] = useState<WorkspaceGrant[]>([]);
@@ -191,8 +196,9 @@ export function SettingsPage() {
     setApiCredentialConfigured(false);
     setCli(undefined);
     setSelectedCodexRuntimeId('');
-    setCodexThreads([]);
-    setSelectedCodexThreadId('');
+    setCodexThreadDirectory(undefined);
+    setCodexThreadSelectionId(undefined);
+    setPendingCodexImport(undefined);
     setSelectedClaudeSession(undefined);
     setGrants([]);
     setPartnerRootGrant(undefined);
@@ -249,11 +255,10 @@ export function SettingsPage() {
       setGrants(restoredGrants);
       setPartnerRootGrant(partner.partnerRootGrantId && partner.partnerRoot ? { grantId: partner.partnerRootGrantId, displayPath: partner.partnerRoot } : undefined);
       setActiveWorkspaceGrantId(partner.activeWorkspaceGrantId ?? restoredGrants[0]?.grantId ?? '');
-      setSelectedCodexThreadId(partner.resumeSessionId ?? '');
       setSelectedClaudeSession(partner.adapterType === 'claude_code' && partner.resumeSessionId && partner.claudeSessionFilePath
         ? { sessionId: partner.resumeSessionId, sessionFilePath: partner.claudeSessionFilePath }
         : undefined);
-      setCodexThreads([]);
+      setPendingCodexImport(undefined);
       if (partner.adapterType === 'codex_cli' && partner.codexRuntime && partner.codexRuntimeId) {
         setSelectedCodexRuntimeId(partner.codexRuntimeId);
         if (partner.codexRuntime.executablePath) {
@@ -426,8 +431,7 @@ export function SettingsPage() {
           : undefined;
         const remembered = resolveCodexRuntime(result.runtimes, selectedCodexRuntimeId, rememberedEnvironment);
         setSelectedCodexRuntimeId(remembered?.runtimeId ?? result.recommendedRuntimeId ?? '');
-        setCodexThreads([]);
-        setSelectedCodexThreadId('');
+        setPendingCodexImport(undefined);
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : '检测失败');
@@ -457,29 +461,54 @@ export function SettingsPage() {
       if (!selected) return;
       setPartnerRootGrant(selected);
       setFormDirty(true);
-      setCodexThreads([]);
-      setSelectedCodexThreadId('');
       setSelectedClaudeSession(undefined);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : '伙伴配置来源授权失败');
     }
   };
-  const loadCodexThreads = async () => {
+  const loadCodexThread = async () => {
     setThreadsBusy(true);
     setFormError('');
+    setCodexThreadDirectory(undefined);
+    setCodexThreadSelectionId(undefined);
+    setCodexImportError('');
     try {
-      if (!window.asteriumAgents?.listCodexThreads) throw new Error('当前桌面桥接尚未提供 Codex 线程读取能力');
-      if (!selectedCodexRuntimeId) throw new Error('请先选择 Codex 运行时');
-      if (!partnerRootGrant?.grantId) throw new Error('请先导入伙伴配置来源');
-      const threads = await window.asteriumAgents.listCodexThreads(selectedCodexRuntimeId, partnerRootGrant.grantId);
-      setCodexThreads(threads);
-      setSelectedCodexThreadId((current) => threads.some((thread) => thread.threadId === current) ? current : '');
+      const choose = window.asteriumAgents?.chooseCodexThreadDirectory;
+      if (!choose) throw new Error('当前桌面桥接尚未提供 Codex 线程导入能力');
+      const partner = editingPartner?.sourceMode === 'local_cli' && editingPartner.adapterType === 'codex_cli' ? editingPartner : undefined;
+      const runtimeId = selectedCodexRuntimeId || partner?.codexRuntimeId;
+      const selectedRuntime = cli && isCodexDetectionResult(cli)
+        ? cli.runtimes.find(runtime => runtime.runtimeId === runtimeId) : undefined;
+      const runtime = selectedRuntime ?? partner?.codexRuntime;
+      if (!runtimeId && !runtime?.environment) throw new Error('请先检测并选择 Codex 运行时。');
+      const directory = await choose({ runtimeId, runtimeEnvironment: runtime?.environment, codexHome: runtime?.codexHome || undefined });
+      if (directory) setCodexThreadDirectory(directory);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : '读取 Codex 线程失败');
     } finally {
       setThreadsBusy(false);
     }
   };
+
+  const openCodexImport = async (preview: CodexThreadImportPreview, partner: Partner) => {
+    setThreadsBusy(true);
+    setCodexImportError('');
+    try {
+      const confirm = window.asteriumAgents?.confirmCodexThreadImport;
+      if (!confirm) throw new Error('当前桌面桥接尚未提供 Codex 线程导入能力');
+      const result = await confirm(preview.selectionId, partner.id, partner.defaultPermissionMode ?? 'manual');
+      if (result.kind === 'bound_elsewhere') throw new Error('这条 Codex 线程已绑定工作室或其他会话。');
+      openImportedConversation(result.conversation);
+      setCodexThreadDirectory(undefined);
+      setPendingCodexImport(undefined);
+      navigate('/chat');
+    } catch (error) {
+      setCodexImportError(error instanceof Error ? error.message : '导入 Codex 线程失败');
+    } finally {
+      setThreadsBusy(false);
+    }
+  };
+
   const importClaudeSession = async () => {
     setBusy(true);
     setFormError('');
@@ -552,7 +581,7 @@ export function SettingsPage() {
       ? cli.runtimes.find((runtime) => runtime.runtimeId === selectedCodexRuntimeId)
       : undefined;
     if (mode === 'local_cli' && !editingPartner?.isPrototype && local.adapterType === 'codex_cli' && (localConnectionChanged || localSessionChanged || codexRuntimeChanged) && !selectedRuntime?.loggedIn) return setFormError('请先检测并选择已登录的 Codex 运行时。');
-    if (mode === 'local_cli' && !editingPartner?.isPrototype && local.adapterType === 'codex_cli' && local.sessionMode === 'resume' && (localConnectionChanged || localSessionChanged || codexRuntimeChanged) && !selectedCodexThreadId) return setFormError('请选择要导入的 Codex 线程。');
+    if (mode === 'local_cli' && !editingPartner?.isPrototype && local.adapterType === 'codex_cli' && local.sessionMode === 'resume' && (localConnectionChanged || localSessionChanged || codexRuntimeChanged) && !pendingCodexImport && !editingLocal?.resumeSessionId) return setFormError('请选择要导入的 Codex 线程。');
     if (mode === 'local_cli' && !editingPartner?.isPrototype && local.adapterType === 'claude_code' && (localConnectionChanged || localSessionChanged) && (!cli?.installed || !cli.loggedIn)) return setFormError('请先检测已登录的 Claude Code。');
     if (mode === 'local_cli' && !editingPartner?.isPrototype && local.adapterType === 'claude_code' && local.sessionMode === 'resume' && (localConnectionChanged || localSessionChanged) && !selectedClaudeSession) return setFormError('请选择要导入的 Claude Code session JSONL 文件。');
     if (mode === 'local_cli' && !editingPartner?.isPrototype && !partnerRootGrant) return setFormError('请选择伙伴的主工作区；星丛不会再自动生成默认目录。');
@@ -645,7 +674,7 @@ export function SettingsPage() {
         ...(local.adapterType === 'codex_cli' ? {
           codexRuntimeId: selectedCodexRuntimeId || previous?.codexRuntimeId,
           codexRuntime: codexRuntime ?? previous?.codexRuntime,
-          resumeSessionId: local.sessionMode === 'resume' ? selectedCodexThreadId || previous?.resumeSessionId : undefined,
+          resumeSessionId: local.sessionMode === 'resume' ? previous?.resumeSessionId : undefined,
         } : {
           resumeSessionId: local.sessionMode === 'resume' ? selectedClaudeSession?.sessionId || previous?.resumeSessionId : undefined,
           claudeSessionFilePath: local.sessionMode === 'resume' ? selectedClaudeSession?.sessionFilePath || previous?.claudeSessionFilePath : undefined,
@@ -734,6 +763,9 @@ export function SettingsPage() {
       addPartner(partner, true);
       setSelectedPartnerId(partner.id);
       setSuccessPartner(partner);
+      if (partner.sourceMode === 'local_cli' && partner.adapterType === 'codex_cli' && pendingCodexImport) {
+        void openCodexImport(pendingCodexImport, partner);
+      }
     }
   };
 
@@ -923,14 +955,14 @@ export function SettingsPage() {
           <section className="partner-workflow">
             {addingPartner && <nav className="partner-mode-tabs" aria-label="伙伴接入方式">{(Object.keys(sourceCopy) as FormMode[]).map((source) => <button className={mode === source ? 'active' : ''} type="button" key={source} aria-label={sourceCopy[source].title} onClick={() => requestDiscard(() => { selectMode(source); setAddingPartner(true); })}>{source === 'existing_thread' ? <Link2 size={19} /> : source === 'local_cli' ? <Cpu size={19} /> : <Cloud size={19} />}<span>{sourceCopy[source].title}<small>{sourceCopy[source].hint}</small></span></button>)}</nav>}
             {successPartner ? (
-              <div className="success-state"><span className="success-mark"><Check size={34} /></span><Avatar partnerId={successPartner.id} name={successPartner.publicIdentity.displayName} src={successPartner.publicIdentity.avatarDataUrl} accent={successPartner.accent} size="lg" status /><h2>{successPartner.publicIdentity.displayName} 已加入星丛</h2><p>{successDescription(successPartner)}</p><div className="success-actions"><button className="primary-button" type="button" onClick={() => { if (successPartner.sourceMode === 'local_cli') createConversation(successPartner.id, undefined, successPartner.sessionMode === 'resume' ? successPartner.resumeSessionId : undefined); else ensureConversation(successPartner.id); navigate('/chat'); }}>去和 TA 聊聊</button><button className="secondary-button" type="button" onClick={() => navigate('/studio/discussion', { state: { openMemberPicker: true } })}>加入工作室</button><button className="text-button" type="button" onClick={() => resetForm(mode)}>继续添加</button></div></div>
+              <div className="success-state"><span className="success-mark"><Check size={34} /></span><Avatar partnerId={successPartner.id} name={successPartner.publicIdentity.displayName} src={successPartner.publicIdentity.avatarDataUrl} accent={successPartner.accent} size="lg" status /><h2>{successPartner.publicIdentity.displayName} 已加入星丛</h2><p>{successDescription(successPartner)}</p>{codexImportError && <p className="form-error" role="alert">{codexImportError}</p>}<div className="success-actions"><button className="primary-button" type="button" disabled={threadsBusy} onClick={() => { if (pendingCodexImport) { void openCodexImport(pendingCodexImport, successPartner); return; } if (successPartner.sourceMode === 'local_cli') createConversation(successPartner.id, undefined, successPartner.sessionMode === 'resume' ? successPartner.resumeSessionId : undefined); else ensureConversation(successPartner.id); navigate('/chat'); }}>去和 TA 聊聊</button><button className="secondary-button" type="button" onClick={() => navigate('/studio/discussion', { state: { openMemberPicker: true } })}>加入工作室</button><button className="text-button" type="button" onClick={() => resetForm(mode)}>继续添加</button></div></div>
             ) : (
               editingPartner || addingPartner ? <form ref={partnerFormRef} className={`partner-form${editingPartner && !partnerEditEnabled ? ' is-readonly' : ''}`} onSubmit={submit} onChange={() => { apiFormLoadSequence.current++; setFormDirty(true); }}>
                 <div className="form-scroll" tabIndex={0} aria-label="伙伴资料">
                   <div inert={Boolean(editingPartner) && !partnerEditEnabled ? true : undefined}>
                   {editingPartner && <div className="editing-banner"><Pencil size={16} />{partnerEditEnabled ? `正在编辑 ${editingPartner.publicIdentity.displayName}；保存不会创建重复伙伴。` : `正在查看 ${editingPartner.publicIdentity.displayName}；点击下方“编辑”后可修改。`}</div>}
                   {mode === 'existing_thread' && <ExistingFields value={existing} setValue={setExisting} configured={existingCredentialConfigured} busy={busy} onTest={testExisting} />}
-                  {mode === 'local_cli' && <LocalFields value={local} onAdapter={(adapterType) => { setLocal({ adapterType, sessionMode: 'new' }); setCli(undefined); setSelectedCodexRuntimeId(''); setCodexThreads([]); setSelectedCodexThreadId(''); setSelectedClaudeSession(undefined); setGrants([]); setPartnerRootGrant(undefined); setActiveWorkspaceGrantId(''); setFormDirty(true); }} cli={cli} selectedCodexRuntimeId={selectedCodexRuntimeId} onCodexRuntime={(runtimeId) => { setSelectedCodexRuntimeId(runtimeId); setCodexThreads([]); setSelectedCodexThreadId(''); setFormDirty(true); }} grants={grants} partnerRootGrant={partnerRootGrant} activeWorkspaceGrantId={activeWorkspaceGrantId} currentDirectories={editingPartner?.sourceMode === 'local_cli' ? editingPartner.workingDirectories ?? (editingPartner.workingDirectory ? [editingPartner.workingDirectory] : []) : []} currentCodexRuntime={editingPartner?.sourceMode === 'local_cli' ? editingPartner.codexRuntime : undefined} busy={busy} threadsBusy={threadsBusy} codexThreads={codexThreads} selectedCodexThreadId={selectedCodexThreadId} selectedClaudeSession={selectedClaudeSession} onCodexThread={(threadId) => { setSelectedCodexThreadId(threadId); setFormDirty(true); }} onLoadThreads={loadCodexThreads} onImportClaudeSession={importClaudeSession} onSessionMode={(sessionMode) => { setLocal((current) => ({ ...current, sessionMode })); setFormDirty(true); if (sessionMode === 'new') { setSelectedCodexThreadId(''); setSelectedClaudeSession(undefined); } }} onDetect={detectLocalCli} onPartnerRoot={selectPartnerRoot} onClearPartnerRoot={() => { setPartnerRootGrant(undefined); setFormDirty(true); }} onWorkspace={selectWorkspace} onActiveWorkspace={(grantId) => { setActiveWorkspaceGrantId(grantId); setFormDirty(true); }} onRemove={(grantId) => { if (!editingPartner) void window.asteriumAgents?.revokeWorkspaceGrants?.([grantId]); setGrants((current) => current.filter((grant) => grant.grantId !== grantId)); setActiveWorkspaceGrantId((current) => current === grantId ? grants.find((grant) => grant.grantId !== grantId)?.grantId ?? '' : current); setFormDirty(true); }} />}
+                  {mode === 'local_cli' && <LocalFields value={local} onAdapter={(adapterType) => { setLocal({ adapterType, sessionMode: 'new' }); setCli(undefined); setSelectedCodexRuntimeId(''); setPendingCodexImport(undefined); setSelectedClaudeSession(undefined); setGrants([]); setPartnerRootGrant(undefined); setActiveWorkspaceGrantId(''); setFormDirty(true); }} cli={cli} selectedCodexRuntimeId={selectedCodexRuntimeId} onCodexRuntime={(runtimeId) => { setSelectedCodexRuntimeId(runtimeId); setPendingCodexImport(undefined); setFormDirty(true); }} grants={grants} partnerRootGrant={partnerRootGrant} activeWorkspaceGrantId={activeWorkspaceGrantId} currentDirectories={editingPartner?.sourceMode === 'local_cli' ? editingPartner.workingDirectories ?? (editingPartner.workingDirectory ? [editingPartner.workingDirectory] : []) : []} currentCodexRuntime={editingPartner?.sourceMode === 'local_cli' ? editingPartner.codexRuntime : undefined} busy={busy} threadsBusy={threadsBusy} pendingCodexImport={pendingCodexImport} selectedClaudeSession={selectedClaudeSession} onLoadThread={loadCodexThread} onImportClaudeSession={importClaudeSession} onSessionMode={(sessionMode) => { setLocal((current) => ({ ...current, sessionMode })); setFormDirty(true); if (sessionMode === 'new') { setPendingCodexImport(undefined); setSelectedClaudeSession(undefined); } }} onDetect={detectLocalCli} onPartnerRoot={selectPartnerRoot} onClearPartnerRoot={() => { setPartnerRootGrant(undefined); setFormDirty(true); }} onWorkspace={selectWorkspace} onActiveWorkspace={(grantId) => { setActiveWorkspaceGrantId(grantId); setFormDirty(true); }} onRemove={(grantId) => { if (!editingPartner) void window.asteriumAgents?.revokeWorkspaceGrants?.([grantId]); setGrants((current) => current.filter((grant) => grant.grantId !== grantId)); setActiveWorkspaceGrantId((current) => current === grantId ? grants.find((grant) => grant.grantId !== grantId)?.grantId ?? '' : current); setFormDirty(true); }} />}
                   {mode === 'api_partner' && <ApiFields key={editingPartner?.id ?? 'new-api'} value={api} setValue={setApi} onDirty={() => { apiFormLoadSequence.current++; setFormDirty(true); }} grants={grants} primaryGrantId={activeWorkspaceGrantId} onWorkspace={selectWorkspace} onPrimary={(grantId) => { setActiveWorkspaceGrantId(grantId); setFormDirty(true); }} onRemove={(grantId) => { if (!editingPartner) void window.asteriumAgents?.revokeWorkspaceGrants?.([grantId]); setGrants((current) => current.filter((grant) => grant.grantId !== grantId)); setActiveWorkspaceGrantId((current) => current === grantId ? grants.find((grant) => grant.grantId !== grantId)?.grantId ?? '' : current); setFormDirty(true); }} />}
                   {mode === 'local_cli' && <fieldset className="form-section"><legend>默认权限</legend><p>新对话从这个档位开始；每段对话仍可在输入框旁临时切换，不会改写 Codex 或 Claude Code 的全局与项目配置。</p><label>权限档位<select value={defaultPermissionMode} onChange={(event) => setDefaultPermissionMode(event.target.value as PermissionMode)}><option value="read_only">只读</option><option value="manual">手动审批</option><option value="automatic" disabled={local.adapterType === 'claude_code'}>{local.adapterType === 'claude_code' ? '自动审批（需账号与模型确认支持）' : '自动审批'}</option><option value="full">完整权限</option></select></label></fieldset>}
                   <IdentityFields value={identity} setValue={setIdentity} currentAvatar={currentAvatar} pendingAvatar={pendingAvatar} avatarRemoved={avatarRemoved} fileRef={fileRef} onAvatar={handleAvatar} onCancelPending={() => { setPendingAvatar(undefined); clearFileInput(); }} onRemoveCurrent={() => { setPendingAvatar(undefined); setAvatarRemoved(true); clearFileInput(); }} />
@@ -948,6 +980,41 @@ export function SettingsPage() {
         </>}
       </section>
 
+      {codexThreadDirectory && <Modal title="导入已有线程" onClose={() => { if (!threadsBusy) setCodexThreadDirectory(undefined); }}>
+        <div className="modal-body codex-import-body">
+          {codexThreadDirectory.threads.length > 0 ? <fieldset className="codex-import-list" disabled={threadsBusy}>
+            <legend>{codexThreadDirectory.date} 的线程</legend>
+            {codexThreadDirectory.threads.map(thread => <label key={thread.selectionId} className="codex-import-option">
+              <input type="radio" name="codex-import-thread" checked={thread.selectionId === codexThreadSelectionId} onChange={() => {
+                setCodexThreadSelectionId(thread.selectionId);
+                setCodexImportError('');
+              }} />
+              <span>
+                <strong>{thread.title}</strong>
+                <small>{thread.updatedAt ? '最后更新 ' + new Date(thread.updatedAt).toLocaleString('zh-CN') : '更新时间未知'}</small>
+                <small className="codex-import-cwd" title={thread.cwd}>{thread.cwd}</small>
+                {thread.currentRecord && <small>将续接 Codex 当前记录{thread.currentRecord.date ? `（${thread.currentRecord.date}）` : ''}</small>}
+                {!thread.directoryAvailable && <small className="codex-import-warning">原目录不可访问，打开后可重新选择。</small>}
+              </span>
+            </label>)}
+          </fieldset> : <p>{codexThreadDirectory.date} 没有可导入的 Codex 线程。</p>}
+          {codexThreadDirectory.unavailableCount > 0 && <p className="codex-import-warning">有 {codexThreadDirectory.unavailableCount} 项记录无法确认，暂时无法导入。</p>}
+          {codexImportError && <p className="codex-import-warning" role="alert">{codexImportError}</p>}
+        </div>
+        <footer className="modal-footer">
+          <button className="secondary-button" type="button" disabled={threadsBusy} onClick={() => setCodexThreadDirectory(undefined)}>取消</button>
+          <button className="primary-button" type="button" disabled={threadsBusy || !codexThreadPreview} onClick={() => {
+            if (!codexThreadPreview) return;
+            if (editingPartner) void openCodexImport(codexThreadPreview, editingPartner);
+            else {
+              setPendingCodexImport(codexThreadPreview);
+              setCodexThreadDirectory(undefined);
+              setLocal(current => ({ ...current, sessionMode: 'resume' }));
+              setFormDirty(true);
+            }
+          }}>{threadsBusy ? '正在导入…' : editingPartner ? '导入并打开' : '确认选择'}</button>
+        </footer>
+      </Modal>}
       {removeTarget && <Modal title="确认移除伙伴？" description={`将断开并移除 ${removeTarget.publicIdentity.displayName} 的伙伴连接。历史对话仍会保留，可随后一键归档。`} onClose={() => setRemoveTarget(undefined)}><div className="modal-warning modal-warning--danger"><TriangleAlert size={20} /><span><strong>此操作会立即断开伙伴连接</strong><small>不会删除任何外部工作区文件；API 伙伴个人目录也会保留。请确认当前没有仍在进行的任务。</small></span></div>{formError && <p className="form-error">{formError}</p>}<footer className="modal-footer"><button className="secondary-button" type="button" onClick={() => setRemoveTarget(undefined)}>取消</button><button className="danger-button" type="button" onClick={() => void confirmRemove()}>确认移除伙伴</button></footer></Modal>}
       {discardPromptOpen && <Modal title="放弃未保存的修改？" description={mcpDirty ? settingsSection === 'skills' ? 'Skill 配置尚未保存。' : 'MCP 配置或凭据输入尚未保存。' : '当前伙伴的修改还没有保存。'} onClose={closeDiscardPrompt}><div className="modal-warning modal-warning--danger"><TriangleAlert size={20} /><span><strong>这些修改会丢失</strong><small>离开当前页面后无法恢复刚才填写或调整的内容。</small></span></div><footer className="modal-footer"><button className="secondary-button" type="button" onClick={closeDiscardPrompt}>继续编辑</button><button className="danger-button" type="button" onClick={discardAndContinue}>放弃修改</button></footer></Modal>}
       {sensitiveSavePrompt && <Modal title={sensitiveSavePrompt === 'partner_root' ? '确认修改伙伴配置来源？' : '确认更新敏感配置？'} description={sensitiveSavePrompt === 'partner_root' ? '配置来源改变后，后续消息会在新目录中使用独立会话。' : '新的认证信息会安全写入系统凭据库。'} onClose={() => setSensitiveSavePrompt(undefined)}><div className="modal-warning"><TriangleAlert size={20} /><span><strong>{sensitiveSavePrompt === 'partner_root' ? '旧会话与原生 session 会完整保留' : '现有认证信息将被替换'}</strong><small>{sensitiveSavePrompt === 'partner_root' ? '星丛会为新目录创建一条新对话；切回原目录后，原会话仍可继续。' : '敏感内容不会写入伙伴资料、对话记录或浏览器存储。'}</small></span></div><footer className="modal-footer"><button className="secondary-button" type="button" onClick={() => setSensitiveSavePrompt(undefined)}>取消</button><button className="primary-button" type="button" onClick={() => { setSensitiveSavePrompt(undefined); sensitiveSaveApprovedRef.current = true; partnerFormRef.current?.requestSubmit(); }}>{sensitiveSavePrompt === 'partner_root' ? '确认修改' : '确认更新'}</button></footer></Modal>}
@@ -1065,7 +1132,7 @@ function ExistingFields({ value, setValue, configured, busy, onTest }: { value: 
   return <fieldset className="form-section"><legend>已有服务或线程</legend><p>接回原服务里的既有线程，不新建替代伙伴，也不复制或修改其人格、记忆、Skills、MCP 和配置。</p><div className="model-grid"><label>服务类型<select value={value.serviceType} onChange={(event) => selectService(event.target.value as ExistingValue['serviceType'])}><option value="cyberboss_server">CyberBoss（服务器版）</option><option value="cyberboss_local">CyberBoss（本地版）</option><option value="gemini" disabled>Gemini（请在 API 伙伴中配置）</option><option value="custom" disabled>自建服务（尚未接入）</option></select></label>{server && <label>服务地址<input type="url" value={value.serviceUrl} placeholder="https://your-cyberboss.example.com" onChange={(event) => setValue((current) => ({ ...current, serviceUrl: event.target.value, threadId: '', workspaceRoot: '', tested: false }))} /></label>}{server && <label>认证信息（{configured ? '已安全保存；留空保持不变' : '保存到系统安全凭据库'}）<span className="input-with-icon"><KeyRound size={16} /><input type="password" autoComplete="off" value={value.auth} placeholder={configured ? '••••••••' : ''} onChange={(event) => setValue((current) => ({ ...current, auth: event.target.value, tested: false }))} /></span></label>}{server && <label>当前线程 ID<input value={value.threadId} readOnly /><button className="secondary-button" type="button" disabled={!value.threadId} onClick={() => void navigator.clipboard.writeText(value.threadId)}><Copy size={14} />复制线程 ID</button></label>}{server && value.workspaceRoot && <label>服务器工作区<input value={value.workspaceRoot} readOnly /></label>}</div>{server ? <><div className="existing-thread-actions"><button className="secondary-button" type="button" disabled={busy} onClick={onTest}>{busy ? '正在连接…' : value.tested ? '刷新当前线程' : '测试真实连接'}</button></div>{value.tested && <small>星丛会动态跟随 CyberBoss 当前活跃线程；/new 后将自动刷新 thread ID。当前桥接暂不支持远程取消、工具和文件明细。</small>}</> : <div className="connection-variant-note"><strong>本地版暂不能直接套用服务器版连接</strong><small>服务器版使用 Tailscale HTTPS、Cookie 认证和 SSE；本地版必须先确认本机 CyberBoss 是否提供兼容 Web sidecar、监听地址与认证方式。若只是连接本机 Claude Code 或 Codex，请使用“邀请本地伙伴”。</small></div>}</fieldset>;
 }
 
-function LocalFields({ value, onAdapter, cli, selectedCodexRuntimeId, onCodexRuntime, grants, partnerRootGrant, activeWorkspaceGrantId, currentDirectories, currentCodexRuntime, busy, threadsBusy, codexThreads, selectedCodexThreadId, selectedClaudeSession, onCodexThread, onLoadThreads, onImportClaudeSession, onSessionMode, onDetect, onPartnerRoot, onClearPartnerRoot, onWorkspace, onActiveWorkspace, onRemove }: {
+function LocalFields({ value, onAdapter, cli, selectedCodexRuntimeId, onCodexRuntime, grants, partnerRootGrant, activeWorkspaceGrantId, currentDirectories, currentCodexRuntime, busy, threadsBusy, pendingCodexImport, selectedClaudeSession, onLoadThread, onImportClaudeSession, onSessionMode, onDetect, onPartnerRoot, onClearPartnerRoot, onWorkspace, onActiveWorkspace, onRemove }: {
   value: LocalValue;
   onAdapter: (adapterType: LocalValue['adapterType']) => void;
   cli?: CliDetectionResult | CodexDetectionResult;
@@ -1078,11 +1145,9 @@ function LocalFields({ value, onAdapter, cli, selectedCodexRuntimeId, onCodexRun
   currentCodexRuntime?: LocalCliPartner['codexRuntime'];
   busy: boolean;
   threadsBusy: boolean;
-  codexThreads: CodexThreadSummary[];
-  selectedCodexThreadId: string;
+  pendingCodexImport?: CodexThreadImportPreview;
   selectedClaudeSession?: { sessionId: string; sessionFilePath: string };
-  onCodexThread: (threadId: string) => void;
-  onLoadThreads: () => void;
+  onLoadThread: () => void;
   onImportClaudeSession: () => void;
   onSessionMode: (sessionMode: LocalValue['sessionMode']) => void;
   onDetect: () => void;
@@ -1134,17 +1199,10 @@ function LocalFields({ value, onAdapter, cli, selectedCodexRuntimeId, onCodexRun
       </div>
       <div className="choice-row">
         <Choice active={value.sessionMode === 'new'} icon={<Plus />} title={value.adapterType === 'codex_cli' ? '开启新线程' : '开启新会话'} onClick={() => onSessionMode('new')} />
-        <Choice active={value.sessionMode === 'resume'} icon={<Save />} title={value.adapterType === 'codex_cli' ? '导入已有线程' : '导入已有会话'} onClick={() => onSessionMode('resume')} />
+        <Choice active={value.sessionMode === 'resume'} icon={<Save />} title={value.adapterType === 'codex_cli' ? '导入已有线程' : '导入已有会话'} onClick={() => { if (value.adapterType === 'codex_cli') { if (!threadsBusy) onLoadThread(); } else onSessionMode('resume'); }} />
       </div>
       {value.adapterType === 'codex_cli' && value.sessionMode === 'new' && <div className="thread-mode-note"><strong>将打开新的对话窗口</strong><small>第一次发送消息时创建新的 Codex thread；后续消息自动续接。</small></div>}
-      {value.adapterType === 'codex_cli' && value.sessionMode === 'resume' && <div className="codex-thread-picker">
-        <button className="secondary-button" type="button" disabled={threadsBusy || !selectedCodexRuntimeId || !partnerRootGrant} onClick={onLoadThreads}>{threadsBusy ? '读取线程中…' : '读取配置来源中的 Codex 线程'}</button>
-        {!threadsBusy && codexThreads.length === 0 && <small>选择运行时并导入伙伴配置来源后读取线程，再明确选择要导入的一条。</small>}
-        {codexThreads.map((thread) => <button className={thread.threadId === selectedCodexThreadId ? 'active' : ''} type="button" key={thread.threadId} onClick={() => onCodexThread(thread.threadId)} aria-label={`导入 Codex 线程 ${thread.title}`}>
-          <span><strong>{thread.title}</strong><small>{thread.threadId}</small></span>
-          <span><small>{thread.updatedAt ? new Date(thread.updatedAt).toLocaleString('zh-CN') : '更新时间未知'}</small>{thread.threadId === selectedCodexThreadId && <Check size={15} />}</span>
-        </button>)}
-      </div>}
+      {pendingCodexImport && value.adapterType === 'codex_cli' && <small>已选择 {pendingCodexImport.title}</small>}
       {value.adapterType === 'claude_code' && value.sessionMode === 'resume' && <div className="codex-thread-picker">
         <button className="secondary-button" type="button" disabled={busy} onClick={onImportClaudeSession}>{busy ? '读取会话中…' : '选择 Claude session JSONL'}</button>
         {selectedClaudeSession

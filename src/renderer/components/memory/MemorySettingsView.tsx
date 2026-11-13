@@ -1,7 +1,7 @@
-import { Archive, BadgeCheck, Brain, CircleHelp, FolderKanban, Grid2X2, HeartHandshake, Link2, MessageSquarePlus, Pencil, RefreshCw, Repeat2, RotateCcw, Search, SlidersHorizontal, Sparkles, Trash2, UserRound, type LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Archive, BadgeCheck, Brain, CircleHelp, Download, FolderKanban, Grid2X2, HeartHandshake, Link2, MessageSquarePlus, Pencil, RefreshCw, Repeat2, RotateCcw, Search, SlidersHorizontal, Sparkles, Trash2, UserRound, type LucideIcon } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { MemoryArchiveBriefing, MemoryRecord, MemorySourceReadResult, MemoryStatus, MemoryType, MemoryWeight } from '../../../shared/memoryArchive';
+import type { MemoryArchiveBriefing, MemoryArchiveQuery, MemoryArchiveQueryResult, MemoryRecord, MemorySourceReadResult, MemoryStatus, MemoryType, MemoryWeight } from '../../../shared/memoryArchive';
 import type { Conversation, GroupChat, Partner, Project } from '../../types/domain';
 import type { MemorySourceNavigationState } from '../../app/memorySourceNavigation';
 import { Avatar } from '../ui/Avatar';
@@ -34,8 +34,8 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
   const managedPartners = useMemo(() => partners.filter((partner) => partner.profileManagement?.memoryMode === 'asterium' && !partner.managedDataDeletedAt), [partners]);
   const [selectedPartnerId, setSelectedPartnerId] = useState(initialPartnerId);
   const [archiveScrollbarVisible, setArchiveScrollbarVisible] = useState(false);
-  const [records, setRecords] = useState<MemoryRecord[]>([]);
-  const [fallbackMemoryIds, setFallbackMemoryIds] = useState<string[]>([]);
+  const [archiveResult, setArchiveResult] = useState<{ query: MemoryArchiveQuery; archive: MemoryArchiveQueryResult }>();
+  const loadRevision = useRef(0);
   const [briefing, setBriefing] = useState<MemoryArchiveBriefing>();
   const [briefingOpen, setBriefingOpen] = useState(true);
   const [text, setText] = useState('');
@@ -55,35 +55,49 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
   const [pendingLifecycle, setPendingLifecycle] = useState<{ kind: 'delete' | 'restore' | 'purge'; record: MemoryRecord }>();
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedMemoryIds, setSelectedMemoryIds] = useState<Set<string>>(() => new Set());
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<{ partnerId: string; records: MemoryRecord[]; permanent: boolean }>();
   const [partnerTrashTarget, setPartnerTrashTarget] = useState<Partner>();
   const [partnerTrashBusy, setPartnerTrashBusy] = useState(false);
   const [partnerTrashError, setPartnerTrashError] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportResult, setExportResult] = useState<{ partnerId: string; message: string; failed?: true }>();
 
   const partnerId = managedPartners.some((partner) => partner.id === selectedPartnerId)
     ? selectedPartnerId
     : managedPartners[0]?.id ?? '';
+  const archiveQuery = useMemo<MemoryArchiveQuery>(() => ({
+    partnerId, archivedOnly: showTrash || undefined, text: text || undefined,
+    types: type ? [type] : undefined, statuses: status ? [status] : undefined, limit: 100,
+  }), [partnerId, showTrash, text, type, status]);
+  const archive = archiveResult?.query === archiveQuery ? archiveResult.archive : undefined;
+  const fallbackMemoryIds = archive?.fallbackMemoryIds ?? [];
+  const records = archive?.records ?? [];
+  const visibleRecords = records.filter(record => Boolean(record.deletedAt) === showTrash);
+  const selectedRecords = bulkSelectMode ? visibleRecords.filter(record => selectedMemoryIds.has(record.memoryId)) : [];
+  const allSelected = visibleRecords.length > 0 && selectedRecords.length === visibleRecords.length;
 
   const load = useCallback(async () => {
     if (!partnerId || !window.asteriumMemory) return;
+    const revision = ++loadRevision.current;
     setBusy(true);
     setError('');
     try {
       const [archive, nextBriefing] = await Promise.all([
-        window.asteriumMemory.query({ partnerId, includeDeleted: showTrash || undefined, text: text || undefined, types: type ? [type] : undefined, statuses: status ? [status] : undefined, limit: 100 }),
+        window.asteriumMemory.query(archiveQuery),
         window.asteriumMemory.briefing(partnerId),
       ]);
-      setRecords(archive.records);
-      setFallbackMemoryIds(archive.fallbackMemoryIds ?? []);
+      if (revision !== loadRevision.current) return;
+      setArchiveResult({ query: archiveQuery, archive });
       setBriefing(nextBriefing);
     } catch {
-      setRecords([]);
+      if (revision !== loadRevision.current) return;
+      setArchiveResult(undefined);
       setBriefing(undefined);
       setError('记忆档案暂时无法读取。');
     } finally {
-      setBusy(false);
+      if (revision === loadRevision.current) setBusy(false);
     }
-  }, [partnerId, showTrash, status, text, type]);
+  }, [archiveQuery, partnerId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -144,21 +158,29 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
   };
 
   const runBulkDelete = async () => {
-    if (!window.asteriumMemory || selectedMemoryIds.size === 0) return;
+    const api = window.asteriumMemory;
+    if (!api || !bulkDeleteTarget || mutationBusy) return;
     setMutationBusy(true);
     setMutationError('');
+    let completed = 0;
     try {
-      const selected = records.filter((record) => selectedMemoryIds.has(record.memoryId) && !record.deletedAt);
-      for (const record of selected) {
-        await window.asteriumMemory.softDelete({ partnerId, memoryId: record.memoryId, expectedUpdatedAt: record.updatedAt });
+      if (bulkDeleteTarget.permanent) {
+        if (!api.purgeArchived) throw new Error('MEMORY_BULK_PURGE_UNAVAILABLE');
+        await api.purgeArchived({ partnerId: bulkDeleteTarget.partnerId, records: bulkDeleteTarget.records.map(record => ({ memoryId: record.memoryId, expectedUpdatedAt: record.updatedAt })) });
+      } else {
+        for (const record of bulkDeleteTarget.records) {
+          await api.softDelete({ partnerId: bulkDeleteTarget.partnerId, memoryId: record.memoryId, expectedUpdatedAt: record.updatedAt });
+          completed++;
+        }
       }
       setSelectedMemoryIds(new Set());
       setBulkSelectMode(false);
-      setBulkDeleteOpen(false);
-      await load();
+      setBulkDeleteTarget(undefined);
     } catch (caught) {
+      setBulkDeleteTarget({ ...bulkDeleteTarget, records: bulkDeleteTarget.records.slice(completed) });
       setMutationError(memoryLifecycleError(caught));
     } finally {
+      await load();
       setMutationBusy(false);
     }
   };
@@ -180,7 +202,19 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
   };
 
   const partner = managedPartners.find((item) => item.id === partnerId);
-  const visibleRecords = showTrash ? records.filter((record) => record.deletedAt) : records.filter((record) => !record.deletedAt);
+  const backup = window.asteriumMemory?.backup;
+  const exportBackup = async () => {
+    if (!backup || exportBusy || !partnerId) return;
+    setExportBusy(true);
+    setExportResult(undefined);
+    try {
+      const count = await backup.export(partnerId);
+      if (count !== null) setExportResult({ partnerId, message: `已导出 ${count} 条记忆` });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      setExportResult({ partnerId, failed: true, message: detail.includes('MEMORY_BACKUP_TOO_LARGE') ? '记忆档案超过可导出大小。' : '未能导出记忆，请检查保存位置后重试。' });
+    } finally { setExportBusy(false); }
+  };
   const openLiveSource = sourceResult?.state === 'live' ? (() => {
     const source = sourceResult.source;
     if (source.kind === 'imported_text') return undefined;
@@ -200,12 +234,26 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
         <aside className="memory-partner-panel"><header><strong>伙伴</strong><small>{managedPartners.length}</small></header><div className="memory-partner-list" aria-label="选择记忆伙伴">{managedPartners.map((item) => <div className={`memory-partner-item${item.id === partnerId ? ' active' : ''}${item.isRemoved ? ' is-removed' : ''}`} key={item.id}><button type="button" onClick={() => { setSelectedPartnerId(item.id); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><Avatar partnerId={item.id} name={item.publicIdentity.displayName} src={item.publicIdentity.avatarDataUrl} accent={item.accent} size="sm" source={item.sourceMode} /><span><strong>{item.publicIdentity.displayName}</strong><small>{item.isRemoved ? '已移除 · 档案保留' : '星丛托管'}</small></span></button>{item.isRemoved && <button className="memory-partner-trash" type="button" aria-label={`删除已移除伙伴 ${item.publicIdentity.displayName}`} title="移入 Windows 回收站" onClick={() => { setPartnerTrashTarget(item); setPartnerTrashError(''); }}><Trash2 size={14} /></button>}</div>)}</div></aside>
         <main className="memory-content-panel">
           <MemoryFallbackSettings partnerId={partnerId} eligible={Boolean(partner && !partner.isRemoved && partner.sourceMode !== 'existing_thread')} />
-          {partner && !partner.isRemoved && <MemoryImportPanel key={partnerId} partnerId={partnerId} />}
+          {partner && !partner.isRemoved && <MemoryImportPanel key={partnerId} partnerId={partnerId} partnerName={partner.publicIdentity.displayName} />}
           <details className="memory-briefing-card" open={briefingOpen} onToggle={(event) => setBriefingOpen(event.currentTarget.open)}><summary><span><Sparkles size={17} /><strong>会话记忆简报</strong></span><small>{briefing?.logicalDate ?? '确定性生成'}</small></summary>{briefing ? <pre>{briefing.content}</pre> : <p>{busy ? '正在生成简报…' : '暂无简报。'}</p>}</details>
-          <section className="memory-archive-panel">
-            <header><div><Archive size={18} /><span><strong>{partner?.publicIdentity.displayName ?? '伙伴'}的{showTrash ? '归档库' : '记忆档案'}</strong><small>{visibleRecords.length} 条当前结果</small></span></div></header>
+          <section className={`memory-archive-panel${showTrash ? ' memory-archive-panel--trash' : ''}`}>
+            <header><div><Archive size={18} /><span><strong>{partner?.publicIdentity.displayName ?? '伙伴'}的{showTrash ? '归档库' : '记忆档案'}</strong><small>{visibleRecords.length} 条当前结果</small></span></div>
+              {backup && !showTrash && <button className="text-button memory-export-button" type="button" disabled={exportBusy} onClick={() => void exportBackup()}><Download size={14} />{exportBusy ? '导出中…' : '导出记忆'}</button>}
+            </header>
+            {exportResult?.partnerId === partnerId && <small className={`memory-export-result${exportResult.failed ? ' memory-export-result--error' : ''}`} role={exportResult.failed ? 'alert' : 'status'}>{exportResult.message}</small>}
             <nav className="memory-type-tabs" aria-label="按记忆类型分类"><button className={type === '' ? 'active' : ''} type="button" aria-pressed={type === ''} onClick={() => { setType(''); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><Grid2X2 size={15} /><span>全部</span></button>{Object.entries(memoryTypeLabels).map(([value, label]) => { const Icon = memoryTypeIcons[value as MemoryType]; return <button className={type === value ? 'active' : ''} type="button" aria-pressed={type === value} key={value} onClick={() => { setType(value as MemoryType); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><Icon size={15} /><span>{label}</span></button>; })}</nav>
-            <div className="memory-filter-row"><label><Search size={15} /><input aria-label="搜索记忆" value={text} placeholder="搜索正文、标签或补充记录" onChange={(event) => { setText(event.target.value); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }} /></label><select aria-label="筛选记忆状态" value={status} onChange={(event) => { setStatus(event.target.value as MemoryStatus | ''); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><option value="">全部状态</option>{Object.entries(memoryStatusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>{!showTrash && <div className="memory-bulk-actions"><button className={bulkSelectMode ? 'secondary-button active' : 'secondary-button'} type="button" onClick={() => { setBulkSelectMode((current) => !current); setSelectedMemoryIds(new Set()); }}><Trash2 size={14} />{bulkSelectMode ? '取消删除' : '批量删除'}</button>{bulkSelectMode && selectedMemoryIds.size > 0 && <button className="danger-button" type="button" onClick={() => { setBulkDeleteOpen(true); setMutationError(''); }}><Trash2 size={14} />删除所选（{selectedMemoryIds.size}）</button>}</div>}</div>
+            <div className="memory-filter-row"><label><Search size={15} /><input aria-label="搜索记忆" value={text} placeholder="搜索正文、标签或补充记录" onChange={(event) => { setText(event.target.value); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }} /></label><select aria-label="筛选记忆状态" value={status} onChange={(event) => { setStatus(event.target.value as MemoryStatus | ''); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><option value="">全部状态</option>{Object.entries(memoryStatusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>{(!showTrash || window.asteriumMemory?.purgeArchived) && <div className="memory-bulk-actions">
+              <button className={bulkSelectMode ? 'secondary-button active' : 'secondary-button'} type="button" onClick={() => { setBulkSelectMode((current) => !current); setSelectedMemoryIds(new Set()); }}><Trash2 size={14} />{bulkSelectMode ? '取消删除' : showTrash ? '批量永久删除' : '批量删除'}</button>
+            </div>}</div>
+            {bulkSelectMode && <div className="memory-selection-toolbar">
+              <label className="memory-record-check memory-select-all">
+                <input type="checkbox" checked={allSelected} disabled={busy || !visibleRecords.length}
+                  ref={input => { if (input) input.indeterminate = !allSelected && selectedRecords.length > 0; }}
+                  onChange={event => setSelectedMemoryIds(new Set(event.target.checked ? visibleRecords.map(record => record.memoryId) : []))} />
+                全选
+              </label>
+              {selectedRecords.length > 0 && <button className="danger-button" type="button" disabled={busy} onClick={() => { setBulkDeleteTarget({ partnerId, records: selectedRecords, permanent: showTrash }); setMutationError(''); }}><Trash2 size={14} />{showTrash ? '永久删除所选' : '删除所选'}（{selectedRecords.length}）</button>}
+            </div>}
             {error && <p className="form-error">{error}</p>}
             {busy ? <div className="memory-loading">正在读取结构化记忆档案…</div> : visibleRecords.length ? <div
               className={`memory-record-list${archiveScrollbarVisible ? ' memory-scrollbar-visible' : ''}`}
@@ -215,7 +263,7 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
               onPointerMove={event => setArchiveScrollbarVisible(event.currentTarget.getBoundingClientRect().right - event.clientX <= 20)}
               onPointerLeave={() => setArchiveScrollbarVisible(false)}
             >{visibleRecords.map((record) => { const TypeIcon = memoryTypeIcons[record.type]; return <article className={bulkSelectMode ? 'is-selecting' : undefined} key={record.memoryId}>
-              {!showTrash && bulkSelectMode && <label className="memory-record-check"><input type="checkbox" aria-label={`选择记忆：${record.body}`} checked={selectedMemoryIds.has(record.memoryId)} onChange={(event) => setSelectedMemoryIds((current) => { const next = new Set(current); if (event.target.checked) next.add(record.memoryId); else next.delete(record.memoryId); return next; })} /></label>}
+              {bulkSelectMode && <label className="memory-record-check"><input type="checkbox" aria-label={`选择记忆：${record.body}`} checked={selectedMemoryIds.has(record.memoryId)} onChange={(event) => setSelectedMemoryIds((current) => { const next = new Set(current); if (event.target.checked) next.add(record.memoryId); else next.delete(record.memoryId); return next; })} /></label>}
               <button type="button" aria-label={`查看记忆：${record.body}`} onClick={() => { setDetail(record); setSourceResult(undefined); setSourceError(''); setMutationError(''); }}><span className="memory-record-type" aria-label={memoryTypeLabels[record.type]} title={memoryTypeLabels[record.type]}><TypeIcon size={16} /></span><strong className="memory-record-weight" aria-label={`权重 ${record.weight}`}>W{record.weight}</strong><span className="memory-record-body">{fallbackMemoryIds.includes(record.memoryId) && <small className="memory-fallback-badge">星丛兜底</small>}{record.body}</span><time title={new Date(record.occurredAt ?? record.updatedAt).toLocaleString('zh-CN')}>{formatRelativeMemoryTime(record.occurredAt ?? record.updatedAt)}</time></button>
             </article>; })}</div> : <div className="friendly-empty friendly-empty--compact"><Search size={30} /><h2>{showTrash ? '归档库为空' : '没有匹配的记忆'}</h2><p>{showTrash ? '软删除的记忆会保留在这里，等待恢复或永久删除。' : '调整分类、搜索文字或状态后再试。'}</p></div>}
           </section>
@@ -242,7 +290,19 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
     </Modal>}
     {editing && <MemoryEditor key={editing === 'new' ? `new-${partnerId}` : editing.memoryId} partnerId={partnerId} record={editing === 'new' ? undefined : editing} candidates={records} onClose={() => setEditing(undefined)} onSaved={async (saved) => { setEditing(undefined); setDetail(saved); await load(); }} />}
     {pendingLifecycle && <Modal title={pendingLifecycle.kind === 'delete' ? '移入归档库' : pendingLifecycle.kind === 'restore' ? '恢复记忆' : '永久删除记忆'} description={pendingLifecycle.kind === 'purge' ? '这是永久操作；删除后无法恢复。' : undefined} onClose={() => { setPendingLifecycle(undefined); setMutationError(''); }}>{pendingLifecycle.kind === 'purge' ? <div className="memory-delete-confirm"><div className="memory-delete-body"><div className="memory-delete-target"><span><Trash2 size={19} /></span><div><small>将永久删除</small><strong>{memoryTypeLabels[pendingLifecycle.record.type]}</strong></div></div><blockquote className="memory-delete-preview">{pendingLifecycle.record.body}</blockquote><div className="modal-warning modal-warning--danger"><Trash2 size={17} /><span><strong>删除后无法恢复</strong><small>正文、标签、补充记录和来源锚点会一并永久删除。</small></span></div><div className="memory-delete-note"><CircleHelp size={16} /><span><strong>引用保护仍然有效</strong><small>如果其他历史记忆仍引用这条记录，星丛会拒绝删除。</small></span></div>{mutationError && <p className="form-error">{mutationError}</p>}</div><footer className="modal-footer"><button className="text-button" type="button" onClick={() => setPendingLifecycle(undefined)}>取消</button><button className="danger-button" type="button" disabled={mutationBusy} onClick={() => void runLifecycle()}><Trash2 size={14} />{mutationBusy ? '处理中…' : '确认永久删除'}</button></footer></div> : pendingLifecycle.kind === 'delete' ? <div className="memory-delete-confirm"><div className="memory-delete-body"><div className="memory-delete-target"><span><Archive size={19} /></span><div><small>将移入归档库</small><strong>{memoryTypeLabels[pendingLifecycle.record.type]}</strong></div></div><blockquote className="memory-delete-preview">{pendingLifecycle.record.body}</blockquote><div className="modal-warning modal-warning--danger"><Trash2 size={17} /><span><strong>这条记忆将离开当前档案</strong><small>伙伴后续搜索和会话简报不会再使用这条已删除记忆。</small></span></div><div className="memory-delete-note"><BadgeCheck size={16} /><span><strong>之后仍可恢复</strong><small>这不是永久删除，可从归档库恢复到原档案。</small></span></div>{mutationError && <p className="form-error">{mutationError}</p>}</div><footer className="modal-footer"><button className="text-button" type="button" onClick={() => setPendingLifecycle(undefined)}>取消</button><button className="danger-button" type="button" disabled={mutationBusy} onClick={() => void runLifecycle()}><Trash2 size={14} />{mutationBusy ? '处理中…' : '确认移入归档库'}</button></footer></div> : <div className="memory-confirm"><p>恢复后，这条记忆会重新出现在伙伴档案中。</p><blockquote>{pendingLifecycle.record.body}</blockquote>{mutationError && <p className="form-error">{mutationError}</p>}<footer><button className="text-button" type="button" onClick={() => setPendingLifecycle(undefined)}>取消</button><button className="primary-button" type="button" disabled={mutationBusy} onClick={() => void runLifecycle()}>{mutationBusy ? '处理中…' : '确认恢复'}</button></footer></div>}</Modal>}
-    {bulkDeleteOpen && <Modal title="批量移入归档库" description={`已选择 ${selectedMemoryIds.size} 条记忆`} onClose={() => { setBulkDeleteOpen(false); setMutationError(''); }}><div className="memory-delete-confirm"><div className="memory-delete-body"><div className="memory-delete-target"><span><Archive size={19} /></span><div><small>本次操作</small><strong>移入 {selectedMemoryIds.size} 条记忆</strong></div></div><div className="modal-warning modal-warning--danger"><Trash2 size={17} /><span><strong>所选记忆将离开当前档案</strong><small>这些记忆会一起移入星丛归档库。</small></span></div><div className="memory-delete-note"><BadgeCheck size={16} /><span><strong>之后仍可恢复</strong><small>这不是永久删除，可在归档库中逐条恢复。</small></span></div>{mutationError && <p className="form-error">{mutationError}</p>}</div><footer className="modal-footer"><button className="text-button" type="button" onClick={() => setBulkDeleteOpen(false)}>取消</button><button className="danger-button" type="button" disabled={mutationBusy} onClick={() => void runBulkDelete()}><Trash2 size={14} />{mutationBusy ? '处理中…' : '确认批量删除'}</button></footer></div></Modal>}
+    {bulkDeleteTarget && <Modal title={bulkDeleteTarget.permanent ? '批量永久删除记忆' : '批量移入归档库'} description={`已选择 ${bulkDeleteTarget.records.length} 条记忆`} onClose={() => { if (!mutationBusy) { setBulkDeleteTarget(undefined); setMutationError(''); } }}>
+      <div className="memory-delete-confirm">
+        <div className="memory-delete-body">
+          <div className="memory-delete-target"><span>{bulkDeleteTarget.permanent ? <Trash2 size={19} /> : <Archive size={19} />}</span><div><small>本次操作</small><strong>{bulkDeleteTarget.permanent ? '永久删除' : '移入'} {bulkDeleteTarget.records.length} 条记忆</strong></div></div>
+          <div className="modal-warning modal-warning--danger"><Trash2 size={17} /><span>{bulkDeleteTarget.permanent
+            ? <><strong>删除后无法恢复</strong><small>正文、标签、补充记录和来源锚点会一并永久删除。</small></>
+            : <><strong>所选记忆将离开当前档案</strong><small>这些记忆会一起移入星丛归档库。</small></>}</span></div>
+          {!bulkDeleteTarget.permanent && <div className="memory-delete-note"><BadgeCheck size={16} /><span><strong>之后仍可恢复</strong><small>可在归档库中逐条恢复。</small></span></div>}
+          {mutationError && <p className="form-error" role="alert">{mutationError}</p>}
+        </div>
+        <footer className="modal-footer"><button className="text-button" type="button" disabled={mutationBusy} onClick={() => setBulkDeleteTarget(undefined)}>取消</button><button className="danger-button" type="button" disabled={mutationBusy} onClick={() => void runBulkDelete()}><Trash2 size={14} />{mutationBusy ? '处理中…' : bulkDeleteTarget.permanent ? '确认永久删除' : '确认批量删除'}</button></footer>
+      </div>
+    </Modal>}
     {partnerTrashTarget && <Modal title="删除已移除伙伴资料" description="资料目录会进入 Windows 回收站" onClose={() => { if (!partnerTrashBusy) setPartnerTrashTarget(undefined); setPartnerTrashError(''); }}><div className="memory-partner-delete-confirm"><div className="memory-partner-delete-body"><div className="memory-partner-delete-target"><span><Trash2 size={19} /></span><div><small>将要删除</small><strong>{partnerTrashTarget.publicIdentity.displayName}</strong></div></div><div className="modal-warning modal-warning--danger"><Trash2 size={17} /><span><strong>伙伴资料将移入 Windows 回收站</strong><small>包括记忆、人设和项目工作笔记；之后仍可从 Windows 回收站恢复。</small></span></div><div className="memory-partner-delete-preserved"><BadgeCheck size={16} /><span><strong>聊天记录会保留</strong><small>现有单聊与 Studio 历史不会删除。</small></span></div>{partnerTrashError && <p className="form-error">{partnerTrashError}</p>}</div><footer className="modal-footer"><button className="text-button" type="button" disabled={partnerTrashBusy} onClick={() => setPartnerTrashTarget(undefined)}>取消</button><button className="danger-button" type="button" disabled={partnerTrashBusy} onClick={() => void trashRemovedPartner()}><Trash2 size={14} />{partnerTrashBusy ? '正在移入…' : '移入 Windows 回收站'}</button></footer></div></Modal>}
   </>;
 }
@@ -319,6 +379,7 @@ function memoryMutationError(error: unknown) {
 function memoryLifecycleError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('MEMORY_RECORD_STALE')) return '这条记忆已被其他操作更新，请关闭窗口、刷新后再试。';
+  if (message.includes('MEMORY_RECORD_NOT_FOUND') || message.includes('MEMORY_PURGE_REQUIRES_SOFT_DELETE')) return '归档记录已变化，请关闭窗口、刷新后再试。';
   if (message.includes('MEMORY_SUPERSESSION')) return '仍有历史记忆引用这条记录，暂时不能永久删除。';
   return '记忆操作失败，请稍后重试。';
 }

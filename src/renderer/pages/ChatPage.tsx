@@ -1,6 +1,7 @@
+import { useImportedCodexWorkspace } from '../app/useImportedCodexWorkspace';
 import { useNativeCodexHistory } from '../app/nativeCodexHistory';
 import { useSingleChatTimeline } from '../app/useSingleChatTimeline';
-import { supportsContextHandoff } from '../app/singleChatRuntime';
+import { canRetryCodexMessage, supportsContextHandoff } from '../app/singleChatRuntime';
 import { ContextHandoffDialog, ContextHandoffDraftCard } from '../components/chat/ContextHandoffDialog';
 import type { CyberBossChatFileCapabilities } from '../../shared/cyberBossChatAttachments';
 import { MessageAttachmentCards } from '../components/chat/MessageAttachmentCards';
@@ -81,6 +82,7 @@ export function ChatPage() {
     selectConversation,
     chatHistoryPage,
     chatHistoryLoading,
+    chatHistorySaving,
     selectProject,
     createConversation,
     renameConversation,
@@ -93,6 +95,7 @@ export function ChatPage() {
     setConversationCodexModel,
     prepareConversationWorkspace,
     sendChatMessage,
+    retryCodexMessage,
     selectGroupChat,
     contextHandoffDraft,
     setContextHandoffDraft,
@@ -127,6 +130,7 @@ export function ChatPage() {
   const stopFollowingLatest = useCallback(() => { followLatestMessageRef.current = false; }, []);
   const deferredGuidanceSendingRef = useRef(new Set<string>());
   const pendingSendRef = useRef<{ key: string; messageId: string; attachments?: MessageAttachment[] } | undefined>(undefined);
+  const cancelWorkspaceSendRef = useRef<(() => void) | undefined>(undefined);
   const [overlay, setOverlay] = useState<ChatOverlay>(null);
   const [query, setQuery] = useState('');
   const availablePartners = state.partners.filter((partner) => !partner.isRemoved);
@@ -144,6 +148,8 @@ export function ChatPage() {
   const historyDetached = historyWindow.detached || nativeHistory.detached;
   const returnToLatestNative = nativeHistory.returnToLatest;
   const activeConversation = nativeHistory.conversation;
+  const importedWorkspace = useImportedCodexWorkspace(activeConversation);
+  const importedDirectoryUnavailable = importedWorkspace.workspace?.available === false;
   const activeConversationId = activeConversation?.id;
   const searchHistory = window.asteriumConversations?.searchHistory;
   const searchNative = nativeHistory.search;
@@ -266,6 +272,7 @@ export function ChatPage() {
   const [pendingQuote, setPendingQuote] = useState<MessageQuote>();
   const [quoteMenu, setQuoteMenu] = useState<{ quote: MessageQuote; x: number; y: number } | null>(null);
   const [workspaceSendRequest, setWorkspaceSendRequest] = useState<{
+    conversationId: string;
     content: string;
     pending: PendingMessageAttachment[];
     quote?: MessageQuote;
@@ -302,9 +309,12 @@ export function ChatPage() {
     if (activeConversationId && compaction) dismissChatCompaction(activeConversationId, compaction);
   }, [activeConversationId, compaction, dismissChatCompaction]);
   const compacting = compaction?.state === 'running' || Boolean(activeConversation && chatMaintenanceRunning[activeConversation.id]);
+  const lastStoredMessage = storedConversation?.messages.at(-1);
+  const retryableCodexMessage = !historyDetached && !chatHistoryLoading && !compacting
+    && canRetryCodexMessage(activePartner, storedConversation, lastStoredMessage) ? lastStoredMessage : undefined;
   const nativeThreadUnavailable = activeConversation?.nativeThreadState === 'unavailable' || activeConversation?.nativeThreadState === 'deleted';
-  const canRegenerate = !historyDetached && !chatHistoryLoading && activePartner?.sourceMode !== 'existing_thread'
-    && !compacting
+  const canRegenerate = !activeConversation?.importedCodexThread && !historyDetached && !chatHistoryLoading && activePartner?.sourceMode !== 'existing_thread'
+    && !compacting && !retryableCodexMessage
     && !activeConversation?.activeRun && !activeConversation?.isDisabled && !workspaceMismatch && !latestUserMessage?.isGuidance;
   const cyberBossChat = activePartner?.sourceMode === 'existing_thread';
   const cyberBossConnected = cyberBossChat && !activePartner.isPrototype && activePartner.configured && activePartner.connectionStatus === 'connected';
@@ -369,6 +379,7 @@ export function ChatPage() {
       const sent = await sendChatMessage(activeConversation.id, content, prepared.attachments, prepared.messageId, workspaceDecision, quote, activeHandoff);
       if (!sent) return false;
       pendingSendRef.current = undefined;
+      if (selections.length) void window.asteriumAttachments?.discard(selections).catch(() => undefined);
       historyWindow.returnToLatest();
       returnToLatestNative();
       setPendingQuote(undefined);
@@ -395,9 +406,13 @@ export function ChatPage() {
       setPendingQuote(undefined);
       return true;
     }
-    if (!workspaceMismatch) return commitAndSend(content, pending, quote);
+    if (activeConversation?.importedCodexThread) {
+      return importedWorkspace.check().then(available => available && commitAndSend(content, pending, quote));
+    }
+    if (!workspaceMismatch || !activeConversation) return commitAndSend(content, pending, quote);
     return new Promise<boolean>((resolve) => {
-      setWorkspaceSendRequest({ content, pending: [...pending], ...(quote ? { quote } : {}), resolve });
+      cancelWorkspaceSendRef.current = () => resolve(false);
+      setWorkspaceSendRequest({ conversationId: activeConversation.id, content, pending: [...pending], ...(quote ? { quote } : {}), resolve });
     });
   };
 
@@ -440,21 +455,28 @@ export function ChatPage() {
 
   const closeWorkspaceDecision = () => {
     if (workspaceDecisionBusy) return;
-    workspaceSendRequest?.resolve(false);
+    cancelWorkspaceSendRef.current?.();
+    cancelWorkspaceSendRef.current = undefined;
     setWorkspaceSendRequest(null);
     setComposerFocusKey((value) => value + 1);
   };
 
   const chooseWorkspaceDecision = async (decision: WorkspaceSwitchDecision) => {
-    if (!workspaceSendRequest || !activeConversation || workspaceDecisionBusy) return;
+    if (!workspaceSendRequest || workspaceSendRequest.conversationId !== activeConversationId || workspaceDecisionBusy) return;
     setWorkspaceDecisionBusy(true);
+    cancelWorkspaceSendRef.current = undefined;
     const request = workspaceSendRequest;
-    const prepared = await prepareConversationWorkspace(activeConversation.id, decision);
-    const sent = prepared ? await commitAndSend(request.content, request.pending, request.quote, decision) : false;
-    request.resolve(sent);
-    setWorkspaceSendRequest(null);
-    setWorkspaceDecisionBusy(false);
-    setComposerFocusKey((value) => value + 1);
+    let sent = false;
+    try {
+      if (await prepareConversationWorkspace(request.conversationId, decision)) sent = await commitAndSend(request.content, request.pending, request.quote, decision);
+    } catch {
+      // Keep the draft available for another send attempt.
+    } finally {
+      request.resolve(sent);
+      setWorkspaceSendRequest(current => current === request ? null : current);
+      setWorkspaceDecisionBusy(false);
+      setComposerFocusKey((value) => value + 1);
+    }
   };
 
   const openUserAttachment = async (attachmentId: string) => {
@@ -582,6 +604,11 @@ export function ChatPage() {
     };
   }, [activeConversationId]);
 
+  useEffect(() => () => {
+    cancelWorkspaceSendRef.current?.();
+    cancelWorkspaceSendRef.current = undefined;
+  }, [activeConversationId]);
+
   const pageHistoryAtEdge = (root: HTMLDivElement, direction: number) => {
     if (conversationSearchOpen) return;
     if (direction < 0 && root.scrollTop <= 56) {
@@ -656,6 +683,7 @@ export function ChatPage() {
     setAttachmentMenu(null);
     setQuoteMenu(null);
     setPendingQuote(undefined);
+    setWorkspaceSendRequest(null);
     setExpandedAttachmentSources({});
   }, [activeConversationId]);
 
@@ -1168,6 +1196,11 @@ export function ChatPage() {
                           </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onArtifactContextMenu={openArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
                         </div>
                       </div>
+                      {retryableCodexMessage?.id === message.id && <div className="run-notice message-retry">
+                        <CircleAlert size={14} aria-hidden="true" />
+                        <span role="status">{message.error?.message}</span>
+                        <button className="text-button" type="button" disabled={chatHistorySaving} onClick={() => void retryCodexMessage(activeConversation.id, message.id)}>重试</button>
+                      </div>}
                       {showStreamTail && <span className="stream-tail" role="status" aria-label={`${author?.publicIdentity.displayName ?? '伙伴'}仍在工作`}><i /><i /><i /></span>}
                       {!receiptOnly && <div className="message-actions"><button className={copiedMessageId === message.id ? 'copied' : ''} type="button" onClick={() => void copyMessage(message)} title="复制本段对话">{copiedMessageId === message.id ? <Check size={14} /> : <Copy size={14} />}<span>{copiedMessageId === message.id ? '已复制' : '复制'}</span></button>{canQuote && <button type="button" onClick={() => quoteWholeMessage(message)} title="引用这段回复"><Quote size={14} /><span>引用</span></button>}{canRegenerate && mine && isLatestUser && <button type="button" onClick={() => { setEditingMessageId(message.id); setEditingText(message.content); }} title="编辑并重新生成"><Pencil size={14} /><span>编辑并重新生成</span></button>}{canRegenerate && !mine && isLatestAssistant && <button type="button" onClick={() => regenerateChatTurn(activeConversation.id)} title="重新生成"><RotateCcw size={14} /><span>重新生成</span></button>}</div>}
                     </div>
@@ -1203,6 +1236,11 @@ export function ChatPage() {
               {!partnerRemoved && activePartner && activePartner.sourceMode !== 'existing_thread' && <button className="primary-button" type="button" onClick={() => activePartner && ensureConversation(activePartner.id)}>新建对话</button>}
             </div>
           )}
+        {importedDirectoryUnavailable && <div className="run-notice run-notice--failed" role="status">
+          <CircleAlert size={15} /><span>工作目录不可访问：{importedWorkspace.workspace?.directory}</span>
+          <button className="text-button" type="button" disabled={importedWorkspace.choosing} onClick={() => void importedWorkspace.choose()}>重新选择目录</button>
+          {importedWorkspace.error && <span>{importedWorkspace.error}</span>}
+        </div>}
         {activeConversation?.nativeThreadNotice && <div className={`run-notice run-notice--${activeConversation.nativeThreadNotice.state === 'error' ? 'failed' : 'cancelled'}`} role="status"><CircleAlert size={15} /><span>{activeConversation.nativeThreadNotice.message}</span></div>}
         {commandResult && <SessionCommandNotice result={commandResult} onDismiss={dismissCommandResult} />}
         {compaction && <SessionCommandNotice result={compaction} onDismiss={dismissCompaction} label="会话压缩状态" />}
@@ -1219,7 +1257,7 @@ export function ChatPage() {
         <Composer
           key={cyberBossChat ? `${activeConversation?.id}:${cyberBossThreadId}` : activeConversation?.id ?? 'no-conversation'}
           draftKey={activeConversation ? `chat:${activeConversation.id}` : undefined}
-          placeholder={canStageGuidance ? `输入补充要求，Enter 后暂存…` : nativeThreadUnavailable ? '原生线程暂不可用，请先查看上方提示' : workspaceMismatch ? '发送时将确认切换到当前工作区的新 session' : activeConversation?.isDisabled ? '这条会话已停用' : activeConversation ? `给 ${activePartner?.publicIdentity.displayName ?? '伙伴'} 发送消息…` : '请先新建一段对话'}
+          placeholder={canStageGuidance ? `输入补充要求，Enter 后暂存…` : importedDirectoryUnavailable ? '请先重新选择工作目录' : nativeThreadUnavailable ? '原生线程暂不可用，请先查看上方提示' : workspaceMismatch ? '发送时将确认切换到当前工作区的新 session' : activeConversation?.isDisabled ? '这条会话已停用' : activeConversation ? `给 ${activePartner?.publicIdentity.displayName ?? '伙伴'} 发送消息…` : '请先新建一段对话'}
           onSend={sendWithAttachments}
           busy={Boolean(activeConversation?.activeRun) || compacting}
           allowBusySend={canStageGuidance && !compacting}
@@ -1229,7 +1267,7 @@ export function ChatPage() {
           onSendPendingGuidance={() => void sendPendingGuidance()}
           onDiscardPendingGuidance={discardPendingGuidance}
           pendingGuidanceSendDisabled={Boolean(activeConversation?.activeRun && (activeConversation.pendingAuthorization || activeConversation.pendingUserInput))}
-          disabled={partnerRemoved || !activeConversation || activeConversation.isDisabled || nativeThreadUnavailable || compacting}
+          disabled={partnerRemoved || !activeConversation || activeConversation.isDisabled || nativeThreadUnavailable || importedDirectoryUnavailable || compacting}
           attachmentsEnabled={attachmentsEnabled}
           allowLocalReferences={attachmentsEnabled ? true : undefined}
           attachmentCapabilities={activePartner?.attachmentCapabilities}
@@ -1269,10 +1307,11 @@ export function ChatPage() {
           onUpdatePartner={updatePartner}
           onUpdateWorkspaceGrants={updatePartnerWorkspaceGrants}
           codexModelPicker={activeConversation && activePartner?.sourceMode === 'local_cli' && activePartner.connectionKind === 'local_codex'
-            && activePartner.codexRuntimeId && (activeConversation.partnerRootGrantId || activePartner.partnerRootGrantId)
+            && (activeConversation.importedCodexThread || (activePartner.codexRuntimeId && (activeConversation.partnerRootGrantId || activePartner.partnerRootGrantId)))
             && window.asteriumAgents?.listCodexModels ? <CodexModelPicker
-              key={JSON.stringify([activePartner.codexRuntimeId, activePartner.codexRuntime?.environment, activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId])}
+              key={JSON.stringify([activePartner.codexRuntimeId, activePartner.codexRuntime?.environment, activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId, activeConversation.importedCodexThread ? [activeConversation.id, importedWorkspace.workspace?.directory] : undefined])}
               partnerRootGrantId={activeConversation.partnerRootGrantId ?? activePartner.partnerRootGrantId}
+              {...(activeConversation.importedCodexThread ? { conversationId: activeConversation.id, partnerId: activePartner.id } : {})}
               codexRuntimeId={activePartner.codexRuntimeId}
               codexRuntimeEnvironment={activePartner.codexRuntime?.environment}
               selection={activeConversation.codexModel}
@@ -1386,7 +1425,7 @@ export function ChatPage() {
 
       {overlay === 'save-artifact' && <Modal title="保存到项目" description="文件会保存到项目文件夹，并显示在「项目文件交付」。" onClose={() => { if (!artifactProjectBusy) { setArtifactProjectTarget(null); setOverlay(null); } }}><div className="modal-body"><label className="modal-field">选择项目<select value={artifactProjectId} onChange={(event) => { setArtifactProjectId(event.target.value); setArtifactProjectError(''); }}><option value="">新建项目…</option>{state.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>{!artifactProjectId && <label className="modal-field">新项目名称<input value={newArtifactProjectName} onChange={(event) => { setNewArtifactProjectName(event.target.value); setArtifactProjectError(''); }} autoFocus /></label>}{artifactProjectError && <p className="modal-error">{artifactProjectError}</p>}</div><footer className="modal-footer"><button className="secondary-button" type="button" disabled={artifactProjectBusy} onClick={() => { setArtifactProjectTarget(null); setOverlay(null); }}>取消</button><button className="primary-button" type="button" disabled={artifactProjectBusy || (!artifactProjectId && !newArtifactProjectName.trim())} onClick={() => void saveArtifactToProject()}>{artifactProjectBusy ? '正在保存…' : '保存到项目'}</button></footer></Modal>}
 
-      {workspaceSendRequest && (
+      {workspaceSendRequest && workspaceSendRequest.conversationId === activeConversationId && (
         <Modal title="这条对话绑定了另一个工作区" description="请选择继续使用旧原生线程，或在当前 cwd 下为这条可见对话建立独立线程。" onClose={closeWorkspaceDecision}>
           <div className="modal-body">
             <p><strong>旧 cwd：</strong>{activeConversation?.partnerRoot || '不可用'}</p>

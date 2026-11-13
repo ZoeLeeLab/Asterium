@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { assertMemoryArchiveRecords, assertMemoryRecord, assertMemorySources, memoryWeightOrDefault, type MemoryArchiveBriefing, type MemoryRecord, type MemorySourceAnchor } from '../../shared/memoryArchive';
 import type { MemoryArchiveListOptions, MemoryArchiveSnapshot, MemoryArchiveStore, MemoryArchiveStoreOptions, ReviseMemoryRecordInput } from './MemoryArchiveStore';
+import type { MemoryBackupData, MemoryBackupReceipt } from '../../shared/memoryBackup';
 
 import { memoryImportContentKey, type MemoryImportReceipt, type MemoryImportUndo } from '../../shared/memoryImport';
 
@@ -25,6 +26,29 @@ export class SqliteMemoryArchiveStore implements MemoryArchiveStore {
   async get(id: string, options: MemoryArchiveListOptions = {}) { return (await this.list(options)).find((record) => record.memoryId === id); }
   async snapshot(options: MemoryArchiveListOptions = {}): Promise<MemoryArchiveSnapshot> {
     return this.run((db) => ({ partnerId: this.partnerId, archiveVersion: this.version(db), records: this.visible(this.records(db), options) }));
+  }
+  async exportBackup(): Promise<MemoryBackupData> {
+    return this.run(db => ({
+      format: 'asterium.partner-memory', version: 1, partnerId: this.partnerId,
+      records: this.records(db), fallbackMemoryIds: this.readFallbackMemoryIds(db),
+    }));
+  }
+  async importBackup(backup: MemoryBackupData): Promise<MemoryBackupReceipt> {
+    assertMemoryArchiveRecords(backup.records, backup.partnerId);
+    return this.run(db => {
+      const records = this.records(db);
+      const existing = new Set(records.map(record => record.memoryId));
+      const added = backup.records.filter(record => !existing.has(record.memoryId)).map(record => ({ ...record, partnerId: this.partnerId }));
+      assertMemoryArchiveRecords([...records, ...added], this.partnerId);
+      const fallback = new Set(backup.fallbackMemoryIds);
+      const markFallback = db.prepare('INSERT INTO fallback_memories VALUES (?)');
+      for (const record of added) {
+        this.write(db, record);
+        if (fallback.has(record.memoryId)) markFallback.run(record.memoryId);
+      }
+      if (added.length) this.bump(db);
+      return { added: added.length, skipped: backup.records.length - added.length };
+    }, true);
   }
   async create(record: MemoryRecord) {
     return this.run((db) => {
@@ -77,16 +101,25 @@ export class SqliteMemoryArchiveStore implements MemoryArchiveStore {
     return this.change(id, (record) => { delete record.deletedAt; return record; }, true, expected);
   }
   async purge(id: string, expected?: string) {
-    return this.run((db) => {
-      const records = this.records(db); const record = this.require(records, id, expected);
-      if (!record.deletedAt) throw new Error('MEMORY_PURGE_REQUIRES_SOFT_DELETE');
-      assertMemoryArchiveRecords(records.filter((item) => item.memoryId !== id), this.partnerId);
-      db.prepare('DELETE FROM memories WHERE memory_id = ?').run(id);
-      db.prepare('DELETE FROM fallback_memories WHERE memory_id = ?').run(id);
-      this.bump(db); return record;
+    const [record] = await this.purgeArchived([{ memoryId: id, expectedUpdatedAt: expected }]);
+    return record;
+  }
+  async purgeArchived(targets: ReadonlyArray<{ memoryId: string; expectedUpdatedAt?: string }>) {
+    return this.run(db => {
+      const records = this.records(db);
+      const ids = new Set(targets.map(target => target.memoryId));
+      if (!targets.length || ids.size !== targets.length) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
+      const selected = targets.map(({ memoryId, expectedUpdatedAt }) => this.require(records, memoryId, expectedUpdatedAt));
+      if (selected.some(record => !record.deletedAt)) throw new Error('MEMORY_PURGE_REQUIRES_SOFT_DELETE');
+      assertMemoryArchiveRecords(records.filter(record => !ids.has(record.memoryId)), this.partnerId);
+      const remove = db.prepare('DELETE FROM memories WHERE memory_id = ?');
+      for (const record of selected) remove.run(record.memoryId);
+      this.bump(db);
+      return selected;
     }, true);
   }
-  async fallbackMemoryIds() { return this.run((db) => db.prepare('SELECT memory_id FROM fallback_memories ORDER BY memory_id').all().map((row) => row.memory_id as string)); }
+  async fallbackMemoryIds() { return this.run(db => this.readFallbackMemoryIds(db)); }
+  private readFallbackMemoryIds(db: DatabaseSync) { return db.prepare('SELECT memory_id FROM fallback_memories ORDER BY memory_id').all().map(row => row.memory_id as string); }
   async fallbackReceipt(operationId: string) { return this.run((db) => this.receipt(db, operationId)); }
   private readImportBatch(db: DatabaseSync, batchId: string): StoredImportBatch | undefined {
     const exists = db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'import_batches'").get();

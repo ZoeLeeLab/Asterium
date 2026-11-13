@@ -1,12 +1,13 @@
 import { AtSign, Paperclip, Send, Square } from 'lucide-react';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
 import { isMessageSendKey } from '../../app/sendShortcut';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
 import type { StudioMention } from '../../../shared/studioRuntime';
 import { Avatar } from '../ui/Avatar';
 import { PendingAttachmentCard } from '../ui/Composer';
 import { MAX_MESSAGE_ATTACHMENT_BYTES, type PendingMessageAttachment } from '../../../shared/agentProtocol';
 import { useAttachmentTransfer } from '../ui/useAttachmentTransfer';
+import { useAttachmentDraft } from '../../app/attachmentDrafts';
 
 export interface StudioMentionOption {
   partnerId: string;
@@ -30,8 +31,6 @@ interface StudioComposerProps {
   onCancel?: () => void;
 }
 
-const studioDrafts = new Map<string, { value: string; mentions: StudioMention[] }>();
-
 interface MentionQuery {
   start: number;
   end: number;
@@ -40,44 +39,26 @@ interface MentionQuery {
 
 export function StudioComposer({ placeholder, draftKey, disabled = false, busy = false, mentionsEnabled = true, members, onSend, onCancel }: StudioComposerProps) {
   const { settings: { sendShortcut }, available: sendShortcutReady } = useGeneralSettings();
-  const initialDraft = draftKey ? studioDrafts.get(draftKey) : undefined;
-  const [value, setValue] = useState(() => initialDraft?.value ?? '');
-  const [mentions, setMentions] = useState<StudioMention[]>(() => initialDraft?.mentions ?? []);
+  const draft = useAttachmentDraft(draftKey);
+  const { text: { value, mentions }, attachments, operation } = draft;
+  const sending = operation?.kind === 'send';
+  const choosing = operation?.kind === 'stage';
   const [query, setQuery] = useState<MentionQuery>();
   const [activeOption, setActiveOption] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [attachments, setAttachments] = useState<PendingMessageAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState('');
-  const [sending, setSending] = useState(false);
-  const [choosing, setChoosing] = useState(false);
-  const choosingRef = useRef(false);
-  const attachmentsRef = useRef(attachments);
-  const mounted = useRef(false);
-  const sendingRef = useRef(false);
-  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; const ids = attachmentsRef.current.map(item => item.selectionId); if (ids.length) void window.asteriumAttachments?.discard(ids).catch(() => undefined); };
-  }, []);
   const addAttachments = async (load: (remaining: number) => Promise<PendingMessageAttachment[]>, fallbackError: string) => {
-    const api = window.asteriumAttachments;
-    if (!api || choosingRef.current || disabled || busy || sendingRef.current) return;
-    choosingRef.current = true;
-    setChoosing(true); setAttachmentError('');
+    if (!window.asteriumAttachments || disabled || busy || operation) return;
+    setAttachmentError('');
     try {
-      const remaining = 10 - attachmentsRef.current.length;
-      if (remaining < 1) throw new Error('ATTACHMENT_COUNT_LIMIT');
-      const selected = await load(remaining);
-      if (!mounted.current) { await api.discard(selected.map(item => item.selectionId)); return; }
-      const next = [...attachmentsRef.current, ...selected];
-      attachmentsRef.current = next;
-      setAttachments(next);
+      await draft.stage(async current => {
+        const remaining = 10 - current.length;
+        if (remaining < 1) throw new Error('ATTACHMENT_COUNT_LIMIT');
+        return load(remaining);
+      });
     } catch (error) {
       const detail = String(error);
-      if (mounted.current) setAttachmentError(detail.includes('ATTACHMENT_TOO_LARGE') ? '单个附件不能超过 20MB。' : detail.includes('ATTACHMENT_COUNT_LIMIT') ? '一次最多发送 10 个附件。' : fallbackError);
-    } finally {
-      choosingRef.current = false;
-      if (mounted.current) setChoosing(false);
+      if (draft.isMounted()) setAttachmentError(detail.includes('ATTACHMENT_TOO_LARGE') ? '单个附件不能超过 20MB。' : detail.includes('ATTACHMENT_COUNT_LIMIT') ? '一次最多发送 10 个附件。' : fallbackError);
     }
   };
   const chooseAttachments = () => {
@@ -127,9 +108,7 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   const handleChange = (next: string, caret: number) => {
     const rebased = rebaseMentions(value, next, mentions);
     const detected = mentionsEnabled ? detectUniqueMentions(next, members, rebased) : [];
-    setValue(next);
-    setMentions(detected);
-    if (draftKey) studioDrafts.set(draftKey, { value: next, mentions: detected });
+    draft.setText(next, detected);
     refreshQuery(next, caret, detected);
   };
 
@@ -141,9 +120,7 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
     const shifted = rebaseMentions(value, next, mentions).filter((mention) => mention.end! <= query.start || mention.start! >= query.start + token.length);
     const mention: StudioMention = { partnerId: member.partnerId, label, start: query.start, end: query.start + token.length, source: 'user' };
     const nextMentions = normalizeMentions([...shifted, mention]);
-    setValue(next);
-    setMentions(nextMentions);
-    if (draftKey) studioDrafts.set(draftKey, { value: next, mentions: nextMentions });
+    draft.setText(next, nextMentions);
     setQuery(undefined);
     requestAnimationFrame(() => {
       const input = inputRef.current;
@@ -157,22 +134,18 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = value.trim();
-    if ((!text && !attachments.length) || disabled || busy || choosingRef.current || sendingRef.current) return;
+    if ((!text && !attachments.length) || disabled || busy || operation) return;
     const leading = value.indexOf(text);
     const selected = (mentionsEnabled ? mentions : [])
       .filter((mention) => mention.start !== undefined && mention.end !== undefined && mention.start >= leading && mention.end <= leading + text.length)
       .map((mention) => ({ ...mention, start: mention.start! - leading, end: mention.end! - leading }));
-    sendingRef.current = true; setSending(true); setAttachmentError('');
-    let sent;
-    try { sent = attachments.length ? await onSend(text, selected, attachments) : await onSend(text, selected); }
-    catch { setAttachmentError('消息未发送，附件已保留，请重试。'); return; }
-    finally { sendingRef.current = false; if (mounted.current) setSending(false); }
-    if (sent === false || !mounted.current) return;
-    setValue('');
-    if (draftKey) studioDrafts.delete(draftKey);
-    setMentions([]);
-    setQuery(undefined);
-    setAttachments([]); attachmentsRef.current = [];
+    setAttachmentError('');
+    try {
+      const sent = await draft.send(async () => attachments.length ? onSend(text, selected, attachments) : onSend(text, selected));
+      if (sent && draft.isMounted()) setQuery(undefined);
+    } catch {
+      if (draft.isMounted()) setAttachmentError('消息未发送，附件已保留，请重试。');
+    }
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -200,11 +173,7 @@ export function StudioComposer({ placeholder, draftKey, disabled = false, busy =
   };
 
   return <form className={`studio-composer${draggingFiles ? ' attachment-drop-active' : ''}`} onSubmit={submit} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-    {attachments.length > 0 && <div className="composer-attachments">{attachments.map(attachment => <PendingAttachmentCard key={attachment.selectionId} attachment={attachment} disabled={sending || choosing} onRemove={() => {
-      if (sending || choosing) return;
-      setAttachments(current => current.filter(item => item.selectionId !== attachment.selectionId));
-      void window.asteriumAttachments?.discard([attachment.selectionId]).catch(() => undefined);
-    }} />)}</div>}
+    {attachments.length > 0 && <div className="composer-attachments">{attachments.map(attachment => <PendingAttachmentCard key={attachment.selectionId} attachment={attachment} disabled={sending || choosing} onRemove={() => draft.remove(attachment.selectionId)} />)}</div>}
     {attachments.length > 0 && <small className="composer-attachment-error">附件将共享给本群伙伴；图片理解取决于伙伴能力，外部线程伙伴仅收到附件信息，文件需另行共享。</small>}
     {attachmentError && <small role="alert" className="composer-attachment-error">{attachmentError}</small>}
     <div className="studio-composer__editor">

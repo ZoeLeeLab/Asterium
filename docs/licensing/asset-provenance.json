@@ -12,10 +12,31 @@
     },
     {
       "path": "assets/asterium.ico",
-      "bytes": 194993,
-      "sha256": "5d3604c0ca7be7dfcdd3632be0069edd259a506340b102e79beec8ee99204448",
-      "provenance": "Maintainer attestation 2026-11-01: creative direction by maintainer; generated with own GPT account; no third-party reference images. Historical generation date not separately evidenced.",
+      "bytes": 211338,
+      "sha256": "2ec332b38c10a6b27c69946580ef28e3ec83d120f1e41e2cf47416da614a078a",
+      "provenance": "Derived from assets/asterium-icon.png by scripts/build-app-icon.ps1. The nine Windows icon sizes use the original artwork with reduced transparent padding.",
       "license": "LicenseRef-Asterium-Branding"
+    },
+    {
+      "path": "assets/asterium.window.png",
+      "bytes": 139919,
+      "sha256": "65516d83d523adabd5cab1c9efb87e06b8c40bcaf0cdc624b9c07bb2b480d479",
+      "provenance": "Window icon derived from assets/asterium-icon.png by scripts/build-app-icon.ps1 using the same crop as the Windows ICO.",
+      "license": "LicenseRef-Asterium-Branding"
+    },
+    {
+      "path": "src/renderer/assets/alice-wonderland-dark.png",
+      "bytes": 3157305,
+      "sha256": "c045184f3005d03e9716bf2c7a212b6e47761fcf17ee6989774eca4b4d7f3350",
+      "provenance": "Night theme artwork supplied by the maintainer for the built-in Alice Wonderland theme. The provided PNG contains an OpenAI C2PA manifest.",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "path": "src/renderer/assets/alice-wonderland-light.png",
+      "bytes": 3041355,
+      "sha256": "9dbdac45ff8dbed1c8c56ee149255fa91fff619bc473d3448692d69240bc5130",
+      "provenance": "Day theme artwork supplied by the maintainer for the built-in Alice Wonderland theme. The provided PNG contains an OpenAI C2PA manifest.",
+      "license": "CC-BY-4.0"
     },
     {
       "path": "src/renderer/assets/asterium-dark-bg.png",

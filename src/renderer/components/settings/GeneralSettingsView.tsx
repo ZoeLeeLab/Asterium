@@ -1,6 +1,6 @@
 import { Settings2 } from 'lucide-react';
 import { useGeneralSettings } from '../../app/useGeneralSettings';
-import { SCREENSHOT_SHORTCUTS, type GeneralSettings } from '../../../shared/generalSettings';
+import { WINDOWS_SCREENSHOT_SHORTCUT } from '../../../shared/generalSettings';
 import { APP_VERSION } from '../../../shared/appRelease';
 import { StorageSettingsView } from './StorageSettingsView';
 
@@ -19,12 +19,10 @@ export function GeneralSettingsView() {
       </section>
       <section className="general-settings-card"><h2>消息发送</h2>
         <label className="general-settings-row"><span><strong>发送快捷键</strong><small>适用于单聊和群聊，Shift+Enter 始终换行。</small></span><select aria-label="发送快捷键" value={settings.sendShortcut} disabled={disabled} onChange={e => void update({ sendShortcut: e.target.value as 'enter' | 'ctrl_enter' })}><option value="enter">Enter 发送</option><option value="ctrl_enter">Ctrl+Enter 发送</option></select></label>
-        <label className="general-settings-row">
-          <span><strong>截图快捷键</strong><small>自定义组合键仅在星丛窗口内打开 Windows 截图工具。截好后在单聊输入框按 Ctrl+V 粘贴。</small></span>
-          <select aria-label="截图快捷键" value={settings.screenshotShortcut} disabled={disabled} onChange={event => void update({ screenshotShortcut: event.target.value as GeneralSettings['screenshotShortcut'] })}>
-            {SCREENSHOT_SHORTCUTS.map(shortcut => <option key={shortcut} value={shortcut}>{shortcut === 'system' ? 'Win+Shift+S（Windows 默认）' : shortcut}</option>)}
-          </select>
-        </label>
+        <div className="general-settings-row">
+          <span><strong>截图快捷键</strong><small>在星丛窗口内打开 Windows 截图工具。截好后在单聊输入框按 Ctrl+V 粘贴。</small></span>
+          <kbd className="general-settings-shortcut">{WINDOWS_SCREENSHOT_SHORTCUT}</kbd>
+        </div>
       </section>
       <section className="general-settings-card"><h2>系统通知</h2><p>仅在星丛处于后台、最小化或收进托盘时发送。</p>{([{ key: 'completed', label: '任务完成' }, { key: 'approval', label: '等待审批' }, { key: 'automationFailed', label: '自动化失败' }] as const).map(({ key, label }) => <label className="general-settings-row" key={key}><span><strong>{label}</strong></span><input type="checkbox" checked={settings.notifications[key]} disabled={disabled} onChange={e => void update({ notifications: { [key]: e.target.checked } })} /></label>)}</section>
       <section className="general-settings-card"><h2>本地工具沙箱</h2><p>作用于 API 伙伴的命令、Skill 脚本、MCP stdio，以及 MCP 管理页的本地测试连接。切换会结束受影响的本地任务与连接，需重新发起操作。</p>

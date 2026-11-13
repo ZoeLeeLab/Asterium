@@ -371,7 +371,7 @@ function normalizeState(value: unknown): PrototypeState | null {
       const partner = partners.find((item) => item.id === conversation.partnerId);
       if (partner?.sourceMode === 'existing_thread') return { ...conversation, isPrimaryThread: true };
       if (partner?.sourceMode === 'api_partner') return { ...conversation, workspaceGrantIds: conversation.workspaceGrantIds ?? partner.workspaceGrantIds ?? [] };
-      if (partner?.sourceMode !== 'local_cli') return conversation;
+      if (partner?.sourceMode !== 'local_cli' || conversation.importedCodexThread) return conversation;
       if (!partner.partnerRootKind && !partner.partnerRoot && !partner.partnerRootGrantId) return conversation;
       return {
         ...conversation,

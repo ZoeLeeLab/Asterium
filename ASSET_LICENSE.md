@@ -7,6 +7,6 @@
 
 你可以复制、分享、修改这些内容，包括商业使用；请注明来源、许可链接及所作修改，不暗示维护者认可你的使用。推荐署名：`星丛 Asterium / ZoeLeeLab，CC BY 4.0`。当前无可用的公开仓库链接时可保留项目名和署名；公开仓库建立后应在后续交付说明补上真实来源链接。
 
-产品 Logo 和应用图标 `assets/asterium-icon.png`、`assets/asterium.ico` 不在上述 CC BY 范围内，使用规则见 [品牌说明](BRANDING.md)。第三方图片、图标、字体和许可原文仍适用各自原许可；例如 Lucide 图标不由本声明重新授权。
+产品 Logo 和应用图标 `assets/asterium-icon.png`、`assets/asterium.ico`、`assets/asterium.window.png` 不在上述 CC BY 范围内，使用规则见 [品牌说明](BRANDING.md)。第三方图片、图标、字体和许可原文仍适用各自原许可；例如 Lucide 图标不由本声明重新授权。
 
 产品图片由维护者提供创意、通过自己的 GPT 账号生成，没有使用第三方参考图。历史生成日期未完整留证，不宣称输出必然具有独占版权、商标已注册或不存在其他相似输出。这里仅就维护者可以授予的权利提供许可，不增加 CC BY 正文之外的限制。

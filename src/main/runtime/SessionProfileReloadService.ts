@@ -17,7 +17,7 @@ export class SessionProfileReloadService {
     bindings: Pick<NativeThreadBindingStore, 'getForScope' | 'markPersonaVersion' | 'setProfileRecoveryRequired'>;
     legacyBootstrap?: (request: SessionCommandRequest) => Promise<SessionBootstrapDocument | undefined>;
     validate: (request: SessionCommandRequest) => Promise<void>;
-    confirm: (request: SessionCommandRequest, kind: ProfileKind, previous: SessionBootstrapDocument, next: SessionBootstrapDocument, signal: AbortSignal, recoverFirst: boolean) => Promise<{ message: string; commit?: () => Promise<void>; rollback?: () => Promise<void> }>;
+    confirm: (request: SessionCommandRequest, kind: ProfileKind, previous: SessionBootstrapDocument, next: SessionBootstrapDocument, signal: AbortSignal, recoverFirst: boolean) => Promise<{ message: string; commit?: () => Promise<void>; rollback?: () => Promise<void>; release?: () => Promise<void> | undefined }>;
   }, private readonly timeoutMs = 180_000) {}
 
   execute(request: SessionCommandRequest): Promise<SessionCommandResult> {
@@ -83,6 +83,8 @@ export class SessionProfileReloadService {
         throw rollbackError;
       }
       throw error;
+    } finally {
+      await confirmed.release?.();
     }
     return { status: 'success', message: `${kind === 'user' ? '用户资料' : '伙伴人设'}已重读：${confirmed.message}` };
   }

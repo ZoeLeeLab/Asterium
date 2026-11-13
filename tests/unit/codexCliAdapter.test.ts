@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, locateCodexHistoryTurn, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, readCodexThreadHistory, recommendedCodexRuntime, searchCodexThreadHistory, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, locateCodexHistoryTurn, parseCodexLoginStatus, rankCodexRuntimes, readCodexThreadHistory, recommendedCodexRuntime, searchCodexThreadHistory, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
 import { PLAN_EXECUTION_QUESTION_ID, PLAN_EXECUTION_START, PLAN_EXECUTION_STOP } from '../../src/main/adapters/planExecutionDecision';
 import type { CodexAppServerTransport, CodexRpcMessage, JsonRpcId } from '../../src/main/adapters/codexAppServerProtocol';
 import { AGENT_PROTOCOL_VERSION, CODEX_NATIVE_TOOL_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
@@ -380,18 +380,6 @@ describe('CodexCliAdapter', () => {
     expect(ranked.map((item) => item.runtimeId)).toEqual(['global', 'desktop', 'vscode']);
     expect(recommendedCodexRuntime(ranked)?.runtimeId).toBe('global');
     expect(ranked).toHaveLength(3);
-  });
-
-  it('normalizes thread choices and limits imports to the authorized directory', () => {
-    const threads = parseCodexThreads({ data: [
-      { id: 'thread-1', name: '命名线程', preview: 'ignored', cwd: 'K:\\qa', updatedAt: 1_700_000_000 },
-      { id: 'thread-2', name: null, preview: '第二条线程', cwd: 'K:\\qa', updatedAt: 1_600_000_000 },
-      { id: 'thread-outside', preview: 'outside', cwd: 'D:\\other', updatedAt: 1_500_000_000 },
-    ] }, 'K:\\qa');
-
-    expect(threads).toHaveLength(2);
-    expect(threads[0]).toMatchObject({ threadId: 'thread-1', title: '命名线程', cwd: 'K:\\qa' });
-    expect(threads[1]).toMatchObject({ threadId: 'thread-2', title: '第二条线程' });
   });
 
   it('starts a thread and turn, then streams text, tools, files, and completion in order', async () => {

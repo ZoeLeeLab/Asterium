@@ -1,5 +1,6 @@
 import type { ContextHandoff } from '../../shared/contextHandoff';
 import { useAppearance } from './useAppearance';
+import { clearAttachmentDraft } from './attachmentDrafts';
 import type { AppearanceSettings, AppearanceUpdate } from './appearance';
 /* eslint-disable react-refresh/only-export-components -- reducer and hook are intentionally colocated with this small prototype provider. */
 import type { SessionCommandName, SessionStatus } from '../../shared/sessionCommands';
@@ -11,6 +12,7 @@ import { useLocation } from 'react-router-dom';
 import type { ApiPartner, Conversation, ConversationArtifact, ExistingThreadPartner, GroupChat, LocalCliPartner, Message, MessageQuote, Partner, Project, ProjectFile, PrototypeAction, PrototypeState, TaskItem, ThemeMode, TurnOperationCategory, TurnTimelineItem, UserProfile } from '../types/domain';
 import { formatMessageWithQuote } from './messageQuote';
 import { friendlyRuntimeErrorMessage } from './runtimeErrorPresentation';
+import { CODEX_THREAD_IN_USE } from '../../shared/codexThreadInUse';
 import { prepareSingleChatProfile, savePrototypeState } from './persistence';
 import { useSingleChatHistory } from './useSingleChatHistory';
 import { AGENT_PROTOCOL_VERSION, type JsonValue, type LocalThreadLifecycleRequest, type MessageAttachment, type MessageDeliveryEvent, type PartnerEvent, type PartnerProfileSeed, type PartnerWorkspaceState, type PermissionMode, type PlanMode, type RunId, type RuntimeModelObservation, type WorkspaceGrant } from '../../shared/agentProtocol';
@@ -25,6 +27,7 @@ import {
   nativeLifecycleRequest,
   regenerateSingleChatTurn,
   sendSingleChatMessage,
+  type SendSingleChatMessageRequest,
   type WorkspaceSwitchDecision,
 } from './singleChatRuntime';
 
@@ -40,17 +43,23 @@ export function buildNativeLifecycleSyncGroups(partners: Partner[], conversation
   return partners.flatMap((partner) => {
     if (partner.sourceMode !== 'local_cli' || partner.adapterType !== 'codex_cli' || partner.connectionKind !== 'local_codex' || partner.isRemoved) return [];
     const byGrant = new Map<string, NativeLifecycleSyncGroup['conversations']>();
+    const imported: NativeLifecycleSyncGroup[] = [];
     for (const conversation of conversations) {
       if (conversation.partnerId !== partner.id || !conversation.sessionId) continue;
+      if (conversation.importedCodexThread) {
+        imported.push({ request: nativeLifecycleRequest(partner, [conversation.sessionId], undefined, conversation.id),
+          conversations: [{ conversationId: conversation.id, threadId: conversation.sessionId, nativeThreadState: conversation.nativeThreadState }] });
+        continue;
+      }
       const grantId = conversation.partnerRootGrantId ?? partner.partnerRootGrantId ?? '';
       const group = byGrant.get(grantId) ?? [];
       group.push({ conversationId: conversation.id, threadId: conversation.sessionId, nativeThreadState: conversation.nativeThreadState });
       byGrant.set(grantId, group);
     }
-    return [...byGrant.entries()].map(([grantId, items]) => ({
+    return [...imported, ...[...byGrant.entries()].map(([grantId, items]) => ({
       request: nativeLifecycleRequest(partner, [...new Set(items.map((item) => item.threadId))], grantId || undefined),
       conversations: items,
-    }));
+    }))];
   });
 }
 
@@ -606,6 +615,9 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
           : partner),
       };
     case 'createConversation':
+      if (state.conversations.some(conversation => conversation.id === action.conversation.id)) {
+        return prototypeReducer(state, { type: 'selectConversation', conversationId: action.conversation.id });
+      }
       return {
         ...state,
         conversations: [action.conversation, ...state.conversations],
@@ -880,6 +892,19 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
       };
     }
     case 'sendChatMessage':
+      if (action.retryOfClientMessageId) {
+        return updateConversation(state, action.conversationId, conversation => {
+          const failed = conversation.messages.at(-1);
+          if (!failed || failed.id !== action.message.id || failed.clientMessageId !== action.retryOfClientMessageId
+            || failed.status !== 'failed' || failed.error?.code !== CODEX_THREAD_IN_USE) return conversation;
+          return {
+            ...conversation,
+            messages: [...conversation.messages.slice(0, -1), action.message],
+            awaitingFirstResponse: action.message.clientMessageId ? { clientMessageId: action.message.clientMessageId, startedAt: new Date().toISOString() } : undefined,
+            updatedAt: new Date().toISOString(),
+          };
+        });
+      }
       return {
         ...state,
         conversations: state.conversations.map((conversation) =>
@@ -1106,6 +1131,7 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
       const targetPartner = state.partners.find((partner) => partner.id === target?.partnerId);
       if (!target || !targetPartner || targetPartner.sourceMode !== event.connectionSource || !eventBelongsToConversation(target, event)) return state;
       if (event.type === 'message.delivery') return updateConversation(state, event.conversationId, (conversation) => {
+        if (event.error?.code === CODEX_THREAD_IN_USE && hasCodexConflict(conversation, event.clientMessageId)) return conversation;
         if (event.state === 'failed' && conversation.regenerationBackup) return {
           ...conversation,
           messages: conversation.regenerationBackup.messages,
@@ -1120,7 +1146,7 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
           ...conversation,
           ...(event.state === 'failed' ? { awaitingFirstResponse: undefined } : {}),
           messages: conversation.messages.map((message) => message.clientMessageId === event.clientMessageId
-            ? { ...message, status: event.state, error: event.error }
+            ? { ...message, status: event.state, error: event.error, ...(message.retryContextHandoff && event.state === 'delivered' ? { retryContextHandoff: undefined } : {}) }
             : message),
         };
       });
@@ -1149,21 +1175,30 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
       });
     }
     case 'messageSendFailed':
-      return updateConversation(state, action.conversationId, (conversation) => ({
-        ...conversation,
-        activeRun: undefined,
-        awaitingFirstResponse: undefined,
-        runNotice: { state: 'failed', message: friendlyRuntimeErrorMessage(action.error.message), ...(conversation.regenerationBackup ? { restored: true } : {}) },
-        messages: conversation.regenerationBackup?.messages ?? conversation.messages.map((message) => message.clientMessageId === action.clientMessageId
-          ? { ...message, status: 'failed', error: action.error }
-          : message),
-        ...(conversation.regenerationBackup ? { sessionId: conversation.regenerationBackup.sessionId, regenerationBackup: undefined } : {}),
-      }));
+      return updateConversation(state, action.conversationId, (conversation) => {
+        if (action.error.code === CODEX_THREAD_IN_USE && (hasCodexConflict(conversation, action.clientMessageId)
+          || !conversation.messages.some(message => message.clientMessageId === action.clientMessageId))) return conversation;
+        return {
+          ...conversation,
+          activeRun: undefined,
+          awaitingFirstResponse: undefined,
+          runNotice: { state: 'failed', message: friendlyRuntimeErrorMessage(action.error.message), ...(conversation.regenerationBackup ? { restored: true } : {}) },
+          messages: conversation.regenerationBackup?.messages ?? conversation.messages.map((message) => message.clientMessageId === action.clientMessageId
+            ? { ...message, status: 'failed', error: action.error }
+            : message),
+          ...(conversation.regenerationBackup ? { sessionId: conversation.regenerationBackup.sessionId, regenerationBackup: undefined } : {}),
+        };
+      });
     case 'reset':
       return action.state;
     default:
       return state;
   }
+}
+
+function hasCodexConflict(conversation: Conversation, clientMessageId: string) {
+  return conversation.messages.some(message => message.clientMessageId === clientMessageId && message.status === 'failed'
+    && message.error?.code === CODEX_THREAD_IN_USE);
 }
 
 interface PrototypeContextValue {
@@ -1185,6 +1220,7 @@ interface PrototypeContextValue {
   selectConversation: (conversationId: string) => void;
   chatHistoryPage?: import('../../shared/singleChatHistory').SingleChatPageBounds;
   chatHistoryLoading?: boolean;
+  chatHistorySaving: boolean;
   selectProject: (projectId: string) => void;
   refreshProfiles: () => Promise<import('../../shared/agentProtocol').PartnerProfilesSyncResult | undefined>;
   addPartner: (partner: Partner, alreadySaved?: boolean) => void;
@@ -1193,6 +1229,7 @@ interface PrototypeContextValue {
   removePartner: (partnerId: string) => void;
   trashRemovedPartnerData: (partnerId: string) => Promise<boolean>;
   createConversation: (partnerId: string, title?: string, sessionId?: string) => string;
+  openImportedConversation: (conversation: Conversation) => void;
   renameConversation: (conversationId: string, title: string) => void;
   archiveConversation: (conversationId: string) => Promise<ConversationLifecycleOutcome>;
   archivePartnerConversations: (partnerId: string) => void;
@@ -1224,6 +1261,7 @@ interface PrototypeContextValue {
   contextHandoffDraft?: ContextHandoff;
   setContextHandoffDraft: (draft?: ContextHandoff) => void;
   sendChatMessage: (conversationId: string, content: string, attachments?: MessageAttachment[], messageId?: string, workspaceDecision?: WorkspaceSwitchDecision, quote?: MessageQuote, contextHandoff?: ContextHandoff) => Promise<boolean>;
+  retryCodexMessage: (conversationId: string, messageId: string) => Promise<boolean>;
   sendChatGuidance: (conversationId: string, content: string, expectedRunId: RunId, quote?: MessageQuote, clientMessageId?: string) => Promise<'accepted' | 'deferred' | false>;
   addConversationArtifact: (conversationId: string, artifact: ConversationArtifact) => void;
   removeConversationArtifact: (conversationId: string, artifactId: string) => void;
@@ -1327,6 +1365,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   const [chatCommandResults, setChatCommandResults] = useState<PrototypeContextValue['chatCommandResults']>({});
   const [chatCompactions, setChatCompactions] = useState<PrototypeContextValue['chatCompactions']>({});
   const compactingRef = useRef(new Set<string>());
+  const submittingChatRef = useRef(new Set<string>());
   const chatHistory = useSingleChatHistory(prototypeReducer);
   const { state, dispatch } = chatHistory;
   const { appearanceError, appearance, updateAppearance, theme, setTheme, toggleTheme } = useAppearance();
@@ -1817,6 +1856,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
         if (partner.sourceMode === 'api_partner') await window.asteriumAgents?.deleteApiSession?.(partner.id, conversation.id);
         await window.asteriumAttachments?.deleteConversation(conversationId);
       }
+      clearAttachmentDraft(`chat:${conversationId}`);
       dispatch({ type: 'deleteConversationPermanently', conversationId });
     }
     return { ok: true };
@@ -1864,6 +1904,26 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   useEffect(() => window.asteriumContextHandoff?.onDelivered(id => {
     setContextHandoffDraft(current => current?.id === id ? undefined : current);
   }), []);
+
+  const { managed, needsRecent, pending: historyPending, saveBeforeSend } = chatHistory;
+  const submitChatMessage = useCallback(async (request: Omit<SendSingleChatMessageRequest, 'state' | 'dispatch' | 'bridge' | 'saveBeforeSend'>) => {
+    const { conversationId } = request;
+    if (compactingRef.current.has(conversationId) || submittingChatRef.current.has(conversationId)
+      || (conversationId === state.activeConversationId && needsRecent)
+      || (request.retryOf && historyPending)) return false;
+    submittingChatRef.current.add(conversationId);
+    try {
+      return await sendSingleChatMessage({
+        ...request,
+        state,
+        dispatch,
+        saveBeforeSend: managed ? saveBeforeSend : undefined,
+        bridge: { agents: window.asteriumAgents, attachments: window.asteriumAttachments },
+      });
+    } finally {
+      submittingChatRef.current.delete(conversationId);
+    }
+  }, [dispatch, historyPending, managed, needsRecent, saveBeforeSend, state]);
 
   const value = useMemo<PrototypeContextValue>(() => ({
     state,
@@ -1917,6 +1977,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     selectConversation: (conversationId) => dispatch({ type: 'selectConversation', conversationId }),
     chatHistoryPage: chatHistory.selectedPage,
     chatHistoryLoading: chatHistory.needsRecent,
+    chatHistorySaving: historyPending,
     selectProject: (projectId) => dispatch({ type: 'selectProject', projectId }),
     addPartner: (partner, alreadySaved = false) => {
       if (!alreadySaved && !partner.isPrototype) void window.asteriumAgents?.savePartnerProfile?.(partnerProfileSeed(partner)).catch(() => undefined);
@@ -1966,6 +2027,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'createConversation', conversation });
       return conversation.id;
     },
+    openImportedConversation: (conversation) => dispatch({ type: 'createConversation', conversation }),
     renameConversation: (conversationId, title) => dispatch({ type: 'renameConversation', conversationId, title }),
     archiveConversation: (conversationId) => changeConversationLifecycle(conversationId, 'archive'),
     archivePartnerConversations: (partnerId) => dispatch({ type: 'archivePartnerConversations', partnerId, archivedAt: new Date().toISOString() }),
@@ -2233,6 +2295,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     },
     removeGroupChat: async (groupChatId) => {
       await window.asteriumStudio?.removeRoom(groupChatId);
+      clearAttachmentDraft(`studio:${groupChatId}`);
       const nextRooms = { ...studioRoomsRef.current };
       delete nextRooms[groupChatId];
       studioRoomsRef.current = nextRooms;
@@ -2242,19 +2305,14 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     toggleGroupMember: (groupChatId, partnerId) => dispatch({ type: 'toggleGroupMember', groupChatId, partnerId }),
     contextHandoffDraft,
     setContextHandoffDraft,
-    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff) => (compactingRef.current.has(conversationId) || (conversationId === state.activeConversationId && chatHistory.needsRecent)) ? Promise.resolve(false) : sendSingleChatMessage({
-      state,
-      dispatch,
-      saveBeforeSend: chatHistory.managed ? chatHistory.saveBeforeSend : undefined,
-      bridge: { agents: window.asteriumAgents, attachments: window.asteriumAttachments },
-      conversationId,
-      content,
-      attachments,
-      messageId,
-      workspaceDecision,
-      quote,
-      contextHandoff,
-    }),
+    sendChatMessage: (conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff) =>
+      submitChatMessage({ conversationId, content, attachments, messageId, workspaceDecision, quote, contextHandoff }),
+    retryCodexMessage: (conversationId, messageId) => {
+      const message = state.conversations.find(conversation => conversation.id === conversationId)?.messages.at(-1);
+      if (!message || message.id !== messageId) return Promise.resolve(false);
+      return submitChatMessage({ conversationId, content: message.content, attachments: message.attachments,
+        quote: message.quote, contextHandoff: message.retryContextHandoff, retryOf: message });
+    },
     sendChatGuidance: async (conversationId, content, expectedRunId, quote, guidanceClientMessageId) => {
       const conversation = state.conversations.find((item) => item.id === conversationId);
       const partner = state.partners.find((item) => item.id === conversation?.partnerId);
@@ -2488,7 +2546,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       });
     },
     addProjectMember: (projectId, partnerId) => dispatch({ type: 'addProjectMember', projectId, partnerId }),
-  }), [chatHistory.managed, chatHistory.needsRecent, chatHistory.saveBeforeSend, chatHistory.selectedPage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
+  }), [chatHistory.needsRecent, chatHistory.selectedPage, historyPending, submitChatMessage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, dispatch, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
   return <PrototypeContext.Provider value={value}>
     {conversationAuthorityReady ? children : null}

@@ -173,6 +173,7 @@ export interface NativeThreadBinding {
   projectId?: string;
   workflowGenerationId?: string;
   nativeThreadId?: string;
+  importedCodexWorkspace?: import('./codexThreadImport').ImportedCodexWorkspace;
   /** Last native turn known to have completed through Asterium. */
   lastCompletedRunId?: string;
   /** Last Main-managed persona state accepted by this native thread. */

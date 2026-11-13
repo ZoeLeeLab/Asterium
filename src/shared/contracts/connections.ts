@@ -103,13 +103,6 @@ export interface CodexDetectionResult extends CliDetectionResult {
   recommendedRuntimeId?: string;
 }
 
-export interface CodexThreadSummary {
-  threadId: string;
-  title: string;
-  cwd: string;
-  updatedAt?: string;
-}
-
 export type NativeThreadLifecycleAction = 'archive' | 'restore' | 'delete';
 export type NativeThreadLifecycleState = 'active' | 'archived' | 'deleted' | 'unavailable' | 'unsupported';
 
@@ -124,6 +117,7 @@ export interface NativeThreadLifecycleResult {
 export interface LocalThreadLifecycleRequest {
   adapterType: 'codex_cli' | 'claude_code';
   partnerId: string;
+  conversationId?: string;
   partnerRootGrantId?: string;
   codexRuntimeId?: string;
   codexRuntimeEnvironment?: CodexRuntimeInfo['environment'];

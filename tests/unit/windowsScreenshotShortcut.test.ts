@@ -13,24 +13,22 @@ vi.mock('electron', () => {
   return { ...electron, default: electron };
 });
 
-it.runIf(process.platform === 'win32')('only handles the configured key inside the focused app window and skips repeated launches', async () => {
+it.runIf(process.platform === 'win32')('only handles Ctrl+Shift+A in the focused app window and skips repeated launches', async () => {
   const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
   mocks.spawn.mockReturnValue(child);
   const isFocused = vi.fn(() => false);
   const webContents = new EventEmitter();
   const window = { webContents, isFocused } as unknown as BrowserWindow;
-  let shortcut: 'system' | 'Ctrl+Shift+S' | 'Ctrl+Shift+1' = 'system';
-  installWindowsScreenshotShortcut(window, () => shortcut);
+  installWindowsScreenshotShortcut(window);
   const event = { preventDefault: vi.fn() };
-  const input = { key: 'S', code: 'KeyS', type: 'keyDown', control: true, shift: true, alt: false, meta: false, isAutoRepeat: false } satisfies Partial<Input>;
+  const input = { key: 'A', code: 'KeyA', type: 'keyDown', control: true, shift: true, alt: false, meta: false, isAutoRepeat: false } satisfies Partial<Input>;
 
-  isFocused.mockReturnValue(true);
-  webContents.emit('before-input-event', event, input);
-  shortcut = 'Ctrl+Shift+S';
-  isFocused.mockReturnValue(false);
   webContents.emit('before-input-event', event, input);
   isFocused.mockReturnValue(true);
-  webContents.emit('before-input-event', event, { ...input, key: 'V' });
+  webContents.emit('before-input-event', event, { ...input, key: 'S', code: 'KeyS' });
+  webContents.emit('before-input-event', event, { ...input, key: 'S', code: 'KeyS', control: false, meta: true });
+  webContents.emit('before-input-event', event, { ...input, shift: false });
+  webContents.emit('before-input-event', event, { ...input, isComposing: true });
   expect(event.preventDefault).not.toHaveBeenCalled();
   expect(mocks.spawn).not.toHaveBeenCalled();
 
@@ -42,8 +40,7 @@ it.runIf(process.platform === 'win32')('only handles the configured key inside t
   expect(child.unref).toHaveBeenCalledOnce();
   await new Promise(resolve => setImmediate(resolve));
 
-  shortcut = 'Ctrl+Shift+1';
-  webContents.emit('before-input-event', event, { ...input, key: '!', code: 'Digit1' });
+  webContents.emit('before-input-event', event, { ...input, key: 'a' });
   expect(mocks.spawn).toHaveBeenCalledTimes(2);
   child.emit('spawn');
   expect(mocks.showMessageBox).not.toHaveBeenCalled();

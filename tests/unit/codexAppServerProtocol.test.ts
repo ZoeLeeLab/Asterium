@@ -1,9 +1,69 @@
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
+  CodexAppServerClient,
   CodexEventMapper,
   approvalResponse,
   mapCodexApprovalRequest,
 } from '../../src/main/adapters/codexAppServerProtocol';
+import { CODEX_THREAD_IN_USE } from '../../src/shared/codexThreadInUse';
+
+describe('Codex app-server thread resume', () => {
+  it('waits for the native writer to exit after closing stdin', async () => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exitCode: null as number | null,
+    });
+    child.stdin.on('data', (data: Buffer) => {
+      const { id } = JSON.parse(data.toString());
+      if (id !== undefined) child.stdout.write(`${JSON.stringify({ id, result: {} })}\n`);
+    });
+    const client = new CodexAppServerClient('codex', '.', () => child as unknown as ChildProcessWithoutNullStreams);
+    await client.start();
+    const closing = client.close();
+    expect(child.stdin.writableEnded).toBe(true);
+    const closed = closing.then(() => true);
+    expect(await Promise.race([closed, Promise.resolve(false)])).toBe(false);
+    child.stdin.emit('error', new Error('pipe already closed'));
+    child.exitCode = 0;
+    child.emit('exit', 0);
+    await closing;
+    expect(client.connected).toBe(false);
+  });
+
+  it('identifies a refused resume for the requested thread before a turn starts', async () => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exitCode: 0,
+    });
+    let occupied = true;
+    let code = -32600;
+    let writerThreadId = 'thread-1';
+    child.stdin.on('data', (data: Buffer) => {
+      const { id, method } = JSON.parse(data.toString());
+      if (id === undefined) return;
+      const result = method === 'initialize' || !occupied
+        ? { result: { thread: { id: 'thread-1' } } }
+        : { error: { code, message: `thread ${writerThreadId} already has an active writer` } };
+      child.stdout.write(`${JSON.stringify({ id, ...result })}\n`);
+    });
+    const client = new CodexAppServerClient('codex', '.', () => child as unknown as ChildProcessWithoutNullStreams);
+    try {
+      await client.start();
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).rejects.toThrow(CODEX_THREAD_IN_USE);
+      await expect(client.request('turn/start', { threadId: 'thread-1' })).rejects.toThrow('CODEX_RPC_ERROR');
+      code = -32603;
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).rejects.toThrow('CODEX_RPC_ERROR');
+      code = -32600;
+      writerThreadId = 'thread-2';
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).rejects.toThrow('CODEX_RPC_ERROR');
+      occupied = false;
+      await expect(client.request('thread/resume', { threadId: 'thread-1' })).resolves.toEqual({ thread: { id: 'thread-1' } });
+    } finally {
+      await client.close();
+    }
+  });
+});
 
 describe('Codex app-server protocol mapping', () => {
   it('maps streamed text and preserves reasoning summaries for expansion', () => {

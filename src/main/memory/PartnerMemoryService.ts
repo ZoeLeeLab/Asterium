@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { PartnerProfileStore } from '../partner/PartnerProfileStore';
-import type { MemoryArchiveBriefing, MemoryRecord, MemorySourceAnchor } from '../../shared/memoryArchive';
+import type { MemoryArchiveBriefing, MemoryArchiveBulkPurgeRequest, MemoryRecord, MemorySourceAnchor } from '../../shared/memoryArchive';
+import type { MemoryBackupData } from '../../shared/memoryBackup';
 import type { MemoryArchiveListOptions, MemoryArchiveStoreOptions, ReviseMemoryRecordInput } from './MemoryArchiveStore';
 import type { MemoryArchiveStore } from './MemoryArchiveStore';
 import { SqliteMemoryArchiveStore } from './SqliteMemoryArchiveStore';
@@ -25,6 +26,17 @@ export class PartnerMemoryService {
 
   async snapshot(partnerId: string, options: MemoryArchiveListOptions = {}) {
     return this.withArchive(partnerId, (store) => store.snapshot(options));
+  }
+
+  exportBackup(partnerId: string) {
+    return this.withArchive(partnerId, store => store.exportBackup());
+  }
+
+  importBackup(partnerId: string, backup: MemoryBackupData) {
+    return this.withArchive(partnerId, store => store.importBackup(backup)).then(receipt => {
+      if (receipt.added) this.notify(partnerId);
+      return receipt;
+    });
   }
 
   async cachedBriefing(partnerId: string) { return this.withArchive(partnerId, (store) => store.getBriefing?.() ?? Promise.resolve(undefined)); }
@@ -79,6 +91,11 @@ export class PartnerMemoryService {
     return this.changed(partnerId, this.withArchive(partnerId, (store) => store.purge(memoryId, expectedUpdatedAt)));
   }
 
+  async purgeArchived({ partnerId, records }: MemoryArchiveBulkPurgeRequest) {
+    const removed = await this.changed(partnerId, this.withArchive(partnerId, store => store.purgeArchived(records)));
+    return removed.length;
+  }
+
   subscribe(listener: (change: { partnerId: string }) => void) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -92,7 +109,13 @@ export class PartnerMemoryService {
 
   private async changed<T>(partnerId: string, operation: Promise<T>) {
     const result = await operation;
-    for (const listener of this.listeners) listener({ partnerId });
+    this.notify(partnerId);
     return result;
+  }
+
+  private notify(partnerId: string) {
+    for (const listener of this.listeners) {
+      try { listener({ partnerId }); } catch { /* A view cannot roll back committed memory. */ }
+    }
   }
 }

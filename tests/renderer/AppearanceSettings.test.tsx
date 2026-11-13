@@ -44,7 +44,7 @@ describe('appearance preferences', () => {
     expect(view.result.current.appearance).toEqual(expected);
     expect(JSON.parse(localStorage.getItem(APPEARANCE_KEY)!)).toEqual(expected);
   });
-  it.each(['rainy-study', 'olympian-garden'] as const)('persists %s while light/dark follows the system and keeps independent reading preferences', (palette) => {
+  it.each(['rainy-study', 'olympian-garden', 'alice-wonderland'] as const)('persists %s while light/dark follows the system and keeps independent reading preferences', (palette) => {
     const system = systemTheme();
     const view = renderHook(useAppearance);
     act(() => view.result.current.updateAppearance({ theme: palette, contentSize: 20, codeSize: 16, font: 'yahei' }));

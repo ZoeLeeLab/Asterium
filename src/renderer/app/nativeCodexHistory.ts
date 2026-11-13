@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { codexHistoryMessageId, visibleNativeUserText, type CodexHistoryHit, type CodexHistoryPage, type CodexHistoryRequest, type CodexHistorySearchPosition, type CodexHistoryTurn } from '../../shared/codexHistory';
 import { ASTERIUM_USER_ID, isAsteriumUser } from '../../shared/identity';
+import { CODEX_THREAD_IN_USE } from '../../shared/codexThreadInUse';
 import type { Conversation, Message, Partner, TurnTimelineItem } from '../types/domain';
 import { visibleAssistantText } from './messageQuote';
 
@@ -207,7 +208,8 @@ export function mergeNativeCodexMessages(conversation: Conversation, newestFirst
     const assistant = renderAssistant(conversation, turn);
     // A force quit can leave the local prompt without its assistant row. Reuse that prompt if it is unambiguous.
     const candidates = user ? local.flatMap((message, index) => {
-      if (index >= nextAnchor || claimedUsers.has(index) || message.isGuidance || !isAsteriumUser(message.authorId)) return [];
+      if (index >= nextAnchor || claimedUsers.has(index) || message.isGuidance
+        || message.error?.code === CODEX_THREAD_IN_USE || !isAsteriumUser(message.authorId)) return [];
       if (message.runId === turn.id) return [index];
       if (message.runId || message.content !== nativePrompt) return [];
       const following = local[index + 1];

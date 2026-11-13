@@ -1,39 +1,39 @@
 /* Shared reading surfaces for the photo themes; original Star palette stays independent. */
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) body {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) body {
   background-image: linear-gradient(var(--scene-veil), var(--scene-veil)), var(--page-image);
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .glass-panel {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .glass-panel {
   background: var(--scene-panel);
   backdrop-filter: blur(var(--scene-panel-blur,14px)) saturate(90%);
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) :is(.center-stage, .studio-center) {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) :is(.center-stage, .studio-center) {
   background: var(--scene-center);
   backdrop-filter: blur(var(--scene-center-blur,4px)) saturate(90%);
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) :is(.message-canvas, .discussion-view, .workspace-view) {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) :is(.message-canvas, .discussion-view, .workspace-view) {
   background: var(--scene-canvas);
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) :is(.brand-copy strong, .settings-brand strong, .settings-heading h1) {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) :is(.brand-copy strong, .settings-brand strong, .settings-heading h1) {
   font-family: var(--scene-heading-font, Georgia, 'STZhongsong', 'Songti SC', SimSun, serif);
   letter-spacing: .065em;
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) :is(.composer, .studio-composer) {
-  background: var(--surface-strong);
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) :is(.composer, .studio-composer) {
+  background: var(--scene-composer, var(--surface-strong));
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .message-row--mine .message-bubble {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .message-row--mine .message-bubble {
   background: var(--scene-mine);
   border-color: color-mix(in srgb, var(--scene-number) 35%, var(--border));
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .avatar {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .avatar {
   box-shadow: 0 0 0 1px var(--border-strong), 0 5px 18px color-mix(in srgb, var(--page-bg) 28%, transparent);
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .partner-orbit button.active .avatar {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .partner-orbit button.active .avatar {
   box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft), var(--shadow-soft);
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) :is(.markdown-content pre, .appearance-preview pre, .code-preview) {
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) :is(.markdown-content pre, .appearance-preview pre, .code-preview) {
   background: var(--scene-code);
 }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .code-keyword { color: var(--scene-keyword); }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .code-string { color: var(--scene-string); }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .code-comment { color: var(--scene-comment); }
-:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden']) .code-number { color: var(--scene-number); }
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .code-keyword { color: var(--scene-keyword); }
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .code-string { color: var(--scene-string); }
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .code-comment { color: var(--scene-comment); }
+:root:is([data-color-theme='rainy-study'], [data-color-theme='sea-letter'], [data-color-theme='olympian-garden'], [data-color-theme='alice-wonderland']) .code-number { color: var(--scene-number); }

@@ -1,6 +1,8 @@
 import type { DesktopNotifications } from './settings/DesktopNotifications';
 import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
 import { validateProjectDirectory } from './settings/projectDirectory';
+import { readMemoryBackup, writeMemoryBackup } from './memory/MemoryBackupFile';
+import { MEMORY_BACKUP_EXTENSION, type MemoryBackupData } from '../shared/memoryBackup';
 import { trimChatHistory } from '../shared/chatHistory';
 import { CYBERBOSS_CHAT_IMAGE_EXTENSIONS } from '../shared/cyberBossChatAttachments';
 import { AutomationScheduler } from './automation/AutomationScheduler';
@@ -31,14 +33,16 @@ import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { app, BrowserWindow, clipboard, dialog, safeStorage, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { createAttachmentThumbnail } from './security/attachmentThumbnail';
 import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import { readClaudeSessionFile } from './adapters/claudeSessionFile';
+import { codexSessionDirectoryDate, readCodexSessionDirectory, readCodexSessionHeader, sameCodexPath, sameCodexSessionRecord } from './adapters/codexSessionFile';
+import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type CodexThreadDirectoryPreview, type CodexThreadImportPreview, type CodexThreadImportResult, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, locateCodexHistoryTurn, listCodexModels, listCodexThreads, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, listCodexModels, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -129,12 +133,13 @@ import { StudioWakeControlService } from './studio/StudioWakeControlService';
 import { StudioWakeEventStore } from './studio/StudioWakeEventStore';
 import { StudioWakeEvents } from './studio/StudioWakeEvents';
 import { RunCoordinator, sameEventRoute, streamFailureEvent, withCommandRoute } from './runtime/RunCoordinator';
+import { codexThreadInUseFailure } from '../shared/codexThreadInUse';
 import { WriterLeaseCoordinator } from './runtime/WriterLeaseCoordinator';
 import { SessionCompactionService } from './runtime/SessionCompactionService';
 import { compactApiSession } from './api/ApiSessionCompactor';
 import { assertSessionCompactRequest } from '../shared/sessionCompaction';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
-import { confirmNativeProfileReload } from './runtime/NativeProfileReload';
+import { confirmNativeProfileReload, NativeProfileReloadError } from './runtime/NativeProfileReload';
 import { StudioOrchestrator } from './studio/StudioOrchestrator';
 import { persistedPartnerProfileSeed, shouldPersistPartnerProfileSeed, StudioRuntimeCatalog } from './studio/StudioRuntimeCatalog';
 import {
@@ -672,12 +677,26 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (partner.runtime.kind !== 'local') throw new Error('COMPACT_NOT_SUPPORTED');
     const adapter = await localMaintenanceAdapter(request);
     if (!adapter.capabilities.compaction || !adapter.compactSession) throw new Error('COMPACT_NOT_SUPPORTED');
-    return adapter.compactSession(request.sessionId, signal, binding.bootstrap);
+    try {
+      return await adapter.compactSession(request.sessionId, signal, binding.bootstrap);
+    } finally {
+      if (binding.importedCodexWorkspace) await adapter.dispose?.();
+    }
   });
   async function localMaintenanceAdapter(request: { partnerId: string; conversationId: string; sessionId: string }) {
     const partner = studioRuntimeCatalog.partner(request.partnerId);
     if (!partner?.available || partner.runtime.kind !== 'local') throw new Error('SESSION_COMMAND_UNAVAILABLE');
     const runtime = partner.runtime;
+    const imported = await importedCodexBinding(request.partnerId, request.conversationId, request.sessionId);
+    if (imported && runtime.adapterType !== 'codex_cli') throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
+    if (imported) {
+      const root = await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
+      if (!root) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
+      const selected = await resolveImportedCodexRuntime(imported.workspace);
+      const adapterKey = localRuntimeAdapterKey({ adapterType: 'codex_cli', runtimeId: selected.runtimeId,
+        partnerId: request.partnerId, conversationId: request.conversationId, partnerRoot: root, additionalDirectories: [] });
+      return runtimeFactory.getLocal({ adapterType: 'codex_cli', adapterKey, executablePath: selected.executablePath, partnerRoot: root, additionalDirectories: [], importedCodexThread: true });
+    }
     const workspace = await partnerWorkspaces.grantIds(request.partnerId);
     const rootGrant = workspace?.cwdGrantId ?? runtime.partnerRootGrantId;
     if (!rootGrant) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
@@ -727,8 +746,20 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         };
       }
       if (!request.sessionId) throw new Error('SESSION_COMMAND_UNAVAILABLE');
-      const adapter = await localMaintenanceAdapter({ ...request, sessionId: request.sessionId });
-      return confirmNativeProfileReload(adapter, request.sessionId, kind, previous, next, signal, recoverFirst);
+      const imported = await importedCodexBinding(request.partnerId, request.conversationId, request.sessionId);
+      let adapter: PartnerAdapter;
+      try {
+        adapter = await localMaintenanceAdapter({ ...request, sessionId: request.sessionId });
+      } catch (error) {
+        throw new NativeProfileReloadError(error, recoverFirst);
+      }
+      try {
+        const result = await confirmNativeProfileReload(adapter, request.sessionId, kind, previous, next, signal, recoverFirst);
+        return { ...result, release: imported ? () => adapter.dispose?.() : undefined };
+      } catch (error) {
+        if (imported) await adapter.dispose?.();
+        throw error;
+      }
     },
   });
   const sessionCommands = new SessionCommandService({ bindings: nativeBindings, catalog: studioRuntimeCatalog, messages: singleChatMessages, leases: writerLeases, compactions: sessionCompactions, reload: (request) => profileReloads.execute(request), isDeleted: (id) => conversationDeletions.isDeleted(id) });
@@ -1538,6 +1569,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       if (await singleChatHistory.isActive()) {
         const committed = await singleChatHistory.readMetadata(item.conversationId);
         if (!committed || committed.partnerId !== item.partnerId || committed.sessionId !== item.nativeThreadId) continue;
+        if (committed.importedCodexThread && !(await nativeBindings.getForScope(item.partnerId, 'single', item.conversationId))?.importedCodexWorkspace) continue;
       }
       await nativeBindings.registerSingle({
         partnerId: item.partnerId,
@@ -1670,7 +1702,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event);
     if (!isRecord(value) || typeof value.conversationId !== 'string' || typeof value.messageId !== 'string' || !Array.isArray(value.selectionIds)
       || value.selectionIds.some((item) => typeof item !== 'string')) throw new Error('INVALID_ATTACHMENT_COMMIT');
-    return messageAttachments.commit(value.conversationId, value.selectionIds as string[], value.messageId);
+    return messageAttachments.commit(value.conversationId, value.selectionIds as string[], value.messageId, true);
   });
   ipcMain.handle(AGENT_IPC.attachmentList, async (event, conversationId: unknown) => {
     requireSender(event);
@@ -1773,7 +1805,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const history = await (recent ? singleChatHistory.openRecent() : singleChatHistory.open());
     if (!history) return undefined;
     const deleted = new Set(await conversationDeletions.listDeletedIds());
-    return { ...history, conversations: history.conversations.filter(conversation => !deleted.has(conversation.id)) };
+    const conversations = history.conversations.filter(conversation => !deleted.has(conversation.id));
+    const pending = await nativeBindings.pendingCodexImports();
+    if (pending.length) {
+      const committed = new Map(conversations.filter(conversation => conversation.importedCodexThread).map(conversation => [conversation.id, conversation]));
+      for (const binding of pending) {
+        const conversation = committed.get(binding.conversationId);
+        if (conversation && binding.nativeThreadId && conversation.partnerId === binding.partnerId && conversation.sessionId === binding.nativeThreadId) {
+          await nativeBindings.activate(binding.bindingId, binding.nativeThreadId);
+        }
+      }
+    }
+    return { ...history, conversations };
   };
   ipcMain.handle(AGENT_IPC.conversationOpenHistory, async (event, recent: unknown) => {
     requireSender(event);
@@ -2245,18 +2288,213 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return codexInstallation;
   });
 
-  ipcMain.handle(AGENT_IPC.listCodexThreads, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.runtimeId !== 'string' || typeof value.workspaceGrantId !== 'string') throw new Error('INVALID_CODEX_THREAD_LIST_REQUEST');
-    const workingDirectory = await resolveWorkspaceGrant(value.workspaceGrantId);
-    if (!workingDirectory) throw new Error('WORKSPACE_GRANT_REQUIRED');
-    if (!codexInstallation?.runtimes.length) codexInstallation = await detectCodexCli();
-    const runtime = codexInstallation.runtimes.find((candidate) => candidate.runtimeId === value.runtimeId);
+  type CodexImportSelection = {
+    file: string;
+    preview: CodexThreadImportPreview;
+    canonicalDirectory?: string;
+  };
+  const codexImportSelections = new WeakMap<Electron.WebContents, {
+    runtime: CodexRuntimeInfo;
+    entries: Map<string, CodexImportSelection>;
+  }>();
+
+  const lastCodexImportDirectory = new WeakMap<Electron.WebContents, { codexHome: string; parent: string }>();
+
+  async function availableImportedDirectory(directory: string, canonicalDirectory?: string) {
+    if (!path.isAbsolute(directory)) return undefined;
+    try {
+      const canonical = await realpath(directory);
+      if (canonicalDirectory && !sameCodexPath(canonical, canonicalDirectory)) return undefined;
+      if (!(await stat(canonical)).isDirectory()) return undefined;
+      await assertCanonicalPathOutsideProtectedRoots(canonical, [...protectedRoots, app.getPath('userData')]);
+      return canonical;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function resolveSelectedCodexRuntime(runtimeId?: string, environment?: CodexRuntimeInfo['environment']) {
+    let installation = await ensureCodexInstallation();
+    let runtime = resolveCodexRuntime(installation.runtimes, runtimeId, environment);
+    if (!runtime) {
+      codexInstallation = await detectCodexCli();
+      installation = codexInstallation;
+      runtime = resolveCodexRuntime(installation.runtimes, runtimeId, environment);
+    }
     if (!runtime) throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
     if (!runtime.loggedIn) throw new Error('CODEX_NOT_LOGGED_IN');
-    const threads = await listCodexThreads(runtime.executablePath, workingDirectory);
-    const reserved = new Set(await nativeBindings.activeNativeThreadIds());
-    return threads.filter((thread) => !reserved.has(thread.threadId));
+    return runtime;
+  }
+
+  async function resolveCodexDirectoryRuntime(runtimeId?: string, environment?: CodexRuntimeInfo['environment'], codexHome?: string) {
+    const matches = (installation: CodexInstallation) => {
+      const runtimes = installation.runtimes.filter(runtime => !codexHome || sameCodexPath(runtime.codexHome, codexHome));
+      return resolveCodexRuntime(runtimes.filter(runtime => runtime.loggedIn), runtimeId, environment);
+    };
+    const hadCachedRuntimes = Boolean(codexInstallation?.runtimes.length);
+    let runtime = matches(await ensureCodexInstallation());
+    const stillInstalled = runtime && await access(runtime.executablePath).then(() => true, () => false);
+    if (!stillInstalled && hadCachedRuntimes) {
+      codexInstallation = await detectCodexCli();
+      runtime = matches(codexInstallation);
+    }
+    if (!runtime) throw new Error('找不到与伙伴配置相符且已登录的 Codex 运行时，请重新检测并选择。');
+    return runtime;
+  }
+
+  async function resolveImportedCodexRuntime(workspace: ImportedCodexWorkspace) {
+    const runtime = await resolveSelectedCodexRuntime(workspace.runtimeId, workspace.runtimeEnvironment);
+    if (!sameCodexPath(runtime.codexHome, workspace.codexHome)) throw new Error('CODEX_IMPORTED_HOME_CHANGED');
+    return runtime;
+  }
+
+  async function importedCodexBinding(partnerId: string, conversationId: string, threadId?: string) {
+    const binding = await nativeBindings.getForScope(partnerId, 'single', conversationId);
+    if (!binding?.importedCodexWorkspace) {
+      if ((await singleChatHistory.readMetadata(conversationId))?.importedCodexThread) {
+        throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
+      }
+      return undefined;
+    }
+    if (binding.state !== 'active' || (threadId !== undefined && binding.nativeThreadId !== threadId)
+      || await conversationDeletions.isDeleted(conversationId)) throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
+    return { binding, workspace: binding.importedCodexWorkspace };
+  }
+
+  async function validateCodexCurrentFile(runtime: CodexRuntimeInfo, threadId: string, nativeFile: string, cwd: string) {
+    if (!path.isAbsolute(cwd) || !path.isAbsolute(nativeFile)) throw new Error('CODEX_THREAD_METADATA_INVALID');
+    const { file, threadId: recordedId } = await readCodexSessionHeader(nativeFile, runtime.codexHome);
+    if (threadId !== recordedId) throw new Error('CODEX_THREAD_METADATA_INVALID');
+    return file;
+  }
+
+  ipcMain.handle(AGENT_IPC.chooseCodexThreadDirectory, async (event, value: unknown): Promise<CodexThreadDirectoryPreview | null> => {
+    const window = requireSender(event);
+    if (!isRecord(value) || (value.runtimeId !== undefined && typeof value.runtimeId !== 'string')
+      || (value.codexHome !== undefined && (typeof value.codexHome !== 'string' || !path.isAbsolute(value.codexHome)))) {
+      throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
+    }
+    const environment = value.runtimeEnvironment;
+    if (environment !== undefined && environment !== 'global_cli' && environment !== 'desktop_app'
+      && environment !== 'vscode_extension' && environment !== 'path') throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
+    codexImportSelections.delete(event.sender);
+    const runtime = await resolveCodexDirectoryRuntime(value.runtimeId, environment, value.codexHome);
+    const lastDirectory = lastCodexImportDirectory.get(event.sender);
+    const defaultPath = lastDirectory && sameCodexPath(lastDirectory.codexHome, runtime.codexHome)
+      && await stat(lastDirectory.parent).then(entry => entry.isDirectory(), () => false)
+      ? lastDirectory.parent : path.join(runtime.codexHome, 'sessions');
+    const result = await dialog.showOpenDialog(window, {
+      title: '选择 Codex 线程的年、月或日文件夹',
+      buttonLabel: '读取线程',
+      defaultPath,
+      properties: ['openDirectory', 'showHiddenFiles', 'dontAddToRecent'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const directory = await readCodexSessionDirectory(result.filePaths[0], runtime.codexHome);
+    lastCodexImportDirectory.set(event.sender, { codexHome: runtime.codexHome, parent: path.dirname(directory.directory) });
+    const entries = new Map<string, CodexImportSelection>();
+    const threadIds = [...directory.filesByThreadId.keys()];
+    const records = threadIds.length
+      ? await readCodexThreadsMetadata(runtime.executablePath, os.homedir(), threadIds) : [];
+    for (const { threadId, metadata } of records) {
+      if (!metadata) continue;
+      try {
+        const { cwd, title, updatedAt } = metadata;
+        const file = await validateCodexCurrentFile(runtime, threadId, metadata.file, cwd);
+        const canonicalDirectory = await availableImportedDirectory(cwd);
+        const matchingFiles = directory.filesByThreadId.get(threadId) ?? [];
+        const currentRecord = matchingFiles.some(candidate => sameCodexPath(candidate, file)) ? undefined
+          : { date: codexSessionDirectoryDate(path.dirname(file), directory.sessions) };
+        const preview: CodexThreadImportPreview = {
+          selectionId: randomUUID(), threadId, title, cwd, updatedAt, directoryAvailable: Boolean(canonicalDirectory), currentRecord,
+        };
+        entries.set(preview.selectionId, { file, preview, canonicalDirectory });
+      } catch {
+        // A bad record does not hide other threads from the selected period.
+      }
+    }
+    const threads = [...entries.values()].map(({ preview }) => preview)
+      .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.title.localeCompare(b.title, 'zh-CN'));
+    codexImportSelections.set(event.sender, { runtime, entries });
+    return { date: directory.date, threads, unavailableCount: directory.unavailableCount + threadIds.length - entries.size };
+  });
+
+  ipcMain.handle(AGENT_IPC.confirmCodexThreadImport, async (event, value: unknown): Promise<CodexThreadImportResult> => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.selectionId !== 'string' || typeof value.partnerId !== 'string'
+      || (value.permissionMode !== 'read_only' && value.permissionMode !== 'manual' && value.permissionMode !== 'automatic' && value.permissionMode !== 'full')) throw new Error('INVALID_CODEX_THREAD_IMPORT');
+    const batch = codexImportSelections.get(event.sender);
+    const selection = batch?.entries.get(value.selectionId);
+    if (!batch || !selection) throw new Error('请重新选择 Codex 日期文件夹及线程。');
+    const partner = studioRuntimeCatalog.partner(value.partnerId);
+    if (!partner?.available || partner.runtime.kind !== 'local' || partner.runtime.adapterType !== 'codex_cli'
+      || !await partnerProfiles.runtimeProfile(value.partnerId)) throw new Error('请先保存本地 Codex 伙伴。');
+    const { runtime } = batch;
+    const { preview } = selection;
+    const current = await readCodexThreadMetadata(runtime.executablePath, os.homedir(), preview.threadId);
+    const currentFile = await validateCodexCurrentFile(runtime, preview.threadId, current.file, current.cwd);
+    if (!sameCodexSessionRecord(currentFile, selection.file)) throw new Error('Codex 当前使用的记录已变化，请重新选择日期文件夹。');
+    const canonicalDirectory = await availableImportedDirectory(current.cwd);
+    if (!sameCodexPath(current.cwd, preview.cwd)
+      || (canonicalDirectory && (!selection.canonicalDirectory || !sameCodexPath(canonicalDirectory, selection.canonicalDirectory)))) {
+      throw new Error('原线程的目录已变化，请重新选择并确认。');
+    }
+    const binding = await nativeBindings.reserveCodexImport(value.partnerId, preview.threadId, {
+      originalCwd: preview.cwd, directory: preview.cwd, canonicalDirectory: selection.canonicalDirectory, runtimeId: runtime.runtimeId,
+      runtimeEnvironment: runtime.environment, codexHome: runtime.codexHome,
+    });
+    if (binding.scope !== 'single' || binding.source !== 'local_cli') return { kind: 'bound_elsewhere', scope: binding.scope };
+    if (binding.state === 'active') {
+      const metadata = await singleChatHistory.readMetadata(binding.conversationId);
+      if (!metadata || metadata.partnerId !== binding.partnerId || metadata.sessionId !== preview.threadId || await conversationDeletions.isDeleted(binding.conversationId)) {
+        throw new Error('原线程已有绑定，但对应单聊暂不可用。');
+      }
+      return { kind: 'conversation', conversation: { ...metadata, messages: [] } };
+    }
+    if (binding.partnerId !== value.partnerId || !binding.importedCodexWorkspace) {
+      return { kind: 'bound_elsewhere', scope: binding.scope };
+    }
+    const metadata = await singleChatHistory.createImportedCodexConversation({
+      id: binding.conversationId, partnerId: binding.partnerId, sessionId: preview.threadId,
+      title: preview.title, updatedAt: new Date().toISOString(), importedCodexThread: true,
+      nativeThreadState: 'active', permissionMode: value.permissionMode, planMode: 'default',
+    });
+    await nativeBindings.activate(binding.bindingId, preview.threadId);
+    return { kind: 'conversation', conversation: { ...metadata, messages: [] } };
+  });
+
+  ipcMain.handle(AGENT_IPC.codexImportedWorkspaceStatus, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.partnerId !== 'string' || typeof value.conversationId !== 'string') throw new Error('INVALID_CODEX_IMPORTED_WORKSPACE');
+    const imported = await importedCodexBinding(value.partnerId, value.conversationId);
+    if (!imported) throw new Error('INVALID_CODEX_IMPORTED_WORKSPACE');
+    const { directory, canonicalDirectory } = imported.workspace;
+    return { directory, available: Boolean(await availableImportedDirectory(directory, canonicalDirectory)) };
+  });
+
+  ipcMain.handle(AGENT_IPC.chooseCodexImportedDirectory, async (event, value: unknown) => {
+    const window = requireSender(event);
+    if (!isRecord(value) || typeof value.partnerId !== 'string' || typeof value.conversationId !== 'string') throw new Error('INVALID_CODEX_IMPORTED_WORKSPACE');
+    const imported = await importedCodexBinding(value.partnerId, value.conversationId);
+    if (!imported) throw new Error('INVALID_CODEX_IMPORTED_WORKSPACE');
+    const { workspace, binding } = imported;
+    const result = await dialog.showOpenDialog(window, {
+      title: '重新选择目录', buttonLabel: '使用此目录',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const directory = result.filePaths[0];
+    const canonical = await availableImportedDirectory(directory);
+    if (!canonical) throw new Error('该目录不可访问，请选择有效的项目目录。');
+    const lease = writerLeases.tryAcquire({ kind: 'conversation', partnerId: binding.partnerId, conversationId: binding.conversationId }, `codex-directory:${randomUUID()}`);
+    if (!lease) throw new Error('CODEX_IMPORTED_CONVERSATION_BUSY');
+    try {
+      if (await conversationDeletions.isDeleted(binding.conversationId)) throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
+      await nativeBindings.updateImportedCodexDirectory(binding.bindingId, workspace.directory, directory, canonical);
+    } finally {
+      lease.release();
+    }
+    return { directory, available: true };
   });
 
   type CodexHistoryRequest = import('../shared/codexHistory').CodexHistoryRequest;
@@ -2276,6 +2514,11 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
     const request = value as unknown as CodexHistoryRequest;
     await assertCodexHistoryBinding(request);
+    const imported = await importedCodexBinding(request.partnerId, request.conversationId, request.threadId);
+    if (imported) {
+      const runtime = await resolveImportedCodexRuntime(imported.workspace);
+      return { request, runtime, workingDirectory: os.homedir() };
+    }
     const partnerRootGrantId = request.partnerRootGrantId ?? (await partnerWorkspaces.grantIds(request.partnerId))?.cwdGrantId;
     return { request, ...await resolveCodexLifecycleRuntime({ ...request, partnerRootGrantId }) };
   };
@@ -2320,10 +2563,21 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   ipcMain.handle(AGENT_IPC.listCodexModels, async (event, value: unknown) => {
     requireSender(event);
-    if (!isRecord(value) || typeof value.partnerRootGrantId !== 'string'
+    if (!isRecord(value) || (value.partnerRootGrantId !== undefined && typeof value.partnerRootGrantId !== 'string')
+      || (value.conversationId !== undefined && typeof value.conversationId !== 'string')
+      || (value.partnerId !== undefined && typeof value.partnerId !== 'string')
       || (value.codexRuntimeId !== undefined && typeof value.codexRuntimeId !== 'string')
       || (value.codexRuntimeEnvironment !== undefined && !['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))) {
       throw new Error('INVALID_CODEX_MODEL_LIST_REQUEST');
+    }
+    if (typeof value.conversationId === 'string' && typeof value.partnerId === 'string') {
+      const imported = await importedCodexBinding(value.partnerId, value.conversationId);
+      if (imported) {
+        const runtime = await resolveImportedCodexRuntime(imported.workspace);
+        const directory = await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
+        if (!directory) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
+        return listCodexModels(runtime.executablePath, directory);
+      }
     }
     const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime(value as import('../shared/codexModels').CodexModelListRequest);
     return listCodexModels(runtime.executablePath, workingDirectory);
@@ -2338,6 +2592,13 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       checkedAt: new Date().toISOString(),
       message: '当前 Claude Code 桥接尚未提供原生线程归档同步。',
     }));
+    if (value.conversationId && value.threadIds.length === 1) {
+      const imported = await importedCodexBinding(value.partnerId, value.conversationId, value.threadIds[0]);
+      if (imported) {
+        const runtime = await resolveImportedCodexRuntime(imported.workspace);
+        return [await getImportedCodexThreadLifecycle(runtime.executablePath, os.homedir(), runtime.codexHome, value.threadIds[0])];
+      }
+    }
     const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime(value);
     return getCodexThreadLifecyclesSafely(runtime.executablePath, workingDirectory, value.threadIds);
   });
@@ -2646,6 +2907,55 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return memoryImport.undo(value);
   });
 
+  const memoryBackupFilters = [{ name: '星丛伙伴记忆备份', extensions: ['gz'] }];
+  let memoryBackupDraft: { id: string; partnerId: string; backup: MemoryBackupData } | undefined;
+  let choosingMemoryBackup = false;
+  ipcMain.handle(AGENT_IPC.memoryBackupExport, async (event, value: unknown) => {
+    const window = requireSender(event);
+    const partnerId = assertMemoryPartnerId(value);
+    const profile = await partnerProfiles.runtimeProfile(partnerId);
+    if (profile?.management.memoryMode !== 'asterium') throw new Error('PARTNER_MEMORY_NOT_MANAGED');
+    const filename = profile.publicIdentity.displayName.replace(/[<>:"/\\|?*]/g, '_').slice(0, 80);
+    const result = await dialog.showSaveDialog(window, {
+      title: '导出伙伴记忆', defaultPath: `星丛记忆-${filename}-${new Date().toISOString().slice(0, 10)}.${MEMORY_BACKUP_EXTENSION}`, filters: memoryBackupFilters,
+    });
+    if (result.canceled || !result.filePath) return null;
+    const target = result.filePath;
+    await assertCanonicalPathOutsideProtectedRoots(target, [...protectedRoots, app.getPath('userData')]);
+    const backup = await partnerMemories.exportBackup(partnerId);
+    await writeMemoryBackup(target, backup);
+    return backup.records.length;
+  });
+  ipcMain.handle(AGENT_IPC.memoryBackupChoose, async (event, value: unknown) => {
+    const window = requireSender(event);
+    const partnerId = assertMemoryPartnerId(value);
+    if (choosingMemoryBackup) throw new Error('MEMORY_BACKUP_BUSY');
+    choosingMemoryBackup = true;
+    memoryBackupDraft = undefined;
+    try {
+      const result = await dialog.showOpenDialog(window, { title: '选择伙伴记忆备份', filters: memoryBackupFilters, properties: ['openFile'] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const filePath = result.filePaths[0];
+      const backup = await readMemoryBackup(filePath);
+      const id = randomUUID();
+      memoryBackupDraft = { id, partnerId, backup };
+      return { id, fileName: path.basename(filePath), total: backup.records.length, archived: backup.records.filter(record => record.deletedAt).length };
+    } finally { choosingMemoryBackup = false; }
+  });
+  ipcMain.handle(AGENT_IPC.memoryBackupImport, async (event, value: unknown, id: unknown) => {
+    requireSender(event);
+    const partnerId = assertMemoryPartnerId(value);
+    const draft = memoryBackupDraft;
+    if (!draft || draft.id !== id || draft.partnerId !== partnerId) throw new Error('MEMORY_BACKUP_PREVIEW_EXPIRED');
+    const receipt = await partnerMemories.importBackup(partnerId, draft.backup);
+    if (memoryBackupDraft === draft) memoryBackupDraft = undefined;
+    return receipt;
+  });
+  ipcMain.handle(AGENT_IPC.memoryBackupCancel, (event, value: unknown, id: unknown) => {
+    requireSender(event);
+    if (memoryBackupDraft && memoryBackupDraft.id === id && memoryBackupDraft.partnerId === value) memoryBackupDraft = undefined;
+  });
+
   ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.query(assertMemoryArchiveQuery(value));
@@ -2684,6 +2994,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   ipcMain.handle(AGENT_IPC.memoryArchivePurge, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.purge(assertMemoryArchiveMutation(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveBulkPurge, (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || !Array.isArray(value.records) || !value.records.length || value.records.length > 100) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
+    const partnerId = assertMemoryPartnerId(value.partnerId);
+    const records = value.records.map(record => {
+      if (!isRecord(record)) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
+      const { memoryId, expectedUpdatedAt } = assertMemoryArchiveMutation({ ...record, partnerId });
+      return { memoryId, expectedUpdatedAt };
+    });
+    return partnerMemories.purgeArchived({ partnerId, records });
   });
 
   ipcMain.handle(AGENT_IPC.memoryArchiveReadSource, async (event, value: unknown) => {
@@ -2987,6 +3309,11 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   async function startLocalRuntime(request: LocalCliSendRequest) {
     if (request.command.execution?.codexModel && (request.adapterType !== 'codex_cli'
       || (request.command.route && request.command.route.scope !== 'single'))) throw new Error('CODEX_MODEL_SELECTION_UNAVAILABLE');
+    const imported = !request.command.route || request.command.route.scope === 'single'
+      ? await importedCodexBinding(request.command.partnerId, request.command.conversationId, request.command.sessionId) : undefined;
+    const importedDirectory = imported && await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
+    if (imported && !importedDirectory) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
+    if (imported && (request.adapterType !== 'codex_cli' || !request.command.sessionId || request.command.forkFromTurnId)) throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
     await attachAutomationCommand(request.command);
     request.command = await messageAttachments.prepareSend(request.command, protectedRoots);
     if (request.command.sourceMessage) await singleChatMessages.upsertMessage(request.command.conversationId, request.command.partnerId, request.command.sourceMessage);
@@ -2994,7 +3321,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     let partnerRoot: string;
     let grantIds: string[] = [];
     let additionalDirectories: string[] = [];
-    if (request.projectRootOverride) {
+    if (importedDirectory) {
+      partnerRoot = importedDirectory;
+    } else if (request.projectRootOverride) {
       partnerRoot = await resolveProjectRuntimeRoot(request.projectRootOverride, protectedRoots);
     } else {
       if (!request.partnerRootGrantId) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
@@ -3012,15 +3341,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     let executablePath: string;
     let resolvedCodexRuntimeId = request.codexRuntimeId;
     if (request.adapterType === 'codex_cli') {
-      let installation = await ensureCodexInstallation();
-      let runtime = resolveCodexRuntime(installation.runtimes, request.codexRuntimeId, request.codexRuntimeEnvironment);
-      if (!runtime) {
-        codexInstallation = await detectCodexCli();
-        installation = codexInstallation;
-        runtime = resolveCodexRuntime(installation.runtimes, request.codexRuntimeId, request.codexRuntimeEnvironment);
-      }
-      if (!runtime) throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
-      if (!runtime.loggedIn) throw new Error('CODEX_NOT_LOGGED_IN');
+      const runtime = imported ? await resolveImportedCodexRuntime(imported.workspace)
+        : await resolveSelectedCodexRuntime(request.codexRuntimeId, request.codexRuntimeEnvironment);
       executablePath = runtime.executablePath;
       resolvedCodexRuntimeId = runtime.runtimeId;
     } else {
@@ -3045,6 +3367,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       partnerRootGrantId: request.partnerRootGrantId,
       workspaceGrantIds: grantIds,
       projectRootOverride: request.projectRootOverride,
+      importedDirectory,
     });
     return runCoordinator.runIdempotent(request.command.clientMessageId, fingerprint, async (): Promise<SendMessageReceipt> => {
       const adapterKey = localRuntimeAdapterKey({
@@ -3062,11 +3385,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         partnerRoot,
         additionalDirectories,
         runtimeTools: runtimeToolsFor(request.command, storedProfile?.management.memoryMode),
+        importedCodexThread: Boolean(imported),
       });
       adapter.updateRuntimeContext?.(request.command);
+      const validateBeforeStart = imported ? async () => {
+        const { partnerId, conversationId, sessionId } = request.command;
+        const current = await importedCodexBinding(partnerId, conversationId, sessionId);
+        const directory = current && await availableImportedDirectory(current.workspace.directory, current.workspace.canonicalDirectory);
+        if (!directory || !sameCodexPath(directory, partnerRoot)) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
+      } : undefined;
       return useLegacyRunPath
-        ? startAdapterRun(adapter, request.command, false, partnerRoot)
-        : runCoordinator.start(adapter, request.command, { artifactBaseDirectory: partnerRoot });
+        ? startAdapterRun(adapter, request.command, Boolean(imported), partnerRoot, validateBeforeStart)
+        : runCoordinator.start(adapter, request.command, { artifactBaseDirectory: partnerRoot, disposeAfter: Boolean(imported), validateBeforeStart });
     });
   }
 
@@ -3163,14 +3493,24 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return claudeInstallation;
   }
 
-  async function startAdapterRun(adapter: PartnerAdapter, command: SendMessageCommand, disposeAfter = false, artifactBaseDirectory?: string) {
+  async function startAdapterRun(adapter: PartnerAdapter, command: SendMessageCommand, disposeAfter = false, artifactBaseDirectory?: string, validateBeforeStart?: () => Promise<void>) {
     if (/^(compact|reload):/.test(writerLeases.ownerFor({ kind: 'conversation', partnerId: command.partnerId, conversationId: command.conversationId }) ?? '')) throw new Error('COMPACT_CONVERSATION_BUSY');
     const lease = await writerLeases.acquire({ kind: 'conversation', partnerId: command.partnerId, conversationId: command.conversationId }, `legacy:${command.commandId}`);
-    if (command.sessionId) { try { await hydrateManagedRuntimeProfile(command); } catch (error) { lease.release(); throw error; } }
-    delivery(command, 'awaiting_confirmation');
-    const iterator = adapter.sendMessage(command)[Symbol.asyncIterator]();
+    const release = async () => {
+      try {
+        if (disposeAfter) await adapter.dispose?.();
+      } finally {
+        lease.release();
+      }
+    };
+    let iterator: AsyncIterator<PartnerEvent> | undefined;
     try {
-      const first = await iterator.next();
+      await validateBeforeStart?.();
+      if (command.sessionId) await hydrateManagedRuntimeProfile(command);
+      delivery(command, 'awaiting_confirmation');
+      const stream = adapter.sendMessage(command)[Symbol.asyncIterator]();
+      iterator = stream;
+      const first = await stream.next();
       if (first.done || !isPartnerEvent(first.value) || first.value.type !== 'session.bound') throw new Error('ADAPTER_SESSION_NOT_BOUND');
       const firstEvent = withCommandRoute(first.value, command);
       if (!sameEventRoute(firstEvent, command)) throw new Error('ADAPTER_EVENT_ROUTE_MISMATCH');
@@ -3193,7 +3533,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
         let lastSequence = firstEvent.sequence;
         try {
           for (;;) {
-            const next = await iterator.next();
+            const next = await stream.next();
             if (next.done) break;
             if (!isPartnerEvent(next.value)) continue;
             const routedEvent = withCommandRoute(next.value, command);
@@ -3243,8 +3583,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
           });
         } finally {
           host.releaseRun(receipt.runId);
-          lease.release();
-          if (disposeAfter) await adapter.dispose?.();
+          await stream.return?.().catch(() => undefined);
+          await release().catch(() => undefined);
           if (command.route?.scope === 'group' && studioRooms.hasPendingPassRetry(receipt.runId)) {
             studioOrchestration.orchestrator?.markPassCorrection(command.route.roomId, command.route.roundId, command.partnerId);
             await studioRooms.retryPassAfterRelease(receipt.runId).catch(() => undefined);
@@ -3253,12 +3593,13 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       })();
       return receipt;
     } catch (error) {
-      lease.release();
+      await iterator?.return?.().catch(() => undefined);
+      await release().catch(() => undefined);
       if (command.route?.scope === 'group') {
         await nativeBindings.invalidateGroupTurn(command).catch(() => undefined);
         await studioRooms.failPreparedTurn(command.route.roomId, command.route.roundId, command.partnerId).catch(() => undefined);
       }
-      delivery(command, 'failed', {
+      delivery(command, 'failed', codexThreadInUseFailure(error) ?? {
         code: 'ADAPTER_START_FAILED',
         message: '无法启动伙伴会话。',
         stage: 'adapter',
@@ -3379,6 +3720,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   ipcMain.handle(AGENT_IPC.automationsMutate, async (event, request: unknown) => { requireSender(event); return automationService.mutate(request); });
 
   return async () => {
+    memoryBackupDraft = undefined;
     unsubscribeUpdates?.(); options.updates?.dispose();
     notifications?.dispose();
     unsubscribeGeneralSettings();
@@ -3434,6 +3776,7 @@ function assertMemoryArchiveQuery(value: unknown): MemoryArchiveQuery {
   if (!isRecord(value)) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
   const partnerId = assertMemoryPartnerId(value.partnerId);
   if (value.includeDeleted !== undefined && typeof value.includeDeleted !== 'boolean') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
+  if (value.archivedOnly !== undefined && typeof value.archivedOnly !== 'boolean') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
   if (value.text !== undefined && typeof value.text !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
   if (value.tags !== undefined && (!Array.isArray(value.tags) || !value.tags.every((item) => typeof item === 'string'))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
   if (value.types !== undefined && (!Array.isArray(value.types) || !value.types.every((item) => MEMORY_TYPES.includes(item as never)))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
@@ -3692,6 +4035,7 @@ function isLocalThreadLifecycleRequest(value: unknown): value is LocalThreadLife
     && (value.partnerRootGrantId === undefined || typeof value.partnerRootGrantId === 'string')
     && (value.codexRuntimeId === undefined || typeof value.codexRuntimeId === 'string')
     && (value.codexRuntimeEnvironment === undefined || ['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))
+    && (value.conversationId === undefined || typeof value.conversationId === 'string')
     && Array.isArray(value.threadIds)
     && value.threadIds.length > 0
     && value.threadIds.every((threadId) => typeof threadId === 'string' && threadId.length > 0);

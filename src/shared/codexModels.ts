@@ -1,6 +1,6 @@
 import type { LocalThreadLifecycleRequest } from './contracts/connections';
 
-export type CodexModelListRequest = Pick<LocalThreadLifecycleRequest, 'partnerRootGrantId' | 'codexRuntimeId' | 'codexRuntimeEnvironment'>;
+export type CodexModelListRequest = Pick<LocalThreadLifecycleRequest, 'partnerRootGrantId' | 'codexRuntimeId' | 'codexRuntimeEnvironment' | 'conversationId'> & { partnerId?: string };
 
 export interface CodexModelSelection {
   model: string;

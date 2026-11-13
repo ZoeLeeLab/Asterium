@@ -495,8 +495,10 @@ describe('SettingsPage partner workflows', () => {
     } }]);
     const comment = vi.fn(async (request) => ({ ...record, updatedAt: '2026-10-18T11:00:00.000Z', comments: [{ commentId: 'comment-1', content: request.content, createdAt: '2026-10-18T11:00:00.000Z' }] }));
     const update = vi.fn(async (request) => ({ ...record, ...request, updatedAt: '2026-10-18T12:00:00.000Z', comments: [] }));
+    const exportMemory = vi.fn(async () => 12);
     window.asteriumMemory = {
       query,
+      backup: { export: exportMemory },
       briefing: vi.fn(async () => ({ schemaVersion: 1, partnerId: 'fixture-api', archiveVersion: 'v1:test', logicalDate: '2026-10-18', generatedAt: '2026-10-18T10:00:00.000Z', content: '[星丛会话记忆简报]\n## 自我认知\n- 暂无' })),
       readSource,
       comment,
@@ -518,6 +520,9 @@ describe('SettingsPage partner workflows', () => {
     expect(screen.queryByRole('button', { name: '新增记忆' })).not.toBeInTheDocument();
     expect(screen.getByTitle(new Date(record.updatedAt).toLocaleString('zh-CN'))).toHaveTextContent(/\d+(?:小时|天|个月)前/);
     expect(query).toHaveBeenCalledWith(expect.objectContaining({ partnerId: 'fixture-api', limit: 100 }));
+    fireEvent.click(screen.getByRole('button', { name: '导出记忆' }));
+    await screen.findByText('已导出 12 条记忆');
+    expect(exportMemory).toHaveBeenCalledWith('fixture-api');
 
     fireEvent.click(screen.getByRole('button', { name: '偏好与协作方式' }));
     await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ types: ['preference_and_collaboration'] })));
@@ -552,7 +557,7 @@ describe('SettingsPage partner workflows', () => {
       createdAt: '2026-10-18T10:00:00.000Z', updatedAt: '2026-10-18T10:00:00.000Z', comments: [], sources: [],
     };
     const deleted = { ...active, memoryId: 'deleted-memory', body: '回收站中的记忆', deletedAt: '2026-10-18T11:00:00.000Z', updatedAt: '2026-10-18T11:00:00.000Z' };
-    const query = vi.fn(async (request: { includeDeleted?: boolean }) => ({ partnerId: 'fixture-api', archiveVersion: 'v1:test', records: request.includeDeleted ? [active, deleted] : [active] }));
+    const query = vi.fn(async (request: { archivedOnly?: boolean }) => ({ partnerId: 'fixture-api', archiveVersion: 'v1:test', records: request.archivedOnly ? [deleted] : [active] }));
     const softDelete = vi.fn(async () => ({ ...active, deletedAt: '2026-10-18T12:00:00.000Z' }));
     const restore = vi.fn(async () => ({ ...deleted, deletedAt: undefined, updatedAt: '2026-10-18T12:00:00.000Z' }));
     const purge = vi.fn(async () => deleted);
@@ -592,15 +597,15 @@ describe('SettingsPage partner workflows', () => {
     await waitFor(() => expect(purge).toHaveBeenCalledWith({ partnerId: 'fixture-api', memoryId: 'deleted-memory', expectedUpdatedAt: '2026-10-18T11:00:00.000Z' }));
   });
 
-  it('soft-deletes selected memory rows in a batch without changing permanent-delete semantics', async () => {
-    const records = ['第一条待删除记忆', '第二条待删除记忆'].map((body, index) => ({
+  it('selects all displayed memory rows and only moves confirmed records into the archive', async () => {
+    const records = ['第一条待删除记忆', '第二条待删除记忆', '筛选外的记忆'].map((body, index) => ({
       schemaVersion: 1 as const, memoryId: `bulk-${index + 1}`, partnerId: 'fixture-api', type: 'stable_fact' as const,
       status: 'active' as const, body, tags: [], weight: 3 as const,
-      createdAt: `2026-10-18T0${index + 8}:00:00.000Z`, updatedAt: `2026-10-18T0${index + 8}:00:00.000Z`, comments: [], sources: [],
+      createdAt: `2026-10-18T${String(index + 8).padStart(2, '0')}:00:00.000Z`, updatedAt: `2026-10-18T${String(index + 8).padStart(2, '0')}:00:00.000Z`, comments: [], sources: [],
     }));
     const softDelete = vi.fn(async (request: { memoryId: string }) => ({ ...records.find((record) => record.memoryId === request.memoryId)!, deletedAt: '2026-10-18T12:00:00.000Z' }));
     window.asteriumMemory = {
-      query: vi.fn(async () => ({ partnerId: 'fixture-api', archiveVersion: 'v1:test', records })),
+      query: vi.fn(async (request: { text?: string }) => ({ partnerId: 'fixture-api', archiveVersion: 'v1:test', records: records.filter(record => !request.text || record.body.includes(request.text)) })),
       briefing: vi.fn(async () => ({ schemaVersion: 1, partnerId: 'fixture-api', archiveVersion: 'v1:test', logicalDate: '2026-10-18', generatedAt: '2026-10-18T10:00:00.000Z', content: '[星丛会话记忆简报]' })),
       softDelete,
       onChanged: vi.fn(() => () => undefined),
@@ -610,14 +615,34 @@ describe('SettingsPage partner workflows', () => {
     fireEvent.click(screen.getByRole('button', { name: '记忆' }));
     expect(await screen.findByText('第一条待删除记忆')).toBeInTheDocument();
     expect(screen.queryByLabelText('选择记忆：第一条待删除记忆')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: '全选' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '批量删除' }));
     expect(screen.getByLabelText('选择记忆：第一条待删除记忆')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '取消删除' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '取消删除' }));
     expect(screen.queryByLabelText('选择记忆：第一条待删除记忆')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('搜索记忆'), { target: { value: '待删除' } });
+    await screen.findByText('第二条待删除记忆');
+    expect(screen.queryByText('筛选外的记忆')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '批量删除' }));
-    fireEvent.click(screen.getByLabelText('选择记忆：第一条待删除记忆'));
-    fireEvent.click(screen.getByLabelText('选择记忆：第二条待删除记忆'));
+    const first = screen.getByLabelText('选择记忆：第一条待删除记忆');
+    const second = screen.getByLabelText('选择记忆：第二条待删除记忆');
+    const selectAll = screen.getByRole('checkbox', { name: '全选' });
+    const list = screen.getByRole('region', { name: '记忆档案列表' });
+    expect(selectAll.closest('.memory-selection-toolbar')?.nextElementSibling).toBe(list);
+    fireEvent.click(selectAll);
+    expect(first).toBeChecked();
+    expect(second).toBeChecked();
+    expect(selectAll).toBeChecked();
+    fireEvent.click(selectAll);
+    expect(first).not.toBeChecked();
+    expect(second).not.toBeChecked();
+    fireEvent.click(selectAll);
+    fireEvent.click(first);
+    expect(selectAll).toBePartiallyChecked();
+    expect(screen.getByRole('button', { name: '删除所选（1）' })).toBeEnabled();
+    fireEvent.click(selectAll);
+    expect(softDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '删除所选（2）' }));
     const dialog = screen.getByRole('dialog', { name: '批量移入归档库' });
     expect(within(dialog).getByText('移入 2 条记忆')).toBeInTheDocument();
@@ -628,6 +653,36 @@ describe('SettingsPage partner workflows', () => {
     await waitFor(() => expect(softDelete).toHaveBeenCalledTimes(2));
     expect(softDelete).toHaveBeenNthCalledWith(1, { partnerId: 'fixture-api', memoryId: 'bulk-1', expectedUpdatedAt: '2026-10-18T08:00:00.000Z' });
     expect(softDelete).toHaveBeenNthCalledWith(2, { partnerId: 'fixture-api', memoryId: 'bulk-2', expectedUpdatedAt: '2026-10-18T09:00:00.000Z' });
+  });
+
+  it('marks the archive visually and permanently deletes only the selected archived records', async () => {
+    const now = '2026-10-18T10:00:00.000Z';
+    const records = ['保留归档', '删除归档', '当前记忆'].map((body, index) => ({
+      schemaVersion: 1 as const, memoryId: `archive-${index}`, partnerId: 'fixture-api', type: 'stable_fact' as const,
+      status: 'active' as const, body, tags: [], weight: 3 as const, createdAt: now, updatedAt: now,
+      comments: [], sources: [], deletedAt: index < 2 ? now : undefined,
+    }));
+    const purgeArchived = vi.fn(async () => 1);
+    const query = vi.fn(async ({ archivedOnly }: { archivedOnly?: boolean }) => ({ partnerId: 'fixture-api', archiveVersion: 'v1:test', records: records.filter(record => Boolean(record.deletedAt) === Boolean(archivedOnly)) }));
+    window.asteriumMemory = { query, purgeArchived, briefing: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) } as never;
+    renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: '记忆' }));
+    const current = await screen.findByRole('button', { name: '查看记忆：当前记忆' });
+    expect(current.closest('.memory-archive-panel')).not.toHaveClass('memory-archive-panel--trash');
+    fireEvent.click(screen.getByRole('button', { name: '归档库' }));
+    const archived = await screen.findByRole('button', { name: '查看记忆：删除归档' });
+    expect(archived.closest('.memory-archive-panel')).toHaveClass('memory-archive-panel--trash');
+    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ partnerId: 'fixture-api', archivedOnly: true, limit: 100 }));
+    fireEvent.click(screen.getByRole('button', { name: '批量永久删除' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '全选' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择记忆：保留归档' }));
+    expect(screen.queryByRole('checkbox', { name: '选择记忆：当前记忆' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '永久删除所选（1）' }));
+    const dialog = screen.getByRole('dialog', { name: '批量永久删除记忆' });
+    expect(within(dialog).getByText('删除后无法恢复')).toBeInTheDocument();
+    expect(purgeArchived).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认永久删除' }));
+    await waitFor(() => expect(purgeArchived).toHaveBeenCalledExactlyOnceWith({ partnerId: 'fixture-api', records: [{ memoryId: 'archive-1', expectedUpdatedAt: now }] }));
   });
 
   it('moves an already-removed partner profile to Windows recycle bin and keeps chat history in state', async () => {

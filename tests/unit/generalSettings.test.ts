@@ -49,15 +49,15 @@ it('adds update preferences to old settings and persists explicit opt-out', asyn
   await store.update({ checkUpdatesAtStartup: false, includePrereleaseUpdates: false });
   expect((await new GeneralSettingsStore(file).get()).settings).toMatchObject({ checkUpdatesAtStartup: false, includePrereleaseUpdates: false });
 });
-it('uses the Windows screenshot shortcut for older profiles and saves an optional window shortcut', async () => {
+it('preserves an old screenshot preference across unrelated updates without accepting new edits to it', async () => {
   const { store, file } = await setup();
   const legacy = { ...(await store.get()).settings, screenshotShortcut: undefined };
   await writeFile(file, JSON.stringify({ version: 1, revision: 1, settings: legacy }));
   expect((await store.get()).settings.screenshotShortcut).toBe('system');
-  await store.update({ screenshotShortcut: 'Ctrl+Shift+S' });
+  await writeFile(file, JSON.stringify({ version: 1, revision: 2, settings: { ...legacy, screenshotShortcut: 'Ctrl+Shift+S' } }));
   await store.update({ sendShortcut: 'ctrl_enter' });
-  await expect(store.update({ screenshotShortcut: 'Ctrl+V' })).rejects.toThrow();
-  expect((await new GeneralSettingsStore(file).get()).settings.screenshotShortcut).toBe('Ctrl+Shift+S');
+  await expect(store.update({ screenshotShortcut: 'Ctrl+Shift+B' })).rejects.toThrow();
+  expect((await new GeneralSettingsStore(file).get()).settings).toMatchObject({ screenshotShortcut: 'Ctrl+Shift+S', sendShortcut: 'ctrl_enter' });
 });
 
 it('does not silently replace damaged storage with defaults', async () => {

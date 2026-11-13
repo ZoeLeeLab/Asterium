@@ -1,14 +1,11 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { app, dialog, type BrowserWindow, type Input } from 'electron';
-import type { GeneralSettings } from '../../shared/generalSettings';
+import { WINDOWS_SCREENSHOT_SHORTCUT } from '../../shared/generalSettings';
 
-type ScreenshotShortcut = GeneralSettings['screenshotShortcut'];
-
-function matchesShortcut(input: Input, shortcut: ScreenshotShortcut) {
-  if (shortcut === 'system' || input.type !== 'keyDown' || !input.control || !input.shift || input.alt || input.meta) return false;
-  const key = /^Digit[0-9]$/.test(input.code) ? input.code.slice(-1) : input.key.toUpperCase();
-  return shortcut === `Ctrl+Shift+${key}`;
+function matchesShortcut(input: Input) {
+  if (input.type !== 'keyDown' || input.isComposing || !input.control || !input.shift || input.alt || input.meta) return false;
+  return WINDOWS_SCREENSHOT_SHORTCUT === `Ctrl+Shift+${input.key.toUpperCase()}`;
 }
 
 async function openSnippingTool() {
@@ -27,11 +24,11 @@ async function openSnippingTool() {
   return false;
 }
 
-export function installWindowsScreenshotShortcut(window: BrowserWindow, currentShortcut: () => ScreenshotShortcut) {
+export function installWindowsScreenshotShortcut(window: BrowserWindow) {
   if (process.platform !== 'win32') return;
   let opening = false;
   window.webContents.on('before-input-event', (event, input) => {
-    if (!matchesShortcut(input, currentShortcut()) || !window.isFocused()) return;
+    if (!matchesShortcut(input) || !window.isFocused()) return;
     event.preventDefault();
     if (input.isAutoRepeat || opening) return;
     opening = true;

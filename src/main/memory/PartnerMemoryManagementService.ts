@@ -19,11 +19,12 @@ export class PartnerMemoryManagementService {
   ) {}
 
   async query(request: MemoryArchiveQuery): Promise<MemoryArchiveQueryResult> {
-    const snapshot = await this.memories.snapshot(request.partnerId, { includeDeleted: request.includeDeleted });
+    const snapshot = await this.memories.snapshot(request.partnerId, { includeDeleted: request.archivedOnly || request.includeDeleted });
+    const records = request.archivedOnly ? snapshot.records.filter(record => record.deletedAt) : snapshot.records;
     return {
       partnerId: request.partnerId,
       archiveVersion: snapshot.archiveVersion,
-      records: searchMemoryRecords(snapshot.records, request),
+      records: searchMemoryRecords(records, request),
       fallbackMemoryIds: await this.memories.fallbackMemoryIds(request.partnerId),
     };
   }
