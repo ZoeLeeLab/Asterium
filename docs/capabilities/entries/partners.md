@@ -17,6 +17,7 @@
   "status": "experimental",
   "codeEntries": [
     "src/main/adapters/CodexCliAdapter.ts",
+    "src/renderer/components/ui/CodexQuotaDetail.tsx",
     "src/renderer/app/nativeCodexHistory.ts",
     "src/shared/codexHistory.ts",
     "src/main/adapters/ClaudeCodeAdapter.ts",
@@ -50,13 +51,13 @@
     "docs/claude-cli-compatibility.md",
     "docs/claude-cli-release-blocker.md"
   ],
-  "lastVerifiedCommit": "109f3881c043a69f184a84e3e6b5c123d2a83ae8"
+  "lastVerifiedCommit": "a3eb8cbbf62962f346c24901b5fe1266e669629d"
 }
 ---
 
 伙伴接入的当前代码入口、测试和权限边界见以上元数据。
 
-单聊右侧伙伴卡在展开后查询本机 Codex 伙伴所用的 ChatGPT 套餐额度。卡片按服务返回的周期展示剩余百分比和重置时间，也可手动刷新。主进程通过伙伴绑定的本机运行时调用 Codex App Server 的账户查询接口，凭据由 Codex 管理。查询无需原生线程或聊天消息。远程接回伙伴不展示本机额度。当前工作区为源码变更。
+单聊右侧伙伴卡在展开后查询本机 Codex 伙伴所用的 ChatGPT 套餐额度。卡片按服务返回的周期展示剩余百分比和重置时间，七天周期显示为「每周额度」，也可手动刷新。主进程通过伙伴绑定的本机运行时调用 Codex App Server 的账户查询接口，凭据由 Codex 管理。查询无需原生线程或聊天消息。额度查询和显示通过合成回归验证。
 
 Claude 改为未修改官方 CLI，MCP 使用 stdio，经账户和当前 CLI 进程树绑定的本机 IPC 调用主进程业务与审批。原生工具显式 ask，路径检查与卡片归属为主，Hooks 仅为额外防线；无 SDK 回退或产品 HTTP 桥接。真实订阅仍待验收，版本支持以 Windows 合成服务实测报告为准，不推断更高版本。
 
