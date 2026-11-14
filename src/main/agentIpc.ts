@@ -168,7 +168,7 @@ import {
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import type { SaveStudioNoteRequest, StudioNoteStatus } from '../shared/studioNotes';
-import type { ProjectNotebookTarget, ProjectNotebookUserReplaceRequest } from '../shared/projectNotebook';
+import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
@@ -1374,50 +1374,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await studioNotes.remove(id);
   });
 
-  ipcMain.handle(AGENT_IPC.projectNotebookGet, async (event, value: unknown) => {
-    void event;
-    const target = assertProjectNotebookTarget(value);
-    await projectNotebooks.assertActiveMembership(target.partnerId, target.projectId);
-    return (await projectNotebooks.notebookStore(target.partnerId)).get(target.projectId);
-  });
-
-  ipcMain.handle(AGENT_IPC.projectNotebookReplace, async (event, value: unknown) => {
-    void event;
-    const request = assertProjectNotebookReplaceRequest(value);
-    const project = await projectNotebooks.assertActiveMembership(request.partnerId, request.projectId);
-    return (await projectNotebooks.notebookStore(request.partnerId)).replace({
-      projectId: request.projectId,
-      projectName: project.name,
-      content: request.content,
-      expectedRevision: request.expectedRevision,
-    });
-  });
-
-  ipcMain.handle(AGENT_IPC.projectNotebookListArchived, async (event) => {
-    void event;
-    return projectNotebooks.listArchived();
-  });
-
-  ipcMain.handle(AGENT_IPC.projectNotebookExport, async (event, value: unknown) => {
-    const target = assertProjectNotebookTarget(value);
-    const notebook = await projectNotebooks.getArchived(target.partnerId, target.projectId);
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) throw new Error('PROJECT_NOTEBOOK_EXPORT_WINDOW_UNAVAILABLE');
-    const result = await dialog.showSaveDialog(window, {
-      title: '导出项目工作笔记',
-      defaultPath: archivedNotebookFileName(notebook.projectName),
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    });
-    if (result.canceled || !result.filePath) return false;
-    await writeFile(result.filePath, notebook.content, 'utf8');
-    return true;
-  });
-
-  ipcMain.handle(AGENT_IPC.projectNotebookPurge, async (event, value: unknown) => {
-    void event;
-    const target = assertProjectNotebookTarget(value);
-    return projectNotebooks.purgeArchived(target.partnerId, target.projectId);
-  });
+  registerProjectNotebookIpc(ipcMain, projectNotebooks, archivedMarkdownFileName);
 
   ipcMain.handle(AGENT_IPC.studioGetRoom, async (event, roomId: unknown) => {
     requireSender(event);
@@ -3994,27 +3951,10 @@ function assertConversationDeleteRequest(value: unknown): ConversationDeleteRequ
   return value as unknown as ConversationDeleteRequest;
 }
 
-function assertProjectNotebookTarget(value: unknown): ProjectNotebookTarget {
-  if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId.trim()
-    || typeof value.projectId !== 'string' || !value.projectId.trim()) throw new Error('INVALID_PROJECT_NOTEBOOK_TARGET');
-  return { partnerId: value.partnerId, projectId: value.projectId };
-}
-
-function assertProjectNotebookReplaceRequest(value: unknown): ProjectNotebookUserReplaceRequest {
-  const target = assertProjectNotebookTarget(value);
-  if (!isRecord(value) || typeof value.content !== 'string'
-    || !Number.isSafeInteger(value.expectedRevision) || Number(value.expectedRevision) < 0) throw new Error('INVALID_PROJECT_NOTEBOOK_REPLACE');
-  return { ...target, content: value.content, expectedRevision: Number(value.expectedRevision) };
-}
-
 function archivedMarkdownFileName(name: string, suffix: string) {
   const withoutControlCharacters = [...name].map((character) => character.charCodeAt(0) < 32 ? '_' : character).join('');
   const safeName = withoutControlCharacters.replace(/[<>:"/\\|?*]/g, '_').trim().slice(0, 120) || '项目';
   return `${safeName}-${suffix}.md`;
-}
-
-function archivedNotebookFileName(projectName: string) {
-  return archivedMarkdownFileName(projectName, '工作笔记');
 }
 
 function isTextMime(mediaType: string) {

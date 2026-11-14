@@ -23,8 +23,13 @@ describe('desktop IPC contract', () => {
   });
 
   it('classifies every main-process handler for shared disposer cleanup', async () => {
-    const source = await readFile(path.join(process.cwd(), 'src', 'main', 'agentIpc.ts'), 'utf8');
-    const handledKeys = [...source.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)].map((match) => match[1] as keyof typeof DESKTOP_IPC);
+    const mainDirectory = path.join(process.cwd(), 'src', 'main');
+    const [source, notebookSource] = await Promise.all([
+      readFile(path.join(mainDirectory, 'agentIpc.ts'), 'utf8'),
+      readFile(path.join(mainDirectory, 'ipc', 'projectNotebookIpc.ts'), 'utf8'),
+    ]);
+    const handledKeys = [source, notebookSource].flatMap((moduleSource) =>
+      [...moduleSource.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)].map((match) => match[1] as keyof typeof DESKTOP_IPC));
     const handledChannels = handledKeys.map((key) => DESKTOP_IPC[key]);
 
     expect(new Set(handledChannels).size).toBe(handledChannels.length);
