@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { BrowserWindow, dialog, type IpcMain } from 'electron';
+import { dialog, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
 import type { ProjectNotebookTarget, ProjectNotebookUserReplaceRequest } from '../../shared/projectNotebook';
 import type { PartnerProjectNotebookService } from '../notebook/PartnerProjectNotebookService';
@@ -8,16 +8,17 @@ export function registerProjectNotebookIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
   projectNotebooks: PartnerProjectNotebookService,
   archivedMarkdownFileName: (name: string, suffix: string) => string,
+  requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
   ipcMain.handle(AGENT_IPC.projectNotebookGet, async (event, value: unknown) => {
-    void event;
+    requireSender(event);
     const target = assertProjectNotebookTarget(value);
     await projectNotebooks.assertActiveMembership(target.partnerId, target.projectId);
     return (await projectNotebooks.notebookStore(target.partnerId)).get(target.projectId);
   });
 
   ipcMain.handle(AGENT_IPC.projectNotebookReplace, async (event, value: unknown) => {
-    void event;
+    requireSender(event);
     const request = assertProjectNotebookReplaceRequest(value);
     const project = await projectNotebooks.assertActiveMembership(request.partnerId, request.projectId);
     return (await projectNotebooks.notebookStore(request.partnerId)).replace({
@@ -29,15 +30,14 @@ export function registerProjectNotebookIpc(
   });
 
   ipcMain.handle(AGENT_IPC.projectNotebookListArchived, async (event) => {
-    void event;
+    requireSender(event);
     return projectNotebooks.listArchived();
   });
 
   ipcMain.handle(AGENT_IPC.projectNotebookExport, async (event, value: unknown) => {
+    const window = requireSender(event);
     const target = assertProjectNotebookTarget(value);
     const notebook = await projectNotebooks.getArchived(target.partnerId, target.projectId);
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) throw new Error('PROJECT_NOTEBOOK_EXPORT_WINDOW_UNAVAILABLE');
     const result = await dialog.showSaveDialog(window, {
       title: '导出项目工作笔记',
       defaultPath: archivedMarkdownFileName(notebook.projectName, '工作笔记'),
@@ -49,7 +49,7 @@ export function registerProjectNotebookIpc(
   });
 
   ipcMain.handle(AGENT_IPC.projectNotebookPurge, async (event, value: unknown) => {
-    void event;
+    requireSender(event);
     const target = assertProjectNotebookTarget(value);
     return projectNotebooks.purgeArchived(target.partnerId, target.projectId);
   });

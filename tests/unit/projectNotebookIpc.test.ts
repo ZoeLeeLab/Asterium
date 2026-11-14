@@ -10,7 +10,6 @@ import { testRm } from '../helpers/autoTest.mjs';
 
 const electron = vi.hoisted(() => ({
   root: '',
-  fromWebContents: vi.fn(),
   showSaveDialog: vi.fn(),
 }));
 
@@ -21,7 +20,7 @@ vi.mock('electron', () => ({
     isPackaged: false,
     whenReady: async () => undefined,
   },
-  BrowserWindow: { fromWebContents: electron.fromWebContents },
+  BrowserWindow: class {},
   clipboard: {},
   dialog: { showSaveDialog: electron.showSaveDialog },
   safeStorage: {},
@@ -34,7 +33,6 @@ const content = '# 合成笔记\r\n\r\n保留原文和换行。\r\n';
 const sender = { send: vi.fn() };
 const foreignSender = { send: vi.fn() };
 const window = { webContents: sender, isDestroyed: () => false };
-const foreignWindow = { webContents: foreignSender, isDestroyed: () => false };
 type Handler = (event: { sender: typeof sender }, value?: unknown) => unknown;
 const handlers = new Map<string, Handler>();
 let dispose: (() => Promise<void>) | undefined;
@@ -47,8 +45,6 @@ async function invoke<T = unknown>(channel: string, value?: unknown, caller = se
 
 beforeEach(async () => {
   electron.root = await mkdtemp(path.join(os.tmpdir(), 'asterium-notebook-ipc-'));
-  electron.fromWebContents.mockReset().mockImplementation((value: unknown) =>
-    value === sender ? window : value === foreignSender ? foreignWindow : undefined);
   electron.showSaveDialog.mockReset();
   const { registerAgentIpc } = await import('../../src/main/agentIpc');
   const ipcMain = {
@@ -142,15 +138,20 @@ describe('project notebook IPC', () => {
     await expect(readFile(destination)).resolves.toEqual(Buffer.from(content, 'utf8'));
   });
 
-  it('currently accepts notebook requests from another window', async () => {
+  it('rejects another window at all five notebook entry points before processing the request', async () => {
+    const invalidTarget = { ...target, projectId: ' ' };
+    await expect(invoke(AGENT_IPC.projectNotebookGet, invalidTarget, foreignSender)).rejects.toThrow('INVALID_IPC_SENDER');
     await expect(invoke(AGENT_IPC.projectNotebookReplace, { ...target, content, expectedRevision: 0 }, foreignSender))
-      .resolves.toMatchObject({ content });
-    await expect(invoke(AGENT_IPC.projectNotebookGet, target, foreignSender)).resolves.toMatchObject({ content });
-    await invoke(AGENT_IPC.projectRemove, { projectId: target.projectId, roomIds: [] });
-    await expect(invoke(AGENT_IPC.projectNotebookListArchived, undefined, foreignSender)).resolves.toHaveLength(1);
-    electron.showSaveDialog.mockResolvedValueOnce({ canceled: true });
-    await expect(invoke(AGENT_IPC.projectNotebookExport, target, foreignSender)).resolves.toBe(false);
-    expect(electron.showSaveDialog).toHaveBeenCalledWith(foreignWindow, expect.anything());
-    await expect(invoke(AGENT_IPC.projectNotebookPurge, target, foreignSender)).resolves.toMatchObject({ content });
+      .rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(AGENT_IPC.projectNotebookGet, target)).resolves.toBeUndefined();
+
+    await archiveNotebook();
+    await expect(invoke(AGENT_IPC.projectNotebookListArchived, undefined, foreignSender)).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(AGENT_IPC.projectNotebookExport, target, foreignSender)).rejects.toThrow('INVALID_IPC_SENDER');
+    expect(electron.showSaveDialog).not.toHaveBeenCalled();
+    await expect(invoke(AGENT_IPC.projectNotebookPurge, target, foreignSender)).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(AGENT_IPC.projectNotebookListArchived)).resolves.toEqual([
+      expect.objectContaining({ ...target, content, state: 'archived' }),
+    ]);
   });
 });

@@ -35,7 +35,8 @@
     "tests/renderer/StudioComposer.test.tsx",
     "tests/unit/projectWorkspaceStore.test.ts",
     "tests/renderer/StorageSettings.test.tsx",
-    "tests/unit/projectBrowserService.test.ts"
+    "tests/unit/projectBrowserService.test.ts",
+    "tests/unit/projectNotebookIpc.test.ts"
   ],
   "docs": [
     "docs/capabilities/schema.md",
@@ -60,6 +61,8 @@
 ## 历史阶段记录
 
 工作室与群聊的当前代码入口、测试和权限边界见以上元数据。
+
+项目工作笔记的读取、替换、归档列表、导出和永久删除由 `src/main/ipc/projectNotebookIpc.ts` 注册，五个入口都先核对请求是否来自星丛主窗口。合成回归覆盖正常操作、参数和成员检查、版本冲突、Markdown 导出及非主窗口请求。
 
 真实模型、外部宿主及操作系统集成须以各自实际验收结果为准。
 

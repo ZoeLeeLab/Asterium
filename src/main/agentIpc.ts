@@ -1374,7 +1374,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await studioNotes.remove(id);
   });
 
-  registerProjectNotebookIpc(ipcMain, projectNotebooks, archivedMarkdownFileName);
+  registerProjectNotebookIpc(ipcMain, projectNotebooks, archivedMarkdownFileName, requireSender);
 
   ipcMain.handle(AGENT_IPC.studioGetRoom, async (event, roomId: unknown) => {
     requireSender(event);
