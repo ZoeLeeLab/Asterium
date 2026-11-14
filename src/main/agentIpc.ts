@@ -166,9 +166,9 @@ import {
   type ExistingThreadConnectionStatus,
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
-import type { SaveStudioNoteRequest, StudioNoteStatus } from '../shared/studioNotes';
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
+import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
@@ -1350,29 +1350,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return studioRooms.appendSystemMessage(value.roomId, value.content);
   });
 
-  ipcMain.handle(AGENT_IPC.studioNoteList, async (event, projectId: unknown) => {
-    requireSender(event);
-    if (projectId !== undefined && typeof projectId !== 'string') throw new Error('INVALID_STUDIO_NOTE_PROJECT');
-    return studioNotes.list(projectId as string | undefined);
-  });
-
-  ipcMain.handle(AGENT_IPC.studioNoteSave, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || (value.id !== undefined && typeof value.id !== 'string') || typeof value.projectId !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_STUDIO_NOTE');
-    return studioNotes.save(value as unknown as SaveStudioNoteRequest);
-  });
-
-  ipcMain.handle(AGENT_IPC.studioNoteSetStatus, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.id !== 'string' || !['open', 'completed', 'archived'].includes(String(value.status))) throw new Error('INVALID_STUDIO_NOTE_STATUS');
-    return studioNotes.setStatus(value.id, value.status as StudioNoteStatus);
-  });
-
-  ipcMain.handle(AGENT_IPC.studioNoteDelete, async (event, id: unknown) => {
-    requireSender(event);
-    if (typeof id !== 'string' || !id) throw new Error('INVALID_STUDIO_NOTE_ID');
-    await studioNotes.remove(id);
-  });
+  registerStudioNoteIpc(ipcMain, studioNotes, requireSender);
 
   registerProjectNotebookIpc(ipcMain, projectNotebooks, archivedMarkdownFileName, requireSender);
 
