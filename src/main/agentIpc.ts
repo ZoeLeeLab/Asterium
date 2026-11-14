@@ -169,6 +169,7 @@ import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequ
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
+import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
@@ -176,7 +177,6 @@ import type { CodexQuotaResult } from '../shared/codexQuota';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 import { isProjectPermissionMode } from '../shared/projectExecutionPolicy';
 import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectTaskCreateRequest, ProjectTaskRemoveRequest, ProjectTaskUpdateRequest, ProjectUpdateRequest } from '../shared/projectDomain';
-import type { ProjectWorkRoleArchiveRequest, ProjectWorkRoleCreateRequest, ProjectWorkRoleRemoveRequest, ProjectWorkRoleUpdateRequest } from '../shared/projectRoles';
 import type {
   ProjectWorkflowActivateRequest,
   ProjectWorkflowCreateRequest,
@@ -1094,31 +1094,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.taskId !== 'string') throw new Error('INVALID_PROJECT_TASK_REMOVE');
     await projectService.removeTask(value as unknown as ProjectTaskRemoveRequest);
   });
-  ipcMain.handle(AGENT_IPC.projectRoleList, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string') throw new Error('INVALID_PROJECT_ROLE_QUERY');
-    return projectService.listRoles(value);
-  });
-  ipcMain.handle(AGENT_IPC.projectRoleCreate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || (value.scope !== 'global' && value.scope !== 'project')) throw new Error('INVALID_PROJECT_ROLE_CREATE');
-    return projectService.createRole(value as unknown as ProjectWorkRoleCreateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectRoleUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roleId !== 'string') throw new Error('INVALID_PROJECT_ROLE_UPDATE');
-    return projectService.updateRole(value as unknown as ProjectWorkRoleUpdateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectRoleArchive, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roleId !== 'string' || typeof value.archived !== 'boolean') throw new Error('INVALID_PROJECT_ROLE_ARCHIVE');
-    return projectService.archiveRole(value as unknown as ProjectWorkRoleArchiveRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectRoleRemove, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roleId !== 'string') throw new Error('INVALID_PROJECT_ROLE_REMOVE');
-    await projectService.removeRole(value as unknown as ProjectWorkRoleRemoveRequest);
-  });
+  registerProjectRoleIpc(ipcMain, projectService, requireSender);
   ipcMain.handle(AGENT_IPC.projectWorkflowCatalog, async (event, value: unknown) => {
     requireSender(event);
     if (typeof value !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_QUERY');
