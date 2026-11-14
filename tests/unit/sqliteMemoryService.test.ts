@@ -6,9 +6,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { PartnerProfileStore } from '../../src/main/partner/PartnerProfileStore';
 import { PartnerMemoryService } from '../../src/main/memory/PartnerMemoryService';
 import { PartnerMemoryBriefingService } from '../../src/main/memory/PartnerMemoryBriefingService';
+import { PartnerMemoryManagementService } from '../../src/main/memory/PartnerMemoryManagementService';
 import { PartnerMemoryToolService } from '../../src/main/memory/PartnerMemoryToolService';
 import { MemorySourceService } from '../../src/main/memory/MemorySourceService';
 import type { PartnerProfileSeed } from '../../src/shared/agentProtocol';
+import type { MemoryArchiveQuery, MemoryRecord } from '../../src/shared/memoryArchive';
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -49,4 +51,34 @@ it('does not open an archive while the cutover gate is failed', async () => {
   const withManagedMemoryStorage = vi.fn();
   const memories = new PartnerMemoryService({ withManagedMemoryStorage }, { ready: async () => { throw new Error('cutover failed'); } });
   await expect(memories.list('p')).rejects.toThrow('cutover failed'); expect(withManagedMemoryStorage).not.toHaveBeenCalled();
+});
+
+it('returns every matching memory and can purge a full archive larger than 100 records', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'asterium-sqlite-service-'));
+  roots.push(directory);
+  const memories = new PartnerMemoryService({ withManagedMemoryStorage: async (_partnerId, operation) => operation(directory) });
+  const tools = new PartnerMemoryToolService(memories, new MemorySourceService({ getWindow: async () => undefined }, { getRoom: async () => undefined }));
+  const management = new PartnerMemoryManagementService(memories, tools, new PartnerMemoryBriefingService(memories));
+  const { partnerId } = seed;
+  const timestamp = '2026-10-18T10:00:00.000Z';
+  const active = Array.from({ length: 125 }, (_, index): MemoryRecord => ({
+    schemaVersion: 1, memoryId: 'active-' + String(index).padStart(3, '0'), partnerId, type: 'stable_fact',
+    status: 'active', body: '合成测试记忆 ' + index, tags: [], weight: 3,
+    createdAt: timestamp, updatedAt: timestamp, comments: [], sources: [],
+  }));
+  const archived = active.map(record => ({ ...record, memoryId: 'archived-' + record.memoryId, deletedAt: timestamp }));
+  await memories.importBackup(partnerId, { format: 'asterium.partner-memory', version: 1, partnerId, records: [...active, ...archived], fallbackMemoryIds: [] });
+
+  const request: MemoryArchiveQuery = { partnerId, text: '合成测试', types: ['stable_fact'] };
+  expect((await management.query(request)).records).toEqual(active);
+  expect((await management.query({ ...request, archivedOnly: true })).records).toEqual(archived);
+  expect((await management.query({ ...request, text: '合成测试记忆 124' })).records).toEqual([active[124]]);
+  expect((await management.query({ ...request, limit: 100 })).records).toHaveLength(100);
+  expect(await tools.search({ partnerId }, { text: '合成测试' })).toHaveLength(20);
+  await expect(tools.search({ partnerId }, { limit: 101 })).rejects.toThrow('MEMORY_SEARCH_LIMIT_INVALID');
+
+  const records = archived.map(({ memoryId, updatedAt }) => ({ memoryId, expectedUpdatedAt: updatedAt }));
+  await expect(memories.purgeArchived({ partnerId, records })).resolves.toBe(125);
+  expect((await management.query({ partnerId, archivedOnly: true })).records).toEqual([]);
+  expect((await management.query({ partnerId })).records).toEqual(active);
 });

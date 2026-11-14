@@ -9,7 +9,7 @@ import type {
 } from '../../shared/memoryArchive';
 import type { PartnerMemoryBriefingService } from './PartnerMemoryBriefingService';
 import type { PartnerMemoryService } from './PartnerMemoryService';
-import { PartnerMemoryToolService, searchMemoryRecords } from './PartnerMemoryToolService';
+import { filterAndSortMemoryRecords, searchMemoryRecords, type PartnerMemoryToolService } from './PartnerMemoryToolService';
 
 export class PartnerMemoryManagementService {
   constructor(
@@ -24,7 +24,9 @@ export class PartnerMemoryManagementService {
     return {
       partnerId: request.partnerId,
       archiveVersion: snapshot.archiveVersion,
-      records: searchMemoryRecords(records, request),
+      records: request.limit === undefined
+        ? filterAndSortMemoryRecords(records, request)
+        : searchMemoryRecords(records, request),
       fallbackMemoryIds: await this.memories.fallbackMemoryIds(request.partnerId),
     };
   }

@@ -2998,7 +2998,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   ipcMain.handle(AGENT_IPC.memoryArchiveBulkPurge, (event, value: unknown) => {
     requireSender(event);
-    if (!isRecord(value) || !Array.isArray(value.records) || !value.records.length || value.records.length > 100) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
+    if (!isRecord(value) || !Array.isArray(value.records) || !value.records.length) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
     const partnerId = assertMemoryPartnerId(value.partnerId);
     const records = value.records.map(record => {
       if (!isRecord(record)) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');

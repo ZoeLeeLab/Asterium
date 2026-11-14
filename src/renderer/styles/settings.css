@@ -407,7 +407,7 @@
 .memory-filter-row label { display: flex; align-items: center; gap: 7px; border: 1px solid var(--border-soft); border-radius: 10px; padding: 0 10px; background: var(--surface); }
 .memory-filter-row input { min-width: 0; border: 0; background: transparent; padding: 10px 0; }
 .memory-filter-row select { border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); color: var(--text); padding: 0 9px; }
-.memory-record-list { display: grid; gap: 5px; padding: 0 12px 13px; max-height: 520px; overflow: auto; }
+.memory-record-list { display: grid; gap: 5px; padding: 0 12px 13px; }
 .memory-record-list article { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; border: 1px solid var(--border-soft); border-radius: 11px; background: var(--surface); }
 .memory-record-check { display: grid; place-items: center; align-self: stretch; padding: 0 4px 0 10px; }
 .memory-record-check input { accent-color: var(--accent); }
@@ -467,15 +467,13 @@
   overflow-x: hidden;
   overflow-y: auto;
 }
-.memory-import-preview,
-.memory-record-list {
+.memory-import-preview {
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 .memory-scrollbar-visible,
-.memory-import-preview:focus-visible,
-.memory-record-list:focus-visible {
+.memory-import-preview:focus-visible {
   scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
 }
 .memory-import-editor fieldset { min-inline-size: 0; display: grid; gap: 10px; border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px; }
@@ -497,7 +495,7 @@
 }
 
 /* Memory management visual refinement */
-.memory-settings-view { padding: 16px 8px 8px; overflow: hidden; }
+.memory-settings-view { padding: 16px 8px 8px; overflow: hidden; scrollbar-width: none; }
 .memory-heading-actions { align-items: center; }
 .memory-heading-actions .secondary-button { min-height: 36px; padding-inline: 13px; }
 .memory-management-layout {
@@ -583,6 +581,8 @@
   min-height: 0;
   flex-direction: column;
   gap: 14px;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 .memory-briefing-card { flex: 0 0 auto; }
 .memory-briefing-card > summary,
@@ -609,8 +609,7 @@
 .memory-briefing-card > p { color: var(--muted); }
 .memory-archive-panel {
   display: flex;
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 auto;
   flex-direction: column;
 }
 .memory-archive-panel > header { flex: 0 0 56px; }
@@ -677,8 +676,6 @@
 .memory-record-list {
   align-content: start;
   flex: 1;
-  min-height: 0;
-  max-height: none;
   gap: 7px;
   padding: 2px 14px 14px;
 }
@@ -765,7 +762,7 @@
   .memory-partner-panel { max-height: 220px; }
   .memory-partner-list { display: flex; max-height: none; overflow-x: auto; }
   .memory-partner-item { flex: 0 0 205px; }
-  .memory-content-panel { min-height: 620px; }
+  .memory-content-panel { min-height: 620px; overflow: visible; }
 }
 @media (max-width:720px) {
   .memory-filter-row { grid-template-columns: 1fr; }

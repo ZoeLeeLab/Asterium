@@ -7,6 +7,7 @@ import { createTestState } from '../fixtures/applicationState';
 import { SettingsPage } from '../../src/renderer/pages/SettingsPage';
 import { ChatPage } from '../../src/renderer/pages/ChatPage';
 import { StudioPage } from '../../src/renderer/pages/StudioPage';
+import type { MemoryArchiveQuery, MemoryRecord } from '../../src/shared/memoryArchive';
 
 function renderSettings(route = '/settings/partners') {
   return render(
@@ -483,7 +484,7 @@ describe('SettingsPage partner workflows', () => {
       createdAt: '2026-10-18T10:00:00.000Z', updatedAt: '2026-10-18T10:00:00.000Z', comments: [],
       sources: [{ kind: 'single_chat' as const, conversationId: 'conversation-1', messageId: 'message-1' }],
     };
-    const query = vi.fn(async () => ({ partnerId: 'fixture-api', archiveVersion: 'v1:test', records: [record] }));
+    const query = vi.fn(async (request: MemoryArchiveQuery) => ({ partnerId: request.partnerId, archiveVersion: 'v1:test', records: [record] }));
     const readSource = vi.fn(async () => [{ index: 0, result: {
       state: 'changed' as const,
       source: record.sources[0],
@@ -519,7 +520,8 @@ describe('SettingsPage partner workflows', () => {
     expect(screen.getByLabelText('权重 5')).toHaveTextContent('W5');
     expect(screen.queryByRole('button', { name: '新增记忆' })).not.toBeInTheDocument();
     expect(screen.getByTitle(new Date(record.updatedAt).toLocaleString('zh-CN'))).toHaveTextContent(/\d+(?:小时|天|个月)前/);
-    expect(query).toHaveBeenCalledWith(expect.objectContaining({ partnerId: 'fixture-api', limit: 100 }));
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ partnerId: 'fixture-api' }));
+    expect(query.mock.lastCall?.[0]).not.toHaveProperty('limit');
     fireEvent.click(screen.getByRole('button', { name: '导出记忆' }));
     await screen.findByText('已导出 12 条记忆');
     expect(exportMemory).toHaveBeenCalledWith('fixture-api');
@@ -672,7 +674,8 @@ describe('SettingsPage partner workflows', () => {
     fireEvent.click(screen.getByRole('button', { name: '归档库' }));
     const archived = await screen.findByRole('button', { name: '查看记忆：删除归档' });
     expect(archived.closest('.memory-archive-panel')).toHaveClass('memory-archive-panel--trash');
-    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ partnerId: 'fixture-api', archivedOnly: true, limit: 100 }));
+    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ partnerId: 'fixture-api', archivedOnly: true }));
+    expect(query.mock.lastCall?.[0]).not.toHaveProperty('limit');
     fireEvent.click(screen.getByRole('button', { name: '批量永久删除' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '全选' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '选择记忆：保留归档' }));
@@ -683,6 +686,35 @@ describe('SettingsPage partner workflows', () => {
     expect(purgeArchived).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole('button', { name: '确认永久删除' }));
     await waitFor(() => expect(purgeArchived).toHaveBeenCalledExactlyOnceWith({ partnerId: 'fixture-api', records: [{ memoryId: 'archive-1', expectedUpdatedAt: now }] }));
+  });
+
+  it('shows and selects records beyond the old 100-row limit', async () => {
+    const now = '2026-10-18T10:00:00.000Z';
+    const records = Array.from({ length: 125 }, (_, index): MemoryRecord => ({
+      schemaVersion: 1, memoryId: 'memory-' + index, partnerId: 'fixture-api', type: 'stable_fact',
+      status: 'active', body: '合成记忆 ' + index, tags: [], weight: 3, createdAt: now, updatedAt: now, comments: [], sources: [],
+    }));
+    const query = vi.fn(async ({ partnerId, archivedOnly, limit }: MemoryArchiveQuery) => ({
+      partnerId,
+      archiveVersion: 'v1:test',
+      records: records.slice(0, limit ?? records.length).map(record => ({ ...record, deletedAt: archivedOnly ? now : undefined })),
+    }));
+    const purgeArchived = vi.fn(async () => records.length);
+    window.asteriumMemory = { query, purgeArchived, briefing: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) } as never;
+
+    renderSettings('/settings?section=memory');
+    expect(await screen.findByRole('button', { name: '查看记忆：合成记忆 124' })).toBeInTheDocument();
+    expect(screen.getByText('125 条当前结果')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '归档库' }));
+    fireEvent.click(await screen.findByRole('button', { name: '批量永久删除' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: '全选' }));
+    expect(screen.getByRole('checkbox', { name: '选择记忆：合成记忆 124' })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: '永久删除所选（125）' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '批量永久删除记忆' })).getByRole('button', { name: '确认永久删除' }));
+    await waitFor(() => expect(purgeArchived).toHaveBeenCalledExactlyOnceWith({
+      partnerId: 'fixture-api',
+      records: records.map(record => ({ memoryId: record.memoryId, expectedUpdatedAt: now })),
+    }));
   });
 
   it('moves an already-removed partner profile to Windows recycle bin and keeps chat history in state', async () => {

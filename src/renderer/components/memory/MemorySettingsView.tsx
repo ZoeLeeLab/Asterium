@@ -33,7 +33,6 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
   const navigate = useNavigate();
   const managedPartners = useMemo(() => partners.filter((partner) => partner.profileManagement?.memoryMode === 'asterium' && !partner.managedDataDeletedAt), [partners]);
   const [selectedPartnerId, setSelectedPartnerId] = useState(initialPartnerId);
-  const [archiveScrollbarVisible, setArchiveScrollbarVisible] = useState(false);
   const [archiveResult, setArchiveResult] = useState<{ query: MemoryArchiveQuery; archive: MemoryArchiveQueryResult }>();
   const loadRevision = useRef(0);
   const [briefing, setBriefing] = useState<MemoryArchiveBriefing>();
@@ -67,10 +66,10 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
     : managedPartners[0]?.id ?? '';
   const archiveQuery = useMemo<MemoryArchiveQuery>(() => ({
     partnerId, archivedOnly: showTrash || undefined, text: text || undefined,
-    types: type ? [type] : undefined, statuses: status ? [status] : undefined, limit: 100,
+    types: type ? [type] : undefined, statuses: status ? [status] : undefined,
   }), [partnerId, showTrash, text, type, status]);
   const archive = archiveResult?.query === archiveQuery ? archiveResult.archive : undefined;
-  const fallbackMemoryIds = archive?.fallbackMemoryIds ?? [];
+  const fallbackMemoryIds = useMemo(() => new Set(archive?.fallbackMemoryIds), [archive]);
   const records = archive?.records ?? [];
   const visibleRecords = records.filter(record => Boolean(record.deletedAt) === showTrash);
   const selectedRecords = bulkSelectMode ? visibleRecords.filter(record => selectedMemoryIds.has(record.memoryId)) : [];
@@ -232,7 +231,7 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
     <section className="memory-settings-view">
       {!managedPartners.length ? <div className="friendly-empty"><Brain size={36} /><h2>没有由星丛管理记忆的伙伴</h2><p>本地伙伴可在伙伴管理中选择记忆管理方式；现有伙伴继续自行管理。</p></div> : <div className="memory-management-layout">
         <aside className="memory-partner-panel"><header><strong>伙伴</strong><small>{managedPartners.length}</small></header><div className="memory-partner-list" aria-label="选择记忆伙伴">{managedPartners.map((item) => <div className={`memory-partner-item${item.id === partnerId ? ' active' : ''}${item.isRemoved ? ' is-removed' : ''}`} key={item.id}><button type="button" onClick={() => { setSelectedPartnerId(item.id); setBulkSelectMode(false); setSelectedMemoryIds(new Set()); }}><Avatar partnerId={item.id} name={item.publicIdentity.displayName} src={item.publicIdentity.avatarDataUrl} accent={item.accent} size="sm" source={item.sourceMode} /><span><strong>{item.publicIdentity.displayName}</strong><small>{item.isRemoved ? '已移除 · 档案保留' : '星丛托管'}</small></span></button>{item.isRemoved && <button className="memory-partner-trash" type="button" aria-label={`删除已移除伙伴 ${item.publicIdentity.displayName}`} title="移入 Windows 回收站" onClick={() => { setPartnerTrashTarget(item); setPartnerTrashError(''); }}><Trash2 size={14} /></button>}</div>)}</div></aside>
-        <main className="memory-content-panel">
+        <main className="memory-content-panel" aria-label="记忆管理内容" tabIndex={0}>
           <MemoryFallbackSettings partnerId={partnerId} eligible={Boolean(partner && !partner.isRemoved && partner.sourceMode !== 'existing_thread')} />
           {partner && !partner.isRemoved && <MemoryImportPanel key={partnerId} partnerId={partnerId} partnerName={partner.publicIdentity.displayName} />}
           <details className="memory-briefing-card" open={briefingOpen} onToggle={(event) => setBriefingOpen(event.currentTarget.open)}><summary><span><Sparkles size={17} /><strong>会话记忆简报</strong></span><small>{briefing?.logicalDate ?? '确定性生成'}</small></summary>{briefing ? <pre>{briefing.content}</pre> : <p>{busy ? '正在生成简报…' : '暂无简报。'}</p>}</details>
@@ -256,22 +255,19 @@ export function MemorySettingsView({ partners, conversations, groupChats, projec
             </div>}
             {error && <p className="form-error">{error}</p>}
             {busy ? <div className="memory-loading">正在读取结构化记忆档案…</div> : visibleRecords.length ? <div
-              className={`memory-record-list${archiveScrollbarVisible ? ' memory-scrollbar-visible' : ''}`}
+              className="memory-record-list"
               role="region"
               aria-label="记忆档案列表"
-              tabIndex={0}
-              onPointerMove={event => setArchiveScrollbarVisible(event.currentTarget.getBoundingClientRect().right - event.clientX <= 20)}
-              onPointerLeave={() => setArchiveScrollbarVisible(false)}
             >{visibleRecords.map((record) => { const TypeIcon = memoryTypeIcons[record.type]; return <article className={bulkSelectMode ? 'is-selecting' : undefined} key={record.memoryId}>
               {bulkSelectMode && <label className="memory-record-check"><input type="checkbox" aria-label={`选择记忆：${record.body}`} checked={selectedMemoryIds.has(record.memoryId)} onChange={(event) => setSelectedMemoryIds((current) => { const next = new Set(current); if (event.target.checked) next.add(record.memoryId); else next.delete(record.memoryId); return next; })} /></label>}
-              <button type="button" aria-label={`查看记忆：${record.body}`} onClick={() => { setDetail(record); setSourceResult(undefined); setSourceError(''); setMutationError(''); }}><span className="memory-record-type" aria-label={memoryTypeLabels[record.type]} title={memoryTypeLabels[record.type]}><TypeIcon size={16} /></span><strong className="memory-record-weight" aria-label={`权重 ${record.weight}`}>W{record.weight}</strong><span className="memory-record-body">{fallbackMemoryIds.includes(record.memoryId) && <small className="memory-fallback-badge">星丛兜底</small>}{record.body}</span><time title={new Date(record.occurredAt ?? record.updatedAt).toLocaleString('zh-CN')}>{formatRelativeMemoryTime(record.occurredAt ?? record.updatedAt)}</time></button>
+              <button type="button" aria-label={`查看记忆：${record.body}`} onClick={() => { setDetail(record); setSourceResult(undefined); setSourceError(''); setMutationError(''); }}><span className="memory-record-type" aria-label={memoryTypeLabels[record.type]} title={memoryTypeLabels[record.type]}><TypeIcon size={16} /></span><strong className="memory-record-weight" aria-label={`权重 ${record.weight}`}>W{record.weight}</strong><span className="memory-record-body">{fallbackMemoryIds.has(record.memoryId) && <small className="memory-fallback-badge">星丛兜底</small>}{record.body}</span><time title={new Date(record.occurredAt ?? record.updatedAt).toLocaleString('zh-CN')}>{formatRelativeMemoryTime(record.occurredAt ?? record.updatedAt)}</time></button>
             </article>; })}</div> : <div className="friendly-empty friendly-empty--compact"><Search size={30} /><h2>{showTrash ? '归档库为空' : '没有匹配的记忆'}</h2><p>{showTrash ? '软删除的记忆会保留在这里，等待恢复或永久删除。' : '调整分类、搜索文字或状态后再试。'}</p></div>}
           </section>
         </main>
       </div>}
     </section>
     {detail && <Modal title="记忆详情" description={`${memoryTypeLabels[detail.type]} · ${memoryStatusLabels[detail.status]} · 权重 ${detail.weight}`} size="lg" onClose={() => setDetail(undefined)}>
-      {fallbackMemoryIds.includes(detail.memoryId) && <small className="memory-muted">星丛兜底 · 此记忆曾由兜底整理新增或更新</small>}
+      {fallbackMemoryIds.has(detail.memoryId) && <small className="memory-muted">星丛兜底 · 此记忆曾由兜底整理新增或更新</small>}
       <div className="memory-detail">
         <section className="memory-detail-primary">
           <div className="memory-detail-heading"><h3>记忆正文</h3><div>{detail.deletedAt ? <><button className="secondary-button" type="button" onClick={() => { setDetail(undefined); setPendingLifecycle({ kind: 'restore', record: detail }); }}><RotateCcw size={14} />恢复</button><button className="danger-button" type="button" onClick={() => { setDetail(undefined); setPendingLifecycle({ kind: 'purge', record: detail }); }}><Trash2 size={14} />永久删除</button></> : <><button className="secondary-button" type="button" onClick={() => { setEditing(detail); setDetail(undefined); setMutationError(''); }}><Pencil size={14} />编辑</button><button className="text-button" type="button" onClick={() => { setDetail(undefined); setPendingLifecycle({ kind: 'delete', record: detail }); }}><Trash2 size={14} />移入归档库</button></>}</div></div>
