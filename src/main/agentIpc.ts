@@ -168,6 +168,7 @@ import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequ
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
+import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
@@ -1239,16 +1240,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (error) throw new Error(error);
   });
 
-  ipcMain.handle(AGENT_IPC.projectRunChangesList, async (event, projectId) => {
-    requireSender(event);
-    if (typeof projectId !== 'string') throw new Error('INVALID_PROJECT_ID');
-    return projectChanges.list(projectId);
-  });
-  ipcMain.handle(AGENT_IPC.projectRunChangesRead, async (event, request) => {
-    requireSender(event);
-    if (!isRecord(request) || typeof request.projectId !== 'string' || typeof request.id !== 'string' || typeof request.path !== 'string') throw new Error('INVALID_PROJECT_CHANGE_REQUEST');
-    return projectChanges.read({ projectId: request.projectId, id: request.id, path: request.path });
-  });
+  registerProjectRunChangesIpc(ipcMain, projectChanges, requireSender);
   ipcMain.handle(AGENT_IPC.projectBrowse, async (event, request) => {
     requireSender(event);
     return projectBrowser.query(request);
