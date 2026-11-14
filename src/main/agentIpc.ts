@@ -42,7 +42,7 @@ import { readClaudeSessionFile } from './adapters/claudeSessionFile';
 import { codexSessionDirectoryDate, readCodexSessionDirectory, readCodexSessionHeader, sameCodexPath, sameCodexSessionRecord } from './adapters/codexSessionFile';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type CodexThreadDirectoryPreview, type CodexThreadImportPreview, type CodexThreadImportResult, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, listCodexModels, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, listCodexModels, readCodexQuota, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -172,6 +172,7 @@ import type { ProjectNotebookTarget, ProjectNotebookUserReplaceRequest } from '.
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
+import type { CodexQuotaResult } from '../shared/codexQuota';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 import { isProjectPermissionMode } from '../shared/projectExecutionPolicy';
 import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectTaskCreateRequest, ProjectTaskRemoveRequest, ProjectTaskUpdateRequest, ProjectUpdateRequest } from '../shared/projectDomain';
@@ -1585,6 +1586,13 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (typeof artifactId !== 'string') throw new Error('INVALID_ARTIFACT_ID');
     return (await artifacts.inspectIfRegistered(artifactId)) ?? null;
   });
+
+  ipcMain.handle(AGENT_IPC.artifactResolveConversationLink, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.conversationId !== 'string' || !value.conversationId.trim()
+      || value.conversationId.length > 512 || typeof value.href !== 'string') throw new Error('INVALID_ARTIFACT_LINK');
+    return (await artifacts.resolveConversationLink(value.conversationId, value.href)) ?? null;
+  });
   ipcMain.handle(AGENT_IPC.artifactRead, async (event, artifactId: unknown) => {
     requireSender(event);
     if (typeof artifactId !== 'string') throw new Error('INVALID_ARTIFACT_ID');
@@ -2581,6 +2589,47 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
     const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime(value as import('../shared/codexModels').CodexModelListRequest);
     return listCodexModels(runtime.executablePath, workingDirectory);
+  });
+
+  const codexQuotaRequests = new Map<string, Promise<CodexQuotaResult>>();
+  ipcMain.handle(AGENT_IPC.readCodexQuota, async (event, value: unknown): Promise<CodexQuotaResult> => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId.trim() || value.partnerId.length > 512
+      || (value.importedConversationId !== undefined && (typeof value.importedConversationId !== 'string'
+        || !value.importedConversationId.trim() || value.importedConversationId.length > 512))) {
+      throw new Error('INVALID_CODEX_QUOTA_REQUEST');
+    }
+    const partner = studioRuntimeCatalog.partner(value.partnerId);
+    if (!partner?.available || partner.runtime.kind !== 'local' || partner.runtime.adapterType !== 'codex_cli') {
+      return { status: 'runtime_unavailable' };
+    }
+    const imported = value.importedConversationId
+      ? await importedCodexBinding(partner.partnerId, value.importedConversationId)
+      : undefined;
+    if (value.importedConversationId && !imported) return { status: 'runtime_unavailable' };
+
+    const runtimeId = imported ? imported.workspace.runtimeId : partner.runtime.codexRuntimeId;
+    const environment = imported ? imported.workspace.runtimeEnvironment : partner.runtime.codexRuntimeEnvironment;
+    if (!runtimeId && !environment) return { status: 'runtime_unavailable' };
+    const select = ({ runtimes }: CodexInstallation) => resolveCodexRuntime(runtimes, runtimeId, environment);
+    const hadCachedRuntimes = Boolean(codexInstallation?.runtimes.length);
+    let runtime = select(await ensureCodexInstallation());
+    const stillInstalled = runtime && await access(runtime.executablePath).then(() => true, () => false);
+    if (!stillInstalled && hadCachedRuntimes) {
+      codexInstallation = await detectCodexCli();
+      runtime = select(codexInstallation);
+    }
+    if (!runtime || (imported && !sameCodexPath(runtime.codexHome, imported.workspace.codexHome))) {
+      return { status: 'runtime_unavailable' };
+    }
+
+    const key = runtime.runtimeId;
+    const existing = codexQuotaRequests.get(key);
+    if (existing) return existing;
+    // Quota is account-scoped. The request does not need a project or a native thread.
+    const request = readCodexQuota(runtime.executablePath, os.homedir()).finally(() => codexQuotaRequests.delete(key));
+    codexQuotaRequests.set(key, request);
+    return request;
   });
 
   ipcMain.handle(AGENT_IPC.getLocalThreadLifecycles, async (event, value: unknown): Promise<NativeThreadLifecycleResult[]> => {

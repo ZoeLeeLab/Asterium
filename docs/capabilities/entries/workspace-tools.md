@@ -34,6 +34,7 @@
     "src/preload/preload.ts",
     "src/renderer/components/ui/useAttachmentTransfer.ts",
     "src/renderer/pages/ChatPage.tsx",
+    "src/renderer/components/chat/MarkdownContent.tsx",
     "src/renderer/components/chat/FilePreviewPane.tsx"
   ],
   "tests": [
@@ -59,6 +60,7 @@
     "tests/renderer/StorageSettings.test.tsx",
     "tests/renderer/StudioComposer.test.tsx",
     "tests/renderer/NavigationFlows.test.tsx",
+    "tests/renderer/MarkdownContent.test.tsx",
     "tests/renderer/FilePreviewPane.test.tsx"
   ],
   "docs": [
@@ -82,6 +84,8 @@
 本轮最终完整离线回归为 213 文件／1672 通过／2 既有 TODO；另有真实 Electron 窄范围并行、renderer-only 及 mock 合同检查。没有新产品候选、安装升级、真实 API／CLI 会员服务或外部宿主人工验收。详见 [S5 审计](../../development-data-isolation-s5.md)。
 
 ## 单聊文件与交付
+
+单聊正文中的本机文件链接按完整路径查询当前对话的交付记录。文件仍在时使用星丛预览；脚本、可执行文件和快捷方式只在资源管理器中定位。找不到交付或原文件已失效时给出提示，不读取未登记的文件。HTTP/HTTPS 链接仍交给默认浏览器。本次为源码变更，尚未打包。
 
 右侧「文件与交付」在当前单聊内按本地文件路径归组，显示同一路径最近一次交付及交付时间。不同路径的同名文件仍分开显示。聊天里的交付记录按原轮次保留，本地交付仍预览原文件当前内容。文件预览固定预留滚动条宽度。交付分组与时间使用合成数据验证，预览区在 Chromium 中实测正文布局稳定。
 

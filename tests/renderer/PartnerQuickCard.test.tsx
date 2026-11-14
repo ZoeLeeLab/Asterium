@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PartnerQuickCard } from '../../src/renderer/components/ui/PartnerQuickCard';
 import type { ApiPartner } from '../../src/renderer/types/domain';
+import type { CodexQuotaResult } from '../../src/shared/codexQuota';
+import { testPartners } from '../fixtures/applicationState';
 
 const apiPartner: ApiPartner = {
   id: 'deepseek-partner',
@@ -26,6 +28,42 @@ const apiPartner: ApiPartner = {
 };
 
 describe('PartnerQuickCard directory presentation', () => {
+  it('queries local Codex when the sidebar becomes visible and retains the last reading on refresh failure', async () => {
+    const previous = window.asteriumAgents;
+    const partner = { ...testPartners[0], isPrototype: false, location: 'local', connectionKind: 'local_codex' } as const;
+    const readCodexQuota = vi.fn<NonNullable<NonNullable<typeof previous>['readCodexQuota']>>()
+      .mockResolvedValueOnce({
+        status: 'available', checkedAt: 1_794_652_000_000,
+        windows: [{ usedPercent: 12, durationMinutes: 300, resetsAt: 1_794_655_200 }, { usedPercent: 100, durationMinutes: 10_080 }],
+      } satisfies CodexQuotaResult)
+      .mockRejectedValueOnce(new Error('fixture offline'))
+      .mockResolvedValueOnce({ status: 'login_required' });
+    window.asteriumAgents = { ...previous!, readCodexQuota };
+    const card = (visible: boolean) => <PartnerQuickCard partner={partner} visible={visible} onUpdatePartner={vi.fn()} onUpdateWorkspaceGrants={vi.fn()} />;
+    try {
+      const view = render(card(false));
+      expect(readCodexQuota).not.toHaveBeenCalled();
+      view.rerender(card(true));
+      expect(await screen.findByText('剩余 88%')).toBeInTheDocument();
+      expect(screen.getByText('剩余 0%')).toBeInTheDocument();
+      expect(screen.getByText('5 小时')).toBeInTheDocument();
+      expect(screen.getByText('每周额度')).toBeInTheDocument();
+      expect(screen.getByText(/重置于/).querySelector('time')).toHaveAttribute('datetime', new Date(1_794_655_200_000).toISOString());
+      expect(screen.queryByText('MCP')).not.toBeInTheDocument();
+      expect(readCodexQuota).toHaveBeenCalledWith({ partnerId: partner.id, importedConversationId: undefined });
+
+      const refresh = screen.getByRole('button', { name: '刷新 Codex 额度' });
+      fireEvent.click(refresh);
+      expect(await screen.findByText('刷新失败，显示上次结果')).toBeInTheDocument();
+      expect(screen.getByText('剩余 88%')).toBeInTheDocument();
+      fireEvent.click(refresh);
+      expect(await screen.findByText('请先在本机 Codex 登录 ChatGPT')).toBeInTheDocument();
+      expect(screen.queryByText('剩余 88%')).not.toBeInTheDocument();
+    } finally {
+      window.asteriumAgents = previous;
+    }
+  });
+
   it('separates the API primary directory from additional subdirectories', () => {
     render(<PartnerQuickCard
       partner={{

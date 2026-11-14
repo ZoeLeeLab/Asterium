@@ -79,6 +79,60 @@ function AttachmentProbeHarness({ conversationId, attachmentId }: { conversation
 }
 
 describe('navigation shell interactions', () => {
+  it('previews delivered files from chat links and only reveals launchers', async () => {
+    const state = createTestState();
+    const conversation = state.conversations[0];
+    const paths = {
+      document: 'C:/Fixtures/%E6%B5%8B%E8%AF%95%20%E6%96%87%E6%A1%A3.md',
+      launcher: '/C:/Fixtures/launch.vbs',
+      unregistered: 'file:///C:/Other/document.md',
+    };
+    conversation.messages[0].content = `[查看文档](${paths.document}) [查看网页](https://example.com/help)`;
+    const finalText = `[定位启动器](${paths.launcher}) [未交付的文档](${paths.unregistered})`;
+    conversation.messages[2].content = finalText;
+    conversation.messages[2].runState = 'completed';
+    conversation.messages[2].timeline = [{ id: 'text-row', kind: 'text', sequence: 1, text: finalText }];
+    const document: ArtifactInfo = {
+      id: 'registered-document', name: 'fixture.md', extension: '.md', mediaType: 'text/markdown', previewKind: 'markdown',
+      sourceKind: 'local_path', registrationMethod: 'automatic', availability: 'available', cached: false, createdAt: '2026-01-01T00:00:00Z',
+    };
+    const launcher = { ...document, id: 'registered-launcher', name: 'launch.vbs', extension: '.vbs' };
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    const previous = window.asteriumArtifacts;
+    const read = vi.fn(async () => ({ info: document, text: '来自交付记录的预览' }));
+    const reveal = vi.fn(async () => undefined);
+    const open = vi.fn();
+    const openWeb = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const resolveConversationLink = vi.fn(async (_conversationId: string, href: string) => {
+      if (href === paths.document) return { artifact: document, action: 'preview' as const };
+      if (href === paths.launcher) return { artifact: launcher, action: 'reveal' as const };
+      return null;
+    });
+    window.asteriumArtifacts = { ...previous, read, reveal, open, resolveConversationLink } as NonNullable<typeof previous>;
+    try {
+      withProvider(<ChatPage />, '/chat');
+      fireEvent.click(screen.getByRole('link', { name: '查看文档' }));
+      expect(await screen.findByText('来自交付记录的预览')).toBeInTheDocument();
+      expect(read).toHaveBeenCalledWith(document.id);
+      fireEvent.click(screen.getByRole('link', { name: '定位启动器' }));
+      await waitFor(() => expect(reveal).toHaveBeenCalledWith(launcher.id));
+
+      fireEvent.click(screen.getByRole('link', { name: '未交付的文档' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('这个文件没有在当前对话中交付');
+      expect(resolveConversationLink.mock.calls).toEqual(Object.values(paths).map((href) => [conversation.id, href]));
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(reveal).toHaveBeenCalledTimes(1);
+      expect(open).not.toHaveBeenCalled();
+      expect(openWeb).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('link', { name: '查看网页' }));
+      expect(openWeb).toHaveBeenCalledWith('https://example.com/help', '_blank', 'noopener,noreferrer');
+    } finally {
+      openWeb.mockRestore();
+      window.asteriumArtifacts = previous;
+    }
+  });
+
   it('groups saved local delivery records by source and opens the newest entry for each path', async () => {
     const state = createTestState();
     const conversation = state.conversations.find((item) => item.id === state.activeConversationId)!;

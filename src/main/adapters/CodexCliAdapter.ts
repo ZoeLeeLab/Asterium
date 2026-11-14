@@ -3,6 +3,7 @@ import { normalizeHistoryQuery, searchableHistoryText } from '../../shared/histo
 import { SINGLE_CHAT_SEARCH_SIZE } from '../../shared/singleChatHistory';
 import { visibleAssistantText } from '../../shared/visibleAssistantText';
 import { isCodexEffort, isCodexModelId, type CodexModelOption } from '../../shared/codexModels';
+import type { CodexQuotaResult, CodexQuotaWindow } from '../../shared/codexQuota';
 import { withHandoffContext } from '../../shared/contextHandoff';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -277,6 +278,41 @@ export async function getImportedCodexThreadLifecycle(executablePath: string, wo
     if (isCodexThreadMissingError(error)) return { threadId, state: 'deleted', checkedAt, message: '原生线程已被删除。' };
     return { threadId, state: 'unavailable', checkedAt, message: '暂时无法确认这个原生线程的状态。' };
   }
+}
+
+export async function readCodexQuota(executablePath: string, workingDirectory: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<CodexQuotaResult> {
+  const client = createTransport(executablePath, workingDirectory);
+  const signal = AbortSignal.timeout(12_000);
+  try {
+    await abortable(client.start(), signal);
+    const account = await abortable(client.request<{ account?: unknown }>('account/read', { refreshToken: false }), signal);
+    if (account?.account === null) return { status: 'login_required' };
+    if (!isRecord(account?.account)) return { status: 'unavailable' };
+    if (account.account.type !== 'chatgpt') return { status: 'chatgpt_required' };
+
+    const response = await abortable(client.request<{ rateLimits?: unknown; rateLimitsByLimitId?: unknown }>('account/rateLimits/read'), signal);
+    const byId = isRecord(response?.rateLimitsByLimitId) ? response.rateLimitsByLimitId.codex : undefined;
+    const legacy = response?.rateLimits;
+    const limits = isRecord(byId) ? byId
+      : isRecord(legacy) && (legacy.limitId == null || legacy.limitId === 'codex') ? legacy
+      : undefined;
+    const windows = [limits?.primary, limits?.secondary].flatMap(codexQuotaWindow);
+    return windows.length ? { status: 'available', windows, checkedAt: Date.now() } : { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+function codexQuotaWindow(value: unknown): CodexQuotaWindow[] {
+  if (!isRecord(value) || typeof value.usedPercent !== 'number' || !Number.isFinite(value.usedPercent) || value.usedPercent < 0) return [];
+  const { windowDurationMins, resetsAt } = value;
+  return [{
+    usedPercent: Math.min(100, value.usedPercent),
+    ...(typeof windowDurationMins === 'number' && Number.isSafeInteger(windowDurationMins) && windowDurationMins > 0 ? { durationMinutes: windowDurationMins } : {}),
+    ...(typeof resetsAt === 'number' && Number.isSafeInteger(resetsAt) && resetsAt > 0 && resetsAt <= 8.64e12 ? { resetsAt } : {}),
+  }];
 }
 
 export async function listCodexModels(executablePath: string, workingDirectory: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<CodexModelOption[]> {

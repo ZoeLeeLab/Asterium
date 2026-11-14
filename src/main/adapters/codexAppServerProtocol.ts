@@ -150,7 +150,7 @@ export class CodexAppServerClient implements CodexAppServerTransport {
     this.notify('initialized', {});
   }
 
-  request<T = unknown>(method: string, params: JsonObject = {}) {
+  request<T = unknown>(method: string, params?: JsonObject) {
     if (!this.child || this.closing) return Promise.reject(new Error('CODEX_APP_SERVER_NOT_CONNECTED'));
     const id = ++this.nextRequestId;
     return new Promise<T>((resolve, reject) => {

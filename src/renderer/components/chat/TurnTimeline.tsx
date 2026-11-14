@@ -40,6 +40,7 @@ interface TurnTimelineProps {
   onResolveAuthorization: (decision: 'allow_once' | 'deny', persistExtensionTrust?: boolean) => void;
   onResolveUserInput: (answers: Record<string, string[]>, customAnswers?: Record<string, string>, requestId?: string) => void | Promise<void>;
   onOpenArtifact: (artifactId: string) => void;
+  onLocalArtifactLink?: (href: string) => void;
   onArtifactContextMenu?: (artifactId: string, event: ReactMouseEvent<HTMLElement>) => void;
   onQuoteSelection?: (text: string, x: number, y: number) => void;
 }
@@ -59,11 +60,11 @@ type TimelineBlock =
   | { kind: 'delegation'; receipt: DelegationReceipt }
   | { kind: 'entry'; id: string; row: Exclude<ProcessItem, ActionItem | ReasoningItem | FileItem> };
 
-export function TurnTimeline({ message, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
+export function TurnTimeline({ message, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onLocalArtifactLink, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
   const timeline = message.timeline ?? [];
   if (!timeline.length) return <div className="turn-timeline">
     {delegationReceipts.map(receipt => <Fragment key={receipt.id}>{receipt.card}</Fragment>)}
-    {visibleAssistantText(message.content) && <QuoteableText onQuoteSelection={onQuoteSelection}><MarkdownContent>{visibleAssistantText(message.content)}</MarkdownContent></QuoteableText>}
+    {visibleAssistantText(message.content) && <QuoteableText onQuoteSelection={onQuoteSelection}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{visibleAssistantText(message.content)}</MarkdownContent></QuoteableText>}
     {message.toolNote && <details className="timeline-entry state-success"><summary><Check size={15} /><span>{message.toolNote}</span></summary></details>}
     {message.error && <div className="timeline-entry timeline-entry--error state-failure"><CircleAlert size={15} /><span>{friendlyErrorLabel(message.error.message, partnerName)}</span></div>}
   </div>;
@@ -78,7 +79,7 @@ export function TurnTimeline({ message, delegationReceipts = [], partnerName, pe
     {blocks.map((block) => {
       if (block.kind === 'text') {
         const text = visibleAssistantText(block.text);
-        return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection}><MarkdownContent>{text}</MarkdownContent></QuoteableText> : null;
+        return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{text}</MarkdownContent></QuoteableText> : null;
       }
       if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} partnerName={partnerName} />;
       if (block.kind === 'delegation') return <Fragment key={block.receipt.id}>{block.receipt.card}</Fragment>;

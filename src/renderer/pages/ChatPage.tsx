@@ -151,6 +151,8 @@ export function ChatPage() {
   const importedWorkspace = useImportedCodexWorkspace(activeConversation);
   const importedDirectoryUnavailable = importedWorkspace.workspace?.available === false;
   const activeConversationId = activeConversation?.id;
+  const localFileLinkRequest = useRef(0);
+  useLayoutEffect(() => () => { localFileLinkRequest.current += 1; }, [activeConversationId]);
   const searchHistory = window.asteriumConversations?.searchHistory;
   const searchNative = nativeHistory.search;
   const searchIndexed = useCallback(async (term: string, after?: string) => {
@@ -814,14 +816,15 @@ export function ChatPage() {
     createConversation(partnerId);
   };
 
-  const openArtifact = async (artifactId: string) => {
-    const artifact = activeConversation?.artifacts?.find((item) => item.id === artifactId);
-    if (!artifact) return;
-    const existing = previewTabs.find((tab) => tab.id === artifactId);
-    if (existing) return setActivePreviewId(artifactId);
-    const tab: PreviewTab = { ...artifact };
-    setPreviewTabs((current) => [...current, tab]);
+  const previewArtifact = useCallback(async (artifact: ConversationArtifact, previewOnly = false) => {
+    const artifactId = artifact.id;
+    const existing = previewTabs.some((tab) => tab.id === artifactId);
     setActivePreviewId(artifactId);
+    if (existing) {
+      if (previewOnly) setPreviewTabs((current) => current.map((tab) => tab.id === artifactId ? { ...tab, previewOnly } : tab));
+      return;
+    }
+    setPreviewTabs((current) => current.some((tab) => tab.id === artifactId) ? current : [...current, { ...artifact, previewOnly }]);
     try {
       if (!window.asteriumArtifacts) throw new Error('请在桌面应用中预览此文件');
       const content = await window.asteriumArtifacts.read(artifact.artifactRef);
@@ -829,7 +832,39 @@ export function ChatPage() {
     } catch (error) {
       setPreviewTabs((current) => current.map((item) => item.id === artifactId ? { ...item, error: artifactPreviewError(error, artifact.name) } : item));
     }
+  }, [previewTabs]);
+
+  const openArtifact = (artifactId: string) => {
+    const artifact = deliveryRecords?.find((item) => item.id === artifactId);
+    if (artifact) void previewArtifact(artifact);
   };
+
+  const openLocalArtifactLink = useCallback(async (href: string) => {
+    if (!activeConversationId || !window.asteriumArtifacts?.resolveConversationLink) return;
+    const bridge = window.asteriumArtifacts;
+    const request = ++localFileLinkRequest.current;
+    setArtifactActionError(undefined);
+    try {
+      const resolved = await bridge.resolveConversationLink(activeConversationId, href);
+      if (request !== localFileLinkRequest.current) return;
+      if (!resolved) {
+        setArtifactActionError({ conversationId: activeConversationId, message: '这个文件没有在当前对话中交付。' });
+        return;
+      }
+      const { artifact, action } = resolved;
+      if (artifact.availability !== 'available') {
+        setArtifactActionError({ conversationId: activeConversationId, message: '交付的文件已不可用，可能已被移动或删除。' });
+        return;
+      }
+      if (action === 'reveal') await bridge.reveal(artifact.id);
+      else {
+        const delivery = deliveryRecords?.find((item) => item.artifactRef === artifact.id);
+        await previewArtifact(delivery ?? { ...artifact, artifactRef: artifact.id }, true);
+      }
+    } catch {
+      if (request === localFileLinkRequest.current) setArtifactActionError({ conversationId: activeConversationId, message: '无法打开此文件链接，请确认交付文件仍可用。' });
+    }
+  }, [activeConversationId, deliveryRecords, previewArtifact]);
 
   const openArtifactMenu = (id: string, event: ReactMouseEvent<HTMLElement>, fromList = false) => {
     if (!activeConversationId || !deliveryRecords?.some((item) => item.id === id)) return;
@@ -1191,9 +1226,9 @@ export function ChatPage() {
                             <div><button type="button" onClick={() => { setEditingMessageId(''); setEditingText(''); }}><X size={14} />取消</button><button type="button" disabled={!editingText.trim() && !message.attachments?.length} onClick={() => { regenerateChatTurn(activeConversation.id, editingText); setEditingMessageId(''); setEditingText(''); }}><Check size={14} />重新生成</button></div>
                           </div> : mine ? <>
                             {message.quote && <MessageQuoteCard quote={message.quote} className="message-quote-card--sent" />}
-                            {message.content && <MarkdownContent className="message-content--user">{message.content}</MarkdownContent>}
+                            {message.content && <MarkdownContent className="message-content--user" onLocalArtifactLink={openLocalArtifactLink}>{message.content}</MarkdownContent>}
                             <MessageAttachmentCards attachments={message.attachments} conversationId={activeConversation.id} onPreview={(attachment) => void openUserAttachment(attachment.id)} onContextMenu={(attachment, x, y) => { setArtifactMenu(null); setQuoteMenu(null); setAttachmentMenu({ id: attachment.id, x, y }); }} />
-                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onArtifactContextMenu={openArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
+                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onLocalArtifactLink={openLocalArtifactLink} onArtifactContextMenu={openArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
                         </div>
                       </div>
                       {retryableCodexMessage?.id === message.id && <div className="run-notice message-retry">
@@ -1304,6 +1339,7 @@ export function ChatPage() {
           partner={activePartner}
           conversation={activeConversation}
           projects={participatingProjects}
+          visible={!rails.right}
           onUpdatePartner={updatePartner}
           onUpdateWorkspaceGrants={updatePartnerWorkspaceGrants}
           codexModelPicker={activeConversation && activePartner?.sourceMode === 'local_cli' && activePartner.connectionKind === 'local_codex'

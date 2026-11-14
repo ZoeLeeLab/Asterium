@@ -2,6 +2,7 @@ import { testRm as rm } from '../helpers/autoTest.mjs';
 import { mkdir, mkdtemp, readFile, rename, truncate, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ArtifactRegistry } from '../../src/main/security/ArtifactRegistry';
 
@@ -12,6 +13,36 @@ afterEach(async () => {
 });
 
 describe('ArtifactRegistry', () => {
+  it('resolves only exact local deliveries from the requested conversation', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-artifact-links-'));
+    temporaryDirectories.push(root);
+    const file = path.join(root, '测试 预览.md');
+    const launcher = path.join(root, 'launcher.VBS');
+    const unregistered = path.join(root, 'other', path.basename(file));
+    await mkdir(path.dirname(unregistered));
+    await Promise.all([file, launcher, unregistered].map((name) => writeFile(name, 'fixture')));
+    const registry = new ArtifactRegistry({ storePath: path.join(root, 'artifacts.json') });
+    await registry.register({ kind: 'local_path', path: file }, { id: 'old', conversationId: 'chat-a', createdAt: '2026-01-01T00:00:00Z', method: 'automatic' });
+    await registry.register({ kind: 'local_path', path: file }, { id: 'new', conversationId: 'chat-a', createdAt: '2026-01-02T00:00:00Z', method: 'automatic' });
+    await registry.register({ kind: 'local_path', path: file }, { id: 'other-chat', conversationId: 'chat-b', createdAt: '2026-01-03T00:00:00Z', method: 'automatic' });
+    // The executable format must come from the registered path, even with a different display name.
+    await registry.register({ kind: 'local_path', path: launcher }, { id: 'launcher', name: 'fixture.txt', conversationId: 'chat-a', method: 'automatic' });
+
+    const asUrl = pathToFileURL(file);
+    const barePath = asUrl.pathname.replace(/^\/(?=[a-z]:\/)/i, '');
+    for (const href of [asUrl.href, asUrl.pathname, barePath]) {
+      await expect(registry.resolveConversationLink('chat-a', href)).resolves.toMatchObject({ action: 'preview', artifact: { id: 'new', availability: 'available' } });
+    }
+    await expect(registry.resolveConversationLink('chat-a', pathToFileURL(launcher).href)).resolves.toMatchObject({ action: 'reveal', artifact: { id: 'launcher' } });
+    await expect(registry.resolveConversationLink('chat-b', pathToFileURL(launcher).href)).resolves.toBeUndefined();
+    await expect(registry.resolveConversationLink('chat-a', pathToFileURL(unregistered).href)).resolves.toBeUndefined();
+    await expect(registry.resolveConversationLink('chat-a', path.basename(file))).resolves.toBeUndefined();
+    await expect(registry.resolveConversationLink('chat-a', 'file://example.com/fixture.md')).resolves.toBeUndefined();
+    await registry.markRemoved('new');
+    await rename(file, file + '.moved');
+    await expect(registry.resolveConversationLink('chat-a', asUrl.href)).resolves.toMatchObject({ artifact: { id: 'old', availability: 'missing' } });
+  });
+
   it('allows startup refreshes to probe stale renderer records without throwing', async () => {
     const registry = new ArtifactRegistry();
     await expect(registry.inspectIfRegistered('stale-artifact-id')).resolves.toBeUndefined();

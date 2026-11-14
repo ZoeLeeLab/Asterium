@@ -2,7 +2,9 @@ import { projectPreviewKind } from '../project/ProjectContentReader';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { ArtifactAvailability, ArtifactRegistrationMethod, ArtifactSourceClaim, ArtifactSourceKind } from '../../shared/agentProtocol';
+import { isLocalArtifactLink } from '../../shared/artifactLinks';
 import { normalizeReportedLocalPath } from './localPath';
 import { assertPublicHostname, validatePublicHttpsUrl } from './PublicHttps';
 
@@ -211,6 +213,23 @@ export class ArtifactRegistry {
       if (item.source.kind === 'local_path') await this.refreshLocal(item);
       return publicInfo(item);
     }));
+  }
+
+  async resolveConversationLink(conversationId: string, href: string) {
+    const target = localLinkPath(href);
+    if (!target) return undefined;
+    const key = localPathKey(target);
+    await this.load();
+    let match: RegisteredArtifact | undefined;
+    for (const item of this.items.values()) {
+      if (item.conversationId !== conversationId || item.removedAt || item.source.kind !== 'local_path' || localPathKey(item.source.path) !== key) continue;
+      if (!match || item.createdAt >= match.createdAt) match = item;
+    }
+    if (!match || match.source.kind !== 'local_path') return undefined;
+    await this.refreshLocal(match);
+    const extension = path.extname(match.source.path.replace(/[. ]+$/, '')).toLowerCase();
+    const action = launcherExtensions.has(extension) ? 'reveal' : 'preview';
+    return { artifact: publicInfo(match), action } as const;
   }
 
   async read(id: string) {
@@ -540,6 +559,28 @@ export class ArtifactRegistry {
 function localPathKey(value: string) {
   const normalized = path.normalize(path.resolve(value));
   return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
+}
+
+const launcherExtensions = new Set([
+  '.bat', '.cmd', '.ps1', '.psm1', '.vbs', '.vbe', '.wsf', '.wsh', '.js', '.jse', '.hta',
+  '.exe', '.com', '.scr', '.cpl', '.msi', '.msp', '.msix', '.appx', '.msixbundle', '.appxbundle',
+  '.lnk', '.url', '.scf', '.reg', '.py', '.pyw', '.sh', '.bash', '.zsh', '.fish', '.command', '.desktop',
+]);
+
+function localLinkPath(href: string) {
+  if (href.length > 16_384 || !isLocalArtifactLink(href)) return undefined;
+  try {
+    const decoded = /^file:/i.test(href) ? fileURLToPath(href) : decodeURIComponent(href);
+    if ([...decoded].some((character) => character.charCodeAt(0) < 32) || /^[\\/]{2}/.test(decoded)) return undefined;
+    if (process.platform === 'win32') {
+      const native = decoded.replace(/^\/(?=[a-z]:[\\/])/i, '');
+      if (!/^(?:[a-z]:[\\/]|\/(?:mnt\/)?[a-z]\/)/i.test(native)) return undefined;
+      return normalizeReportedLocalPath(native);
+    }
+    return decoded.startsWith('/') ? path.normalize(decoded) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function decodeInlineContent(claim: Extract<ArtifactSourceClaim, { kind: 'content' }>, fallbackMediaType?: string) {

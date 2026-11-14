@@ -402,6 +402,14 @@ button.message-attachment-card:hover:not(:disabled) { border-color: color-mix(in
 .quick-directory-section__heading > button { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px; border: 0; color: var(--muted); background: transparent; }
 .quick-directory-section__heading > button:hover { color: var(--text); }
 .quick-directory-section__heading small { font-size: calc(8px * var(--ui-font-scale,1)); }
+.codex-quota .quick-directory-section__heading > button { justify-content: center; width: 26px; height: 26px; border-radius: var(--radius-sm); }
+.codex-quota .quick-directory-section__heading > button:enabled:hover { background: var(--surface-hover); }
+.codex-quota .quick-directory-section__heading > button:disabled { opacity: .6; }
+.codex-quota__status { display: grid; gap: 5px; color: var(--muted); }
+.codex-quota__status small { font-size: calc(9px * var(--ui-font-scale,1)); }
+.codex-quota__window { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; gap: 2px 8px; font-size: calc(11px * var(--ui-font-scale,1)); }
+.codex-quota__window > strong { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.codex-quota__window > small { grid-column: 1 / -1; }
 .quick-directory-list { display: grid; gap: 4px; min-width: 0; }
 .quick-directory-row { display: grid; grid-template-columns: minmax(0,1fr) 26px; align-items: stretch; min-width: 0; border: 1px solid transparent; border-radius: 6px; }
 .quick-directory-row:not(:has(.quick-directory-remove)) { grid-template-columns: minmax(0,1fr); }

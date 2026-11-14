@@ -132,6 +132,7 @@ export interface AsteriumAgentsApi {
   detectClaude: () => Promise<ClaudeDetectionResult>;
   detectCodex?: () => Promise<CodexDetectionResult>;
   listCodexModels?: (request: import('./codexModels').CodexModelListRequest) => Promise<import('./codexModels').CodexModelOption[]>;
+  readCodexQuota?: (request: import('./codexQuota').CodexQuotaRequest) => Promise<import('./codexQuota').CodexQuotaResult>;
   searchCodexHistory?: (request: import('./codexHistory').CodexHistorySearchRequest) => Promise<import('./codexHistory').CodexHistorySearchPage>;
   readCodexHistory?: (request: import('./codexHistory').CodexHistoryRequest) => Promise<import('./codexHistory').CodexHistoryPage>;
   chooseCodexThreadDirectory?: (request: import('./codexThreadImport').CodexThreadDirectoryRequest) => Promise<import('./codexThreadImport').CodexThreadDirectoryPreview | null>;
@@ -209,6 +210,7 @@ export interface ArtifactReadResult {
 
 export interface AsteriumArtifactsApi {
   inspect: (artifactId: string) => Promise<ArtifactInfo | null>;
+  resolveConversationLink: (conversationId: string, href: string) => Promise<{ artifact: ArtifactInfo; action: 'preview' | 'reveal' } | null>;
   read: (artifactId: string) => Promise<ArtifactReadResult>;
   open: (artifactId: string) => Promise<void>;
   openInBrowser?: (artifactId: string) => Promise<void>;

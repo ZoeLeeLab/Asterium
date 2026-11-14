@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
   detectClaude: (): Promise<ClaudeDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectClaude),
   detectCodex: (): Promise<CodexDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectCodex),
   listCodexModels: (request: import('../shared/codexModels').CodexModelListRequest): Promise<import('../shared/codexModels').CodexModelOption[]> => ipcRenderer.invoke(AGENT_IPC.listCodexModels, request),
+  readCodexQuota: (request: import('../shared/codexQuota').CodexQuotaRequest) => ipcRenderer.invoke(AGENT_IPC.readCodexQuota, request),
   searchCodexHistory: (request: import('../shared/codexHistory').CodexHistorySearchRequest): Promise<import('../shared/codexHistory').CodexHistorySearchPage> => ipcRenderer.invoke(AGENT_IPC.searchCodexHistory, request),
   readCodexHistory: (request: import('../shared/codexHistory').CodexHistoryRequest): Promise<import('../shared/codexHistory').CodexHistoryPage> => ipcRenderer.invoke(AGENT_IPC.readCodexHistory, request),
   chooseCodexThreadDirectory: (request: import('../shared/codexThreadImport').CodexThreadDirectoryRequest) => ipcRenderer.invoke(AGENT_IPC.chooseCodexThreadDirectory, request),
@@ -163,6 +164,7 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
 
 contextBridge.exposeInMainWorld('asteriumArtifacts', {
   inspect: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactInspect, artifactId),
+  resolveConversationLink: (conversationId: string, href: string) => ipcRenderer.invoke(AGENT_IPC.artifactResolveConversationLink, { conversationId, href }),
   read: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactRead, artifactId),
   open: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpen, artifactId),
   openInBrowser: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpenInBrowser, artifactId),
