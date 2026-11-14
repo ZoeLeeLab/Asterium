@@ -60,7 +60,6 @@ import { McpManagementWorkspace } from './api/extensions/McpManagementWorkspace'
 import { ExecutionBackendRouter } from './execution/ExecutionBackendRouter';
 import { SandboxExtensionLaunchBackend } from './execution/SandboxExtensionLaunchBackend';
 import { WindowsSandboxProcess } from './execution/WindowsSandboxProcess';
-import { mcpDisconnectSchema } from '../shared/apiExtensions';
 import { createDefaultApiProviderRegistry } from './api/ApiProviderRegistry';
 import { PartnerProfileStore } from './partner/PartnerProfileStore';
 import { PartnerProjectNotebookService } from './notebook/PartnerProjectNotebookService';
@@ -167,6 +166,7 @@ import {
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import { registerArtifactIpc } from './ipc/artifactIpc';
+import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
@@ -2630,30 +2630,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await credentials.delete(BRAVE_SEARCH_CREDENTIAL_REF);
   });
 
-  ipcMain.handle(AGENT_IPC.extensionsGet, (event) => {
-    requireSender(event); return apiExtensions.get();
-  });
-  ipcMain.handle(AGENT_IPC.extensionsUpsert, (event, value: unknown) => {
-    requireSender(event); return apiExtensions.upsert(value);
-  });
-  ipcMain.handle(AGENT_IPC.extensionsRemove, (event, value: unknown) => {
-    requireSender(event); return apiExtensions.remove(value);
-  });
-  ipcMain.handle(AGENT_IPC.extensionsSetBinding, (event, value: unknown) => {
-    requireSender(event); return apiExtensions.setBinding(value);
-  });
-  ipcMain.handle(AGENT_IPC.extensionsSetTrust, (event, value: unknown) => {
-    requireSender(event); return apiExtensions.setTrust(value);
-  });
-  ipcMain.handle(AGENT_IPC.extensionsConnectMcp, (event, value: unknown) => {
-    requireSender(event); return mcpConnections.connectManagement(value);
-  });
-  ipcMain.handle(AGENT_IPC.extensionsDisconnectMcp, (event, value: unknown) => {
-    requireSender(event); return mcpConnections.disconnectManagement(mcpDisconnectSchema.parse(value).id);
-  });
-  ipcMain.handle(AGENT_IPC.extensionsMcpStatus, (event) => {
-    requireSender(event); return mcpConnections.managementStatus();
-  });
+  registerExtensionsIpc(ipcMain, apiExtensions, mcpConnections, requireSender);
 
   ipcMain.handle(AGENT_IPC.refreshPartnerProfiles, async (event) => {
     requireSender(event); return partnerProfiles.refresh();
