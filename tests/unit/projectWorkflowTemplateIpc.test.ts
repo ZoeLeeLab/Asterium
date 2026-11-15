@@ -46,6 +46,8 @@ it('preserves template revision checks, saved drafts, and workflow refresh event
   const save = 'asterium:project-workflow-template:save';
   const update = 'asterium:project-workflow-template:update';
   const remove = 'asterium:project-workflow-template:remove';
+  const catalogQuery = 'asterium:project-workflow:catalog';
+  const listQuery = 'asterium:project-workflow:list';
   const changed = 'asterium:project-workflows:changed';
   const projectId = 'fixture-project';
   const refreshes = () => sender.send.mock.calls.filter(([channel]) => channel === changed);
@@ -71,12 +73,33 @@ it('preserves template revision checks, saved drafts, and workflow refresh event
     }
 
     await invoke(DESKTOP_IPC.projectDomainInitialize, { legacyProjects: [{ id: projectId, name: 'Fixture project' }] });
+    sender.send.mockClear();
+    for (const channel of [catalogQuery, listQuery]) {
+      await expect(invoke(channel, projectId, {})).rejects.toThrow('INVALID_IPC_SENDER');
+      await expect(invoke(channel, { projectId })).rejects.toThrow('INVALID_PROJECT_WORKFLOW_QUERY');
+      await expect(invoke(channel, 'missing-fixture-project')).rejects.toThrow('PROJECT_NOT_FOUND');
+    }
+    const initialCatalog = await invoke<ProjectWorkflowCatalog>(catalogQuery, projectId);
+    expect(initialCatalog.templates).toContainEqual(expect.objectContaining({ id: 'quick-implementation', kind: 'builtin' }));
+    await expect(invoke(listQuery, projectId)).resolves.toEqual([]);
+    expect(refreshes()).toEqual([]);
+
     const source = await invoke<ProjectWorkflow>(DESKTOP_IPC.projectWorkflowCreate, { projectId, templateId: 'quick-implementation' });
     const saveRequest = { projectId, workflowId: source.id, expectedWorkflowRevision: source.revision, name: 'Fixture template' };
     sender.send.mockClear();
     const saved = await invoke<ProjectWorkflowTemplate>(save, saveRequest);
     expect(saved).toMatchObject({ projectId, name: saveRequest.name, revision: 1 });
     expect(refreshes()).toEqual([refresh]);
+    sender.send.mockClear();
+    await expect(invoke(catalogQuery, projectId)).resolves.toEqual({
+      ...initialCatalog,
+      templates: [...initialCatalog.templates, {
+        id: saved.id, version: '1', name: saved.name, description: saved.description,
+        nodeCount: saved.nodes.length, kind: 'project', projectId, revision: 1,
+      }],
+    });
+    await expect(invoke(listQuery, projectId)).resolves.toEqual([source]);
+    expect(refreshes()).toEqual([]);
 
     const existing = await invoke<ProjectWorkflow>(DESKTOP_IPC.projectWorkflowCreate, { projectId, templateId: saved.id });
     const revisedSource = await invoke<ProjectWorkflow>(DESKTOP_IPC.projectWorkflowUpdate, {
@@ -98,7 +121,7 @@ it('preserves template revision checks, saved drafts, and workflow refresh event
     expect(updated.nodes[0].title).toBe('Revised fixture step');
     await expect(invoke(update, updateRequest)).rejects.toThrow('PROJECT_WORKFLOW_TEMPLATE_REVISION_CONFLICT');
     expect(refreshes()).toEqual([refresh]);
-    const drafts = await invoke<ProjectWorkflow[]>(DESKTOP_IPC.projectWorkflowList, projectId);
+    const drafts = await invoke<ProjectWorkflow[]>(listQuery, projectId);
     expect(drafts.find((workflow) => workflow.id === existing.id)).toEqual(existing);
 
     sender.send.mockClear();
@@ -107,7 +130,7 @@ it('preserves template revision checks, saved drafts, and workflow refresh event
     expect(refreshes()).toEqual([]);
     await expect(invoke(remove, { ...target, expectedRevision: updated.revision })).resolves.toBeUndefined();
     expect(refreshes()).toEqual([refresh]);
-    const catalog = await invoke<ProjectWorkflowCatalog>(DESKTOP_IPC.projectWorkflowCatalog, projectId);
+    const catalog = await invoke<ProjectWorkflowCatalog>(catalogQuery, projectId);
     expect(catalog.templates.some((template) => template.id === saved.id)).toBe(false);
   } finally {
     try {

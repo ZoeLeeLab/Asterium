@@ -175,6 +175,7 @@ import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
+import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
@@ -1090,16 +1091,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await projectService.removeTask(value as unknown as ProjectTaskRemoveRequest);
   });
   registerProjectRoleIpc(ipcMain, projectService, requireSender);
-  ipcMain.handle(AGENT_IPC.projectWorkflowCatalog, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_QUERY');
-    return projectService.workflowCatalog(value);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowList, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_QUERY');
-    return projectService.listWorkflows(value);
-  });
+  registerProjectWorkflowQueryIpc(ipcMain, projectService, requireSender);
   ipcMain.handle(AGENT_IPC.projectWorkflowCreate, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.templateId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_CREATE');
