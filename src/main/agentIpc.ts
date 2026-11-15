@@ -165,6 +165,7 @@ import {
   type ExistingThreadConnectionStatus,
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
+import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
@@ -2502,26 +2503,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return partnerWorkspaces.configuredState(value);
   });
 
-  ipcMain.handle(AGENT_IPC.saveApiCredential, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.secret !== 'string' || !value.secret || (value.credentialRef !== undefined && typeof value.credentialRef !== 'string')) throw new Error('INVALID_CREDENTIAL_REQUEST');
-    const credentialRef = await credentials.save(value.secret, value.credentialRef);
-    return { credentialRef, configured: true, masked: '••••••••' };
-  });
-
-  ipcMain.handle(AGENT_IPC.apiCredentialStatus, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.credentialRef !== 'string' || !value.credentialRef) throw new Error('INVALID_CREDENTIAL_REQUEST');
-    const configured = await credentials.has(value.credentialRef);
-    return { credentialRef: value.credentialRef, configured, masked: configured ? '••••••••' : '' };
-  });
-
-  ipcMain.handle(AGENT_IPC.deleteApiCredential, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.credentialRef !== 'string' || !value.credentialRef) throw new Error('INVALID_CREDENTIAL_REQUEST');
-    await apiConnections.assertCredentialUnreferenced(value.credentialRef);
-    await credentials.delete(value.credentialRef);
-  });
+  registerApiCredentialIpc(ipcMain, credentials, apiConnections, requireSender);
 
   ipcMain.handle(AGENT_IPC.apiConnectionsGet, async (event) => {
     requireSender(event); return apiConnections.snapshot();
