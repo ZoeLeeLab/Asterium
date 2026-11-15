@@ -177,6 +177,7 @@ import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
+import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
@@ -1193,19 +1194,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     });
     return workspace;
   });
-  ipcMain.handle(AGENT_IPC.projectGetWorkspace, async (event, projectId: unknown) => {
-    requireSender(event);
-    if (typeof projectId !== 'string') throw new Error('INVALID_PROJECT_ID');
-    return (await projectService.getWorkspace(projectId)) ?? null;
-  });
-  ipcMain.handle(AGENT_IPC.projectOpenWorkspace, async (event, projectId: unknown) => {
-    requireSender(event);
-    if (typeof projectId !== 'string') throw new Error('INVALID_PROJECT_ID');
-    const project = await projectWorkspaces.get(projectId);
-    if (!project) throw new Error('PROJECT_WORKSPACE_NOT_READY');
-    const error = await shell.openPath(project.rootPath);
-    if (error) throw new Error(error);
-  });
+  registerProjectWorkspaceIpc(ipcMain, projectService, projectWorkspaces, requireSender);
   ipcMain.handle(AGENT_IPC.projectOpenFile, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
