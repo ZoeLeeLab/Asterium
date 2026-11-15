@@ -166,6 +166,7 @@ import {
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import { registerArtifactIpc } from './ipc/artifactIpc';
+import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
@@ -881,8 +882,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (typeof conversationId !== 'string' || typeof taskId !== 'string' || (action !== 'cancel' && action !== 'retry')) throw new Error('DELEGATION_CONTROL_INVALID');
     return delegation.control(conversationId, taskId, action);
   });
-  ipcMain.handle(AGENT_IPC.desktopNavigationTake, event => { requireSender(event); return notifications?.takeNavigation(); });
-  ipcMain.handle(AGENT_IPC.environmentGet, event => { requireSender(event); if (!options.environment) throw new Error('ENVIRONMENT_UNAVAILABLE'); return options.environment; });
+  registerDesktopNavigationIpc(ipcMain, notifications, options, requireSender);
   const storageLocations = async (): Promise<import('../shared/generalSettings').StorageLocations> => {
     const custom = (await generalSettings.get()).settings.defaultProjectRoot;
     return { userDataDirectory: app.getPath('userData'),
