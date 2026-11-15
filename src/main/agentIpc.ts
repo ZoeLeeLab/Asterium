@@ -168,6 +168,7 @@ import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerAutomationIpc } from './ipc/automationIpc';
+import { registerDelegationIpc } from './ipc/delegationIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
@@ -871,24 +872,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (!window || event.sender !== window.webContents) throw new Error('INVALID_IPC_SENDER');
     return window;
   };
-  ipcMain.handle(AGENT_IPC.delegationList, async (event, conversationId: unknown) => {
-    requireSender(event);
-    if (typeof conversationId !== 'string' || !conversationId || conversationId.length > 200) throw new Error('DELEGATION_SOURCE_INVALID');
-    const batches = await delegation.list(conversationId);
-    if (batches.some(batch => batch.tasks.some(task => task.status === 'uncertain'))) {
-      void delegation.resumeReviews(conversationId).catch(() => console.error('Delegation review lookup could not be scheduled.'));
-    }
-    return batches;
-  });
-  ipcMain.handle(AGENT_IPC.delegationInterruptWait, (event, conversationId: unknown) => {
-    requireSender(event);
-    return typeof conversationId === 'string' && delegation.interruptWait(conversationId);
-  });
-  ipcMain.handle(AGENT_IPC.delegationControl, (event, conversationId: unknown, taskId: unknown, action: unknown) => {
-    requireSender(event);
-    if (typeof conversationId !== 'string' || typeof taskId !== 'string' || (action !== 'cancel' && action !== 'retry')) throw new Error('DELEGATION_CONTROL_INVALID');
-    return delegation.control(conversationId, taskId, action);
-  });
+  registerDelegationIpc(ipcMain, delegation, requireSender);
   registerDesktopNavigationIpc(ipcMain, notifications, options, requireSender);
   const storageLocations = async (): Promise<import('../shared/generalSettings').StorageLocations> => {
     const custom = (await generalSettings.get()).settings.defaultProjectRoot;
