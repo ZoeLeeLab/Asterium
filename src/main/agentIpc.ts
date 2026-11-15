@@ -14,7 +14,6 @@ import { AutomationStore } from './automation/AutomationStore';
 import { AutomationService } from './automation/AutomationService';
 import { AutomationAgentTools } from './automation/AutomationAgentTools';
 import { AutomationConfirmations } from './automation/AutomationConfirmations';
-import { automationConfirmationReplySchema } from '../shared/automations';
 import type { AutomationTargetOption } from '../shared/automations';
 import { apiEndpoint, apiModelsEndpoint } from '../shared/apiEndpoints';
 import { apiHeaders } from './api/ApiRequestConfiguration';
@@ -169,6 +168,7 @@ import { registerApiConnectionsIpc } from './ipc/apiConnectionsIpc';
 import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
+import { registerAutomationIpc } from './ipc/automationIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
@@ -3471,10 +3471,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
   const automationStartup = app.whenReady().then(() => restoreBackgroundServices ? automationHandles.scheduler!.start() : undefined).catch(() => console.error('Automation startup requires storage review; no automatic replay.'));
   const unsubscribeAutomationWriters = writerLeases.subscribeAvailable(() => { if (restoreBackgroundServices) void automationHandles.scheduler?.tick(); });
-  ipcMain.handle(AGENT_IPC.automationsGet, async event => { requireSender(event); return automationService.get(); });
-  ipcMain.handle(AGENT_IPC.automationsConfirmationsGet, async event => { requireSender(event); return automationConfirmations.list(); });
-  ipcMain.handle(AGENT_IPC.automationsConfirmationsResolve, async (event, request: unknown) => { requireSender(event); const reply = automationConfirmationReplySchema.parse(request); automationConfirmations.resolve(reply.id, reply.approved); });
-  ipcMain.handle(AGENT_IPC.automationsMutate, async (event, request: unknown) => { requireSender(event); return automationService.mutate(request); });
+  registerAutomationIpc(ipcMain, automationService, automationConfirmations, requireSender);
 
   return async () => {
     memoryBackupDraft = undefined;
