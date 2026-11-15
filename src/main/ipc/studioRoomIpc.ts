@@ -5,7 +5,7 @@ import type { StudioRoomStore } from '../studio/StudioRoomStore';
 
 export function registerStudioRoomIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  studioRooms: Pick<StudioRoomStore, 'getRoom'>,
+  studioRooms: Pick<StudioRoomStore, 'getRoom' | 'setMuted' | 'setSettings'>,
   archivedMarkdownFileName: (name: string, suffix: string) => string,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
@@ -33,6 +33,25 @@ export function registerStudioRoomIpc(
     if (result.canceled || !result.filePath) return false;
     await writeFile(result.filePath, value.content, 'utf8');
     return true;
+  });
+
+  ipcMain.handle(AGENT_IPC.studioSetMuted, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.roomId !== 'string' || !Array.isArray(value.partnerIds) || !value.partnerIds.every((id) => typeof id === 'string')) throw new Error('INVALID_STUDIO_MUTE_REQUEST');
+    return studioRooms.setMuted(value.roomId, value.partnerIds);
+  });
+
+  ipcMain.handle(AGENT_IPC.studioSetSettings, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.roomId !== 'string' || !isRecord(value.settings)
+      || !['free_discussion', 'selected_partners', 'round_robin'].includes(String(value.settings.speakingMode))
+      || !Array.isArray(value.settings.selectedPartnerIds) || !value.settings.selectedPartnerIds.every((id) => typeof id === 'string')
+      || typeof value.settings.discussionProtectionEnabled !== 'boolean') throw new Error('INVALID_STUDIO_SETTINGS_REQUEST');
+    return studioRooms.setSettings(value.roomId, {
+      speakingMode: value.settings.speakingMode as 'free_discussion' | 'selected_partners' | 'round_robin',
+      selectedPartnerIds: value.settings.selectedPartnerIds as string[],
+      discussionProtectionEnabled: value.settings.discussionProtectionEnabled,
+    });
   });
 }
 
