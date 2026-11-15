@@ -165,6 +165,7 @@ import {
   type ExistingThreadConnectionStatus,
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
+import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
@@ -904,13 +905,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const error = await shell.openPath(directory); if (error) throw new Error(error);
   });
   ipcMain.handle(AGENT_IPC.generalSettingsGet, async event => { requireSender(event); return generalSettings.get(); });
-  const requireUpdates = () => { if (!options.updates) throw new Error('UPDATES_UNAVAILABLE'); return options.updates; };
-  ipcMain.handle(AGENT_IPC.updatesGet, event => { requireSender(event); return requireUpdates().get(); });
-  ipcMain.handle(AGENT_IPC.updatesCheck, event => { requireSender(event); return requireUpdates().check(); });
-  ipcMain.handle(AGENT_IPC.updatesDownload, event => { requireSender(event); return requireUpdates().download(); });
-  ipcMain.handle(AGENT_IPC.updatesCancel, event => { requireSender(event); requireUpdates().cancel(); });
-  ipcMain.handle(AGENT_IPC.updatesInstall, event => { requireSender(event); return requireUpdates().install(); });
-  ipcMain.handle(AGENT_IPC.updatesOpenReleases, event => { requireSender(event); return requireUpdates().openReleases(); });
+  registerAppUpdateIpc(ipcMain, options, requireSender);
   const unsubscribeUpdates = options.updates?.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.updatesChanged, snapshot); });
   ipcMain.handle(AGENT_IPC.generalSettingsUpdate, async (event, value: unknown) => { requireSender(event); return generalSettings.update(value); });
   const unsubscribeGeneralSettings = generalSettings.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.generalSettingsChanged, snapshot); });
