@@ -169,6 +169,7 @@ import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
+import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
 import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
@@ -902,10 +903,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const directory = await validateProjectDirectory((await storageLocations()).defaultProjectRoot);
     const error = await shell.openPath(directory); if (error) throw new Error(error);
   });
-  ipcMain.handle(AGENT_IPC.generalSettingsGet, async event => { requireSender(event); return generalSettings.get(); });
   registerAppUpdateIpc(ipcMain, options, requireSender);
   const unsubscribeUpdates = options.updates?.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.updatesChanged, snapshot); });
-  ipcMain.handle(AGENT_IPC.generalSettingsUpdate, async (event, value: unknown) => { requireSender(event); return generalSettings.update(value); });
+  registerGeneralSettingsIpc(ipcMain, generalSettings, requireSender);
   const unsubscribeGeneralSettings = generalSettings.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.generalSettingsChanged, snapshot); });
   const sendEvent = (event: PartnerEvent | MessageDeliveryEvent | ExistingThreadChangedEvent) => {
     if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.cancelled') automationConfirmations.cancelOwner(event.clientMessageId);
