@@ -172,6 +172,7 @@ import { registerDelegationIpc } from './ipc/delegationIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
+import { registerMemoryImportIpc } from './ipc/memoryImportIpc';
 import { registerPartnerDiaryIpc } from './ipc/partnerDiaryIpc';
 import { registerProjectFileOpenIpc } from './ipc/projectFileOpenIpc';
 import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
@@ -2573,22 +2574,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return memoryFallbackScheduler.snapshot();
   });
 
-  ipcMain.handle(AGENT_IPC.memoryImportPreview, (event, value: unknown) => {
-    requireSender(event);
-    return memoryImport.preview(value);
-  });
-  ipcMain.handle(AGENT_IPC.memoryImportConfirm, (event, value: unknown) => {
-    requireSender(event);
-    return memoryImport.confirm(value);
-  });
-  ipcMain.handle(AGENT_IPC.memoryImportCancel, (event, value: unknown) => {
-    requireSender(event);
-    memoryImport.cancel(value);
-  });
-  ipcMain.handle(AGENT_IPC.memoryImportUndo, (event, value: unknown) => {
-    requireSender(event);
-    return memoryImport.undo(value);
-  });
+  registerMemoryImportIpc(ipcMain, memoryImport, requireSender);
 
   const memoryBackupFilters = [{ name: '星丛伙伴记忆备份', extensions: ['gz'] }];
   let memoryBackupDraft: { id: string; partnerId: string; backup: MemoryBackupData } | undefined;
