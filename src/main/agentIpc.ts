@@ -167,6 +167,7 @@ import {
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
+import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
@@ -1241,15 +1242,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
 
   registerProjectRunChangesIpc(ipcMain, projectChanges, requireSender);
-  ipcMain.handle(AGENT_IPC.projectBrowse, async (event, request) => {
-    requireSender(event);
-    return projectBrowser.query(request);
-  });
-  ipcMain.handle(AGENT_IPC.projectListFiles, async (event, projectId: unknown) => {
-    requireSender(event);
-    if (typeof projectId !== 'string') throw new Error('INVALID_PROJECT_ID');
-    return artifactDelivery.listProjectFiles(projectId);
-  });
+  registerProjectFileQueryIpc(ipcMain, projectBrowser, artifactDelivery, requireSender);
   ipcMain.handle(AGENT_IPC.projectInspectFileDeletion, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
