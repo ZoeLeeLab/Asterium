@@ -24,7 +24,7 @@ describe('desktop IPC contract', () => {
 
   it('classifies every main-process handler for shared disposer cleanup', async () => {
     const mainDirectory = path.join(process.cwd(), 'src', 'main');
-    const [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource] = await Promise.all([
+    const [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource, projectFileOpenSource] = await Promise.all([
       readFile(path.join(mainDirectory, 'agentIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'projectNotebookIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'artifactIpc.ts'), 'utf8'),
@@ -41,8 +41,9 @@ describe('desktop IPC contract', () => {
       readFile(path.join(mainDirectory, 'ipc', 'webSearchCredentialIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'projectWorkspaceIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'apiCredentialIpc.ts'), 'utf8'),
+      readFile(path.join(mainDirectory, 'ipc', 'projectFileOpenIpc.ts'), 'utf8'),
     ]);
-    const handledKeys = [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource].flatMap((moduleSource) =>
+    const handledKeys = [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource, projectFileOpenSource].flatMap((moduleSource) =>
       [...moduleSource.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)].map((match) => match[1] as keyof typeof DESKTOP_IPC));
     const handledChannels = handledKeys.map((key) => DESKTOP_IPC[key]);
 

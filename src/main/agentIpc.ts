@@ -171,6 +171,7 @@ import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
+import { registerProjectFileOpenIpc } from './ipc/projectFileOpenIpc';
 import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
@@ -1196,12 +1197,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return workspace;
   });
   registerProjectWorkspaceIpc(ipcMain, projectService, projectWorkspaces, requireSender);
-  ipcMain.handle(AGENT_IPC.projectOpenFile, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
-    const error = await shell.openPath(await projectFiles.resolve(value.projectId, value.fileId));
-    if (error) throw new Error(error);
-  });
+  registerProjectFileOpenIpc(ipcMain, projectFiles, requireSender);
 
   registerProjectRunChangesIpc(ipcMain, projectChanges, requireSender);
   registerProjectFileQueryIpc(ipcMain, projectBrowser, artifactDelivery, requireSender);
