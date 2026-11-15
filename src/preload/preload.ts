@@ -228,10 +228,14 @@ contextBridge.exposeInMainWorld('asteriumAttachments', {
   saveToProject: (attachmentId: string, conversationId: string, projectId: string) => ipcRenderer.invoke(AGENT_IPC.attachmentSaveToProject, { attachmentId, conversationId, projectId }),
   thumbnail: (id: string, conversationId?: string): Promise<string> => ipcRenderer.invoke(AGENT_IPC.attachmentThumbnail, { id, conversationId }),
   deleteConversation: (conversationId: string): Promise<void> => ipcRenderer.invoke(AGENT_IPC.attachmentDeleteConversation, conversationId),
+  previewSnapshotCleanup: () => ipcRenderer.invoke(AGENT_IPC.attachmentPreviewSnapshotCleanup),
+  clearSnapshots: (planId) => ipcRenderer.invoke(AGENT_IPC.attachmentClearSnapshots, planId),
 } satisfies AsteriumAttachmentsApi);
 
 contextBridge.exposeInMainWorld('asteriumConversations', {
   openHistory: (recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationOpenHistory, recent),
+  previewSnapshotCleanup: () => ipcRenderer.invoke(AGENT_IPC.conversationPreviewSnapshotCleanup),
+  clearSnapshots: (planId) => ipcRenderer.invoke(AGENT_IPC.conversationClearSnapshots, planId),
   migrateHistory: (source: import('../shared/singleChatHistory').SingleChatHistoryImport, recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationMigrateHistory, source, recent),
   readHistoryPage: (request: import('../shared/singleChatHistory').SingleChatPageRequest) => ipcRenderer.invoke(AGENT_IPC.conversationReadHistoryPage, request),
   readToolOutput: (request: import('../shared/singleChatHistory').SingleChatToolOutputRequest) => ipcRenderer.invoke(AGENT_IPC.conversationReadToolOutput, request),

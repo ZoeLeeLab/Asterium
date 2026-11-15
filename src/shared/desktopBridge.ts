@@ -226,7 +226,7 @@ export interface AsteriumArtifactsApi {
   clearCache: () => Promise<{ sizeBytes: number; itemCount: number; limitBytes: number }>;
 }
 
-export interface AsteriumAttachmentsApi {
+export interface AsteriumAttachmentsApi extends Partial<SnapshotCleanupApi> {
   stageClipboardImage?: (bytes: Uint8Array) => Promise<PendingMessageAttachment>;
   stageFiles?: (files: File[], remaining: number, allowLocalReferences?: boolean) => Promise<PendingMessageAttachment[]>;
   pasteFiles?: (remaining: number, allowLocalReferences?: boolean) => Promise<PendingMessageAttachment[]>;
@@ -356,7 +356,7 @@ export interface AsteriumNativeBindingsApi {
   syncSingle: (bindings: Array<{ partnerId: string; source: 'local_cli' | 'api_partner'; conversationId: string; nativeThreadId: string }>) => Promise<void>;
 }
 
-export interface AsteriumConversationsApi {
+export interface AsteriumConversationsApi extends Partial<SnapshotCleanupApi> {
   openHistory?: (recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot | undefined>;
   migrateHistory?: (source: import('./singleChatHistory').SingleChatHistoryImport, recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot>;
   readHistoryPage?: (request: import('./singleChatHistory').SingleChatPageRequest) => Promise<import('./singleChatHistory').SingleChatHistoryPage | undefined>;
@@ -392,3 +392,4 @@ export interface DesktopBridge {
   asteriumNativeBindings?: AsteriumNativeBindingsApi;
   asteriumConversations?: AsteriumConversationsApi;
 }
+import type { SnapshotCleanupApi } from './snapshotCleanup';

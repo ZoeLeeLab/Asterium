@@ -78,6 +78,15 @@ interface RegisteredArtifact extends ArtifactInfo {
   removedAt?: string;
 }
 
+type LocalArtifactFile = Pick<RegisteredArtifact, 'name' | 'extension' | 'mediaType' | 'sizeBytes' | 'previewKind' | 'availability'> & {
+  source: Extract<ArtifactSourceClaim, { kind: 'local_path' }>;
+};
+type LocalArtifactLink = Pick<RegisteredArtifact, 'id' | 'createdAt' | 'registrationMethod' | 'conversationId' | 'partnerId' |
+  'sessionId' | 'runId' | 'toolCallId' | 'projectDeliveries' | 'removedAt'>;
+type LocalArtifactRecord = LocalArtifactLink & { file: LocalArtifactFile };
+type ArtifactRecord = RegisteredArtifact | LocalArtifactRecord;
+type StoredLocalLink = LocalArtifactLink & { fileIndex: number };
+
 export interface ArtifactDeletionSnapshot {
   id: string;
   name: string;
@@ -101,7 +110,8 @@ const BINARY_LIMIT = 50 * 1024 * 1024;
 const DEFAULT_CACHE_LIMIT = 1024 * 1024 * 1024;
 
 export class ArtifactRegistry {
-  private readonly items = new Map<string, RegisteredArtifact>();
+  private readonly items = new Map<string, ArtifactRecord>();
+  private readonly localFiles = new Map<string, LocalArtifactFile>();
   private readonly resolvers = new Map<string, RemoteArtifactResolver>();
   private readonly storePath?: string;
   private readonly cacheDirectory: string;
@@ -109,6 +119,7 @@ export class ArtifactRegistry {
   private readonly fetchImplementation: typeof fetch;
   private loading?: Promise<void>;
   private pendingWrite = Promise.resolve();
+  private pendingLocalRegistration = Promise.resolve();
 
   constructor(options: string | ArtifactRegistryOptions = {}) {
     const normalized = typeof options === 'string' ? { storePath: options } : options;
@@ -127,6 +138,11 @@ export class ArtifactRegistry {
     await this.load();
     const id = context.id ?? randomUUID();
     const createdAt = context.createdAt ?? new Date().toISOString();
+    if (claim.kind === 'local_path') {
+      const registration = this.pendingLocalRegistration.then(() => this.registerLocal(claim.path, { ...context, id, createdAt }));
+      this.pendingLocalRegistration = registration.then(() => undefined, () => undefined);
+      return registration;
+    }
     let source: RegisteredArtifact['source'] = claim;
     let name = context.name;
     let sizeBytes: number | undefined;
@@ -134,21 +150,7 @@ export class ArtifactRegistry {
     let availability: ArtifactAvailability;
     let blobHash: string | undefined;
 
-    if (claim.kind === 'local_path') {
-      const absolutePath = normalizeReportedLocalPath(claim.path, context.baseDirectory ?? process.cwd());
-      source = { kind: 'local_path', path: absolutePath };
-      name ??= path.basename(absolutePath);
-      const fileStat = await stat(absolutePath).catch(() => undefined);
-      if (fileStat?.isFile()) {
-        sizeBytes = fileStat.size;
-        availability = 'available';
-        const existing = context.runId ? [...this.items.values()].find((item) => item.runId === context.runId && item.conversationId === context.conversationId
-          && item.source.kind === 'local_path'
-          && localPathKey(item.source.path) === localPathKey(absolutePath)
-          && item.availability === 'available') : undefined;
-        if (existing) return publicInfo({ ...existing, sizeBytes });
-      } else availability = 'missing';
-    } else if (claim.kind === 'content') {
+    if (claim.kind === 'content') {
       name ??= suggestedContentName(claim, mediaType);
       if (claim.transport === 'https_url') {
         validatePublicHttpsUrl(claim.value, 'ARTIFACT_URL_REJECTED');
@@ -192,6 +194,58 @@ export class ArtifactRegistry {
     return publicInfo(item);
   }
 
+  private async registerLocal(reportedPath: string, context: ArtifactRegistrationContext & { id: string; createdAt: string }) {
+    const absolutePath = normalizeReportedLocalPath(reportedPath, context.baseDirectory ?? process.cwd());
+    const key = localPathKey(absolutePath);
+    const value = await stat(absolutePath).catch(() => undefined);
+    const sizeBytes = value?.isFile() ? value.size : undefined;
+    const available = sizeBytes !== undefined;
+    const previous = this.localFiles.get(key);
+    const existing = available && context.runId && previous?.availability === 'available'
+      ? [...this.items.values()].find((item): item is LocalArtifactRecord => 'file' in item && item.file === previous
+        && !item.removedAt && item.runId === context.runId && item.conversationId === context.conversationId)
+      : undefined;
+    if (existing) {
+      if (existing.file.sizeBytes !== sizeBytes) {
+        const previousSize = existing.file.sizeBytes;
+        existing.file.sizeBytes = sizeBytes;
+        try {
+          await this.persist();
+        } catch (error) {
+          existing.file.sizeBytes = previousSize;
+          throw error;
+        }
+      }
+      return publicInfo(artifactView(existing));
+    }
+
+    const name = sanitizeFileName(context.name ?? path.basename(absolutePath));
+    const extension = path.extname(name).toLowerCase();
+    const mediaType = context.mediaType ?? mediaTypeFor(extension);
+    const current: LocalArtifactFile = {
+      source: { kind: 'local_path', path: absolutePath }, name, extension, mediaType, sizeBytes,
+      previewKind: previewKindFor(extension, mediaType), availability: available ? 'available' : 'missing',
+    };
+    // Historical IDs keep their own conversation and provenance while sharing one current file.
+    const previousFile = previous && { ...previous };
+    const file = previous ? Object.assign(previous, current) : current;
+    this.localFiles.set(key, file);
+    const { id, createdAt, method, conversationId, partnerId, sessionId, runId, toolCallId } = context;
+    const item: LocalArtifactRecord = { id, file, createdAt, registrationMethod: method, conversationId, partnerId, sessionId, runId, toolCallId };
+    const previousItem = this.items.get(id);
+    this.items.set(id, item);
+    try {
+      await this.persist();
+    } catch (error) {
+      if (previousFile) Object.assign(file, previousFile);
+      else this.localFiles.delete(key);
+      if (previousItem) this.items.set(id, previousItem);
+      else this.items.delete(id);
+      throw error;
+    }
+    return publicInfo(artifactView(item));
+  }
+
   async inspect(id: string): Promise<ArtifactInfo> {
     const item = await this.requireRecord(id);
     if (item.source.kind === 'local_path') await this.refreshLocal(item);
@@ -209,7 +263,7 @@ export class ArtifactRegistry {
 
   async listConversation(conversationId: string): Promise<ArtifactInfo[]> {
     await this.load();
-    const matches = [...this.items.values()].filter((item) => item.conversationId === conversationId && !item.removedAt);
+    const matches = [...this.items.values()].filter((item) => item.conversationId === conversationId && !item.removedAt).map(artifactView);
     return Promise.all(matches.map(async (item) => {
       if (item.source.kind === 'local_path') await this.refreshLocal(item);
       return publicInfo(item);
@@ -218,10 +272,10 @@ export class ArtifactRegistry {
 
   async listLatestConversation(conversationId: string): Promise<ArtifactInfo[]> {
     await this.load();
-    const latest = new Map<string, RegisteredArtifact>();
+    const latest = new Map<LocalArtifactFile | string, ArtifactRecord>();
     for (const item of this.items.values()) {
       if (item.conversationId !== conversationId || item.removedAt) continue;
-      const key = item.source.kind === 'local_path' ? 'path:' + localPathKey(item.source.path) : 'id:' + item.id;
+      const key = 'file' in item ? item.file : item.id;
       const previous = latest.get(key);
       if (!previous || item.createdAt >= previous.createdAt) latest.set(key, item);
     }
@@ -237,18 +291,20 @@ export class ArtifactRegistry {
   async resolveConversationLink(conversationId: string, href: string) {
     const target = localLinkPath(href);
     if (!target) return undefined;
-    const key = localPathKey(target);
     await this.load();
-    let match: RegisteredArtifact | undefined;
+    const file = this.localFiles.get(localPathKey(target));
+    if (!file) return undefined;
+    let match: LocalArtifactRecord | undefined;
     for (const item of this.items.values()) {
-      if (item.conversationId !== conversationId || item.removedAt || item.source.kind !== 'local_path' || localPathKey(item.source.path) !== key) continue;
+      if (item.conversationId !== conversationId || item.removedAt || !('file' in item) || item.file !== file) continue;
       if (!match || item.createdAt >= match.createdAt) match = item;
     }
-    if (!match || match.source.kind !== 'local_path') return undefined;
-    await this.refreshLocal(match);
-    const extension = path.extname(match.source.path.replace(/[. ]+$/, '')).toLowerCase();
+    if (!match) return undefined;
+    const view = artifactView(match);
+    await this.refreshLocal(view);
+    const extension = path.extname(file.source.path.replace(/[. ]+$/, '')).toLowerCase();
     const action = launcherExtensions.has(extension) ? 'reveal' : 'preview';
-    return { artifact: publicInfo(match), action } as const;
+    return { artifact: publicInfo(view), action } as const;
   }
 
   async read(id: string) {
@@ -276,7 +332,7 @@ export class ArtifactRegistry {
   }
 
   async recordProjectDelivery(id: string, delivery: Omit<ArtifactProjectDelivery, 'artifactId'>) {
-    const item = await this.requireRecord(id);
+    const item = await this.findRecord(id);
     const next: ArtifactProjectDelivery = { artifactId: id, ...delivery };
     const previous = structuredClone(item.projectDeliveries ?? []);
     item.projectDeliveries = [
@@ -319,7 +375,7 @@ export class ArtifactRegistry {
 
   async allDeletionSnapshots() {
     await this.load();
-    return [...this.items.values()].filter((item) => !item.removedAt).map((item): ArtifactDeletionSnapshot => ({
+    return [...this.items.values()].filter((item) => !item.removedAt).map(artifactView).map((item): ArtifactDeletionSnapshot => ({
       id: item.id,
       name: item.name,
       sourceKind: item.sourceKind,
@@ -331,21 +387,24 @@ export class ArtifactRegistry {
   }
 
   async markRemoved(id: string, removedAt = new Date().toISOString()) {
-    const item = await this.requireRecord(id, true);
+    const item = await this.findRecord(id, true);
     if (item.removedAt) return;
-    const previous = { removedAt: item.removedAt, availability: item.availability, cached: item.cached };
+    const previousRemovedAt = item.removedAt;
+    const previousState = 'file' in item ? undefined : { availability: item.availability, cached: item.cached };
     item.removedAt = removedAt;
-    item.availability = 'unavailable';
-    item.cached = false;
+    if (!('file' in item)) {
+      item.availability = 'unavailable';
+      item.cached = false;
+    }
     try {
       await this.persist();
     } catch (error) {
-      item.removedAt = previous.removedAt;
-      item.availability = previous.availability;
-      item.cached = previous.cached;
+      item.removedAt = previousRemovedAt;
+      if (previousState) Object.assign(item, previousState);
       throw error;
     }
-    if (item.blobHash && ![...this.items.values()].some((candidate) => candidate.id !== item.id && !candidate.removedAt && candidate.blobHash === item.blobHash)) {
+    if (!('file' in item) && item.blobHash && ![...this.items.values()].some((candidate) => !('file' in candidate)
+      && candidate.id !== item.id && !candidate.removedAt && candidate.blobHash === item.blobHash)) {
       await unlink(this.cachePath(item.blobHash)).catch(() => undefined);
     }
   }
@@ -410,7 +469,7 @@ export class ArtifactRegistry {
     await this.load();
     const entries = await readdir(this.cacheDirectory, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) if (entry.isFile()) await unlink(path.join(this.cacheDirectory, entry.name)).catch(() => undefined);
-    for (const item of this.items.values()) if (item.source.kind !== 'local_path') {
+    for (const item of this.items.values()) if (!('file' in item)) {
       item.blobHash = undefined;
       item.cached = false;
       item.availability = item.source.kind === 'content' && item.source.transport === 'cache_blob'
@@ -421,10 +480,15 @@ export class ArtifactRegistry {
     return this.cacheStats();
   }
 
-  private async requireRecord(id: string, includeRemoved = false) {
+  private async findRecord(id: string, includeRemoved = false) {
     await this.load();
     const item = this.items.get(id);
     if (!item || (!includeRemoved && item.removedAt)) throw new Error('ARTIFACT_NOT_REGISTERED');
+    return item;
+  }
+
+  private async requireRecord(id: string, includeRemoved = false) {
+    const item = artifactView(await this.findRecord(id, includeRemoved));
     normalizePreviewMetadata(item);
     return item;
   }
@@ -509,7 +573,7 @@ export class ArtifactRegistry {
     const stats = await this.cacheStats();
     if (stats.sizeBytes <= stats.limitBytes) return;
     const usage = new Map<string, number>();
-    for (const item of this.items.values()) if (item.blobHash) usage.set(item.blobHash, Math.max(usage.get(item.blobHash) ?? 0, Date.parse(item.lastAccessedAt ?? item.createdAt)));
+    for (const item of this.items.values()) if (!('file' in item) && item.blobHash) usage.set(item.blobHash, Math.max(usage.get(item.blobHash) ?? 0, Date.parse(item.lastAccessedAt ?? item.createdAt)));
     const candidates: Array<{ hash: string; size: number; lastUsed: number }> = [];
     for (const entry of await readdir(this.cacheDirectory, { withFileTypes: true }).catch(() => [])) {
       if (!entry.isFile() || entry.name === protectedHash) continue;
@@ -522,7 +586,7 @@ export class ArtifactRegistry {
       if (total <= this.cacheLimitBytes) break;
       await unlink(this.cachePath(candidate.hash)).catch(() => undefined);
       total -= candidate.size;
-      for (const item of this.items.values()) if (item.blobHash === candidate.hash) item.cached = false;
+      for (const item of this.items.values()) if (!('file' in item) && item.blobHash === candidate.hash) item.cached = false;
     }
     await this.persist();
   }
@@ -534,7 +598,10 @@ export class ArtifactRegistry {
   private async loadRecords() {
     if (!this.storePath) return;
     try {
-      const value = JSON.parse(await readFile(this.storePath, 'utf8')) as { items?: unknown[] };
+      const value = JSON.parse(await readFile(this.storePath, 'utf8')) as {
+        version?: number; items?: unknown[]; localFiles?: LocalArtifactFile[]; localLinks?: StoredLocalLink[];
+      };
+      const newest = new Map<string, RegisteredArtifact>();
       let metadataChanged = false;
       for (const raw of value.items ?? []) {
         if (!raw || typeof raw !== 'object') continue;
@@ -547,19 +614,42 @@ export class ArtifactRegistry {
         if (candidate.projectDeliveries) candidate.projectDeliveries = candidate.projectDeliveries.filter((entry) => entry
           && typeof entry.projectId === 'string' && typeof entry.relativePath === 'string' && typeof entry.contentHash === 'string'
           && typeof entry.sizeBytes === 'number' && typeof entry.savedAt === 'string').map((entry) => ({ ...entry, artifactId: candidate.id }));
-        if (typeof candidate.absolutePath === 'string' && !candidate.source) {
-          const migrated: RegisteredArtifact = {
+        const record: RegisteredArtifact = typeof candidate.absolutePath === 'string' && !candidate.source
+          ? {
             ...candidate,
             source: { kind: 'local_path', path: candidate.absolutePath },
             sourceKind: 'local_path', registrationMethod: 'automatic', availability: 'available', cached: false,
             createdAt: candidate.createdAt ?? new Date(0).toISOString(),
-          };
-          delete (migrated as RegisteredArtifact & { absolutePath?: string }).absolutePath;
-          metadataChanged = normalizePreviewMetadata(migrated) || metadataChanged;
-          this.items.set(migrated.id, migrated);
-        } else if (candidate.source && candidate.sourceKind) {
-          metadataChanged = normalizePreviewMetadata(candidate) || metadataChanged;
-          this.items.set(candidate.id, candidate);
+          } : candidate;
+        if (!record.source || !record.sourceKind) continue;
+        metadataChanged = normalizePreviewMetadata(record) || metadataChanged;
+        if (record.source.kind !== 'local_path') {
+          this.items.set(record.id, record);
+          continue;
+        }
+        const key = localPathKey(record.source.path);
+        const last = newest.get(key);
+        const file = localFileFrom(record, record.source);
+        const shared = this.localFiles.get(key) ?? file;
+        if (!last || record.createdAt >= last.createdAt) {
+          Object.assign(shared, file);
+          newest.set(key, record);
+        }
+        this.localFiles.set(key, shared);
+        this.items.set(record.id, { ...localLinkFrom(record), file: shared });
+      }
+      if (value.version === 3) {
+        const files = (value.localFiles ?? []).map(file => {
+          if (file?.source?.kind !== 'local_path' || typeof file.source.path !== 'string') return undefined;
+          const key = localPathKey(file.source.path);
+          const shared = this.localFiles.get(key) ?? file;
+          this.localFiles.set(key, shared);
+          return shared;
+        });
+        for (const link of value.localLinks ?? []) {
+          if (!link || typeof link.id !== 'string' || !Number.isInteger(link.fileIndex)) continue;
+          const file = files[link.fileIndex];
+          if (file) this.items.set(link.id, { ...localLinkFrom(link), file });
         }
       }
       if (metadataChanged) await this.persist();
@@ -575,7 +665,24 @@ export class ArtifactRegistry {
       await mkdir(path.dirname(target), { recursive: true });
       const temporary = `${target}.${randomUUID()}.tmp`;
       try {
-        await writeFile(temporary, JSON.stringify({ version: 2, items: [...this.items.values()] }), { encoding: 'utf8', mode: 0o600 });
+        const items: RegisteredArtifact[] = [];
+        const localFiles: LocalArtifactFile[] = [];
+        const localLinks: StoredLocalLink[] = [];
+        const fileIndices = new Map<LocalArtifactFile, number>();
+        for (const item of this.items.values()) {
+          if (!('file' in item)) {
+            items.push(item);
+            continue;
+          }
+          let fileIndex = fileIndices.get(item.file);
+          if (fileIndex === undefined) {
+            fileIndex = localFiles.length;
+            fileIndices.set(item.file, fileIndex);
+            localFiles.push(item.file);
+          }
+          localLinks.push({ ...localLinkFrom(item), fileIndex });
+        }
+        await writeFile(temporary, JSON.stringify({ version: 3, items, localFiles, localLinks }), { encoding: 'utf8', mode: 0o600 });
         await rename(temporary, target);
       } catch (error) {
         await unlink(temporary).catch(() => undefined);
@@ -585,6 +692,21 @@ export class ArtifactRegistry {
     this.pendingWrite = write.catch(() => undefined);
     await write;
   }
+}
+
+function artifactView(item: ArtifactRecord): RegisteredArtifact {
+  if (!('file' in item)) return item;
+  return { ...localLinkFrom(item), ...item.file, sourceKind: 'local_path', cached: false };
+}
+
+function localLinkFrom(item: LocalArtifactLink): LocalArtifactLink {
+  const { id, createdAt, registrationMethod, conversationId, partnerId, sessionId, runId, toolCallId, projectDeliveries, removedAt } = item;
+  return { id, createdAt, registrationMethod, conversationId, partnerId, sessionId, runId, toolCallId, projectDeliveries, removedAt };
+}
+
+function localFileFrom(item: RegisteredArtifact, source: LocalArtifactFile['source']): LocalArtifactFile {
+  const { name, extension, mediaType, sizeBytes, previewKind, availability } = item;
+  return { source, name, extension, mediaType, sizeBytes, previewKind, availability };
 }
 
 function localPathKey(value: string) {

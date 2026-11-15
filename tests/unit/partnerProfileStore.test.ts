@@ -1,5 +1,5 @@
 import { testRm as rm } from '../helpers/autoTest.mjs';
-import { mkdir, mkdtemp, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +32,21 @@ function seed(overrides: Partial<PartnerProfileSeed> = {}): PartnerProfileSeed {
 }
 
 describe('PartnerProfileStore', () => {
+  it('returns the same user revision and disk timestamp on write and on unchanged refresh', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-user-profile-refresh-'));
+    temporaryDirectories.push(root);
+    const store = trackedStore(root);
+    const file = path.join(root, 'user', 'user-profile.md');
+    const { user } = await store.sync({ displayName: '合成用户', introduction: '', updatedAt: '' }, []);
+    expect(user.updatedAt).toBe((await stat(file)).mtime.toISOString());
+    expect((await store.refresh()).user).toEqual(user);
+
+    const updated = await store.saveUser({ ...user, introduction: '合成资料已更新' });
+    expect(updated.revision).not.toBe(user.revision);
+    expect(updated.updatedAt).toBe((await stat(file)).mtime.toISOString());
+    expect((await store.refresh()).user).toEqual(updated);
+  });
+
   it('rejects saving over externally changed user/persona MD and returns fresh revisions after refresh', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-profile-conflict-')); temporaryDirectories.push(root);
     const store = trackedStore(root), managed = seed({ management: { userProfile: true, personality: true, memoryMode: 'none' }, personality: '旧人设' });

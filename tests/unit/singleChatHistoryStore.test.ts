@@ -25,6 +25,68 @@ function logPath(profile: string, id: string) {
 }
 
 describe('single chat migration activation', () => {
+  it('clears superseded delivery lists while preserving messages, current metadata, the log tail and backups', async () => {
+    const profile = path.join(autoTestOutput(), 'snapshot-cleanup');
+    const store = new SingleChatHistoryStore(profile);
+    const sent: Message = {
+      ...message('first'),
+      timeline: [{ id: 'file', sequence: 1, kind: 'file', artifactId: 'first-file', name: 'sample.txt', summary: '合成交付', state: 'success' }],
+    };
+    const { messages, ...metadata } = chat('one', [sent]);
+    await store.initialize(async () => ({ conversations: [chat('one', [sent])], deletedConversationIds: [] }));
+    const target = logPath(profile, 'one');
+    const artifacts = Array.from({ length: 200 }, (_, index) => ({
+      id: 'fixture-' + index, artifactRef: 'fixture-' + index, name: '合成文件.txt', createdAt: time,
+    }));
+    const latest = [...artifacts, { id: 'latest', artifactRef: 'latest', name: 'latest.txt', createdAt: time }];
+    const tail = '{"type":"checkpoint","upsert":[';
+    const original = [
+      { type: 'conversation.imported', conversation: { ...metadata, artifacts } },
+      { type: 'message.imported', message: messages[0] },
+      { type: 'checkpoint', metadata: { ...metadata, title: '合成旧标题', artifacts }, upsert: [], remove: [] },
+      { type: 'checkpoint', metadata: { ...metadata, title: '合成新标题', artifacts: latest }, upsert: [], remove: [] },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n' + tail;
+    await writeFile(target, original);
+    const backup = path.join(profile, 'fixture-migration-backup.jsonl');
+    await writeFile(backup, original);
+    const prior = await store.readConversation('one');
+    expect((await store.readMetadata('one'))?.artifacts).toEqual(latest);
+
+    const preview = await store.previewSnapshotCleanup();
+    expect(preview.count).toBe(2);
+    expect(preview.bytes).toBeGreaterThan(10000);
+    expect(await readFile(target, 'utf8')).toBe(original);
+    expect(await store.clearSnapshots(preview.planId)).toEqual({ clearedCount: 2, freedBytes: preview.bytes, skippedCount: 0 });
+
+    const cleaned = await readFile(target, 'utf8');
+    expect(Buffer.byteLength(original) - Buffer.byteLength(cleaned)).toBe(preview.bytes);
+    expect(cleaned.endsWith(tail)).toBe(true);
+    expect(cleaned.match(/"artifacts":/g)).toHaveLength(1);
+    expect(await readFile(backup, 'utf8')).toBe(original);
+    expect(await store.readConversation('one')).toEqual(prior);
+    expect((await store.readPage({ conversationId: 'one' }))?.messages[0].timeline).toEqual(sent.timeline);
+    expect((await store.previewSnapshotCleanup()).count).toBe(0);
+    await expect(store.clearSnapshots(preview.planId)).rejects.toThrow('SNAPSHOT_PLAN_EXPIRED');
+  });
+
+  it('leaves a history log alone when it changes after scanning', async () => {
+    const profile = path.join(autoTestOutput(), 'snapshot-cleanup-stale');
+    const store = new SingleChatHistoryStore(profile);
+    const { messages, ...metadata } = chat('one', []);
+    const manifest = await store.initialize(async () => ({ conversations: [{ ...metadata, messages }], deletedConversationIds: [] }));
+    const target = logPath(profile, 'one');
+    await writeFile(target, [
+      { type: 'conversation.imported', conversation: { ...metadata, artifacts: [{ id: 'fixture-first' }] } },
+      { type: 'checkpoint', metadata, upsert: [], remove: [] },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n');
+    const preview = await store.previewSnapshotCleanup();
+    expect(preview.count).toBe(1);
+    await store.write({ generation: manifest.generation, changes: [{ conversationId: 'one', upsert: [message('new')], remove: [] }] });
+    const changed = await readFile(target);
+    expect(await store.clearSnapshots(preview.planId)).toEqual({ clearedCount: 0, freedBytes: 0, skippedCount: 1 });
+    expect(await readFile(target)).toEqual(changed);
+  });
+
   it('reads legacy delivery data and keeps only message references in newly written history', async () => {
     const profile = path.join(autoTestOutput(), 'delivery-references');
     const store = new SingleChatHistoryStore(profile);

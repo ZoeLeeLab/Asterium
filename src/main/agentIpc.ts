@@ -1517,6 +1517,15 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     summaryRuns.get(value)?.abort();
     await delegation.remove(value);
   });
+  ipcMain.handle(AGENT_IPC.attachmentPreviewSnapshotCleanup, async (event) => {
+    requireSender(event);
+    return messageAttachments.previewSnapshotCleanup();
+  });
+  ipcMain.handle(AGENT_IPC.attachmentClearSnapshots, async (event, value: unknown) => {
+    requireSender(event);
+    if (typeof value !== 'string' || value.length !== 36) throw new Error('SNAPSHOT_PLAN_EXPIRED');
+    return messageAttachments.clearSnapshots(value);
+  });
   ipcMain.handle(AGENT_IPC.conversationDelete, async (event, value: unknown) => {
     requireSender(event);
     const request = assertConversationDeleteRequest(value);
@@ -1561,6 +1570,15 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   ipcMain.handle(AGENT_IPC.conversationOpenHistory, async (event, recent: unknown) => {
     requireSender(event);
     return openSingleChatHistory(recent);
+  });
+  ipcMain.handle(AGENT_IPC.conversationPreviewSnapshotCleanup, async (event) => {
+    requireSender(event);
+    return singleChatHistory.previewSnapshotCleanup();
+  });
+  ipcMain.handle(AGENT_IPC.conversationClearSnapshots, async (event, value: unknown) => {
+    requireSender(event);
+    if (typeof value !== 'string' || value.length !== 36) throw new Error('SNAPSHOT_PLAN_EXPIRED');
+    return singleChatHistory.clearSnapshots(value);
   });
   ipcMain.handle(AGENT_IPC.conversationMigrateHistory, async (event, value: unknown, recent: unknown) => {
     requireSender(event);

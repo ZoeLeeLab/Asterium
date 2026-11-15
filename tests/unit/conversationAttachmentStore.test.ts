@@ -25,6 +25,55 @@ async function fixture() {
 }
 
 describe('ConversationAttachmentStore', () => {
+  it('reclaims identical internal copies while preserving original files, message IDs and distinct versions', async () => {
+    const { root, source, store, options } = await fixture();
+    const identical = path.join(root, 'another-source.txt');
+    const equalContents = await readFile(source);
+    await writeFile(identical, equalContents);
+    const send = async (file: string, conversation: string, message: string) => {
+      const [pending] = await store.stage([file]);
+      const [attachment] = await store.commit(conversation, [pending.selectionId], message);
+      return attachment.id;
+    };
+    const first = await send(source, 'conversation-a', 'message-one');
+    const duplicate = await send(identical, 'conversation-b', 'message-two');
+    const studio = await send(identical, 'studio-attachments-fixture', 'group-message');
+    await writeFile(source, 'updated original contents', 'utf8');
+    const distinct = await send(source, 'conversation-a', 'message-three');
+    const oldPath = await store.pathFor(first, 'conversation-a');
+    const duplicatePath = await store.pathFor(duplicate, 'conversation-b');
+    const studioPath = await store.pathFor(studio, 'studio-attachments-fixture');
+    expect((await stat(duplicatePath)).nlink).toBe(1);
+    const preview = await store.previewSnapshotCleanup();
+    expect(preview).toMatchObject({ count: 1, bytes: equalContents.length, skippedCount: 0 });
+    expect((await stat(duplicatePath)).nlink).toBe(1);
+    expect(await store.clearSnapshots(preview.planId)).toEqual({ clearedCount: 1, freedBytes: equalContents.length, skippedCount: 0 });
+    expect((await stat(oldPath, { bigint: true })).ino).toBe((await stat(duplicatePath, { bigint: true })).ino);
+    expect((await stat(studioPath)).nlink).toBe(1);
+    expect(await readFile(source, 'utf8')).toBe('updated original contents');
+    expect(await readFile(identical)).toEqual(equalContents);
+    const restarted = new ConversationAttachmentStore(options);
+    expect(await restarted.read(first, 'conversation-a')).toEqual(equalContents);
+    expect(await restarted.read(duplicate, 'conversation-b')).toEqual(equalContents);
+    expect((await restarted.read(distinct, 'conversation-a')).toString()).toBe('updated original contents');
+    expect((await restarted.previewSnapshotCleanup()).count).toBe(0);
+  });
+
+  it('leaves a duplicate untouched if an internal snapshot changes after the preview', async () => {
+    const { root, source, store } = await fixture();
+    const other = path.join(root, 'other.txt');
+    await writeFile(other, await readFile(source));
+    const prepared = await store.stage([source, other]);
+    const [, duplicate] = await store.commit('conversation-a', prepared.map(item => item.selectionId), 'message-one');
+    const duplicatePath = await store.pathFor(duplicate.id, 'conversation-a');
+    const plan = await store.previewSnapshotCleanup();
+    expect(plan.count).toBe(1);
+    await writeFile(duplicatePath, 'updated internal fixture');
+    expect(await store.clearSnapshots(plan.planId)).toEqual({ clearedCount: 0, freedBytes: 0, skippedCount: 1 });
+    expect(await readFile(duplicatePath, 'utf8')).toBe('updated internal fixture');
+    expect(await readFile(other, 'utf8')).toBe('hello attachment');
+  });
+
   it('keeps an immutable conversation copy while source paths remain main-process-only metadata', async () => {
     const { source, storeRoot, store } = await fixture();
     const [pending] = await store.stage([source]);
