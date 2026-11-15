@@ -105,7 +105,6 @@ import { PartnerDiaryService } from './diary/PartnerDiaryService';
 import { PartnerDiaryScheduler } from './diary/PartnerDiaryScheduler';
 import { generateApiDiary, generateClaudeDiary, generateClaudeOneShot, generateCodexDelegation, generateCodexDiary, generateExistingDiary } from './diary/DiaryGenerators';
 import { assembleSessionBootstrap } from './runtime/SessionBootstrapAssembler';
-import { diaryTarget } from '../shared/partnerDiary';
 import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
 import { PartnerMemoryBriefingService } from './memory/PartnerMemoryBriefingService';
 import { SessionBootstrapService } from './runtime/SessionBootstrapService';
@@ -172,6 +171,7 @@ import { registerAutomationIpc } from './ipc/automationIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
+import { registerPartnerDiaryIpc } from './ipc/partnerDiaryIpc';
 import { registerProjectFileOpenIpc } from './ipc/projectFileOpenIpc';
 import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
@@ -2573,17 +2573,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   ipcMain.handle(AGENT_IPC.diaryConfigure, async (event, value: unknown) => {
     requireSender(event); const config = await diarySettings.configure(value); await diaryScheduler.changed(); return config;
   });
-  ipcMain.handle(AGENT_IPC.diaryRead, async (event, value: unknown) => {
-    requireSender(event); const target = diaryTarget.parse(value); return (await diaries.store(target.partnerId)).read(target.date);
-  });
-  ipcMain.handle(AGENT_IPC.diaryExport, async (event, value: unknown) => {
-    const window = requireSender(event); const target = diaryTarget.parse(value);
-    const document = await (await diaries.store(target.partnerId)).read(target.date);
-    if (document?.entry.state !== 'completed' || document.content === undefined) throw new Error('DIARY_NOT_COMPLETED');
-    const result = await dialog.showSaveDialog(window, { title: '导出伙伴日记', defaultPath: `${target.date}-伙伴日记.md`, filters: [{ name: 'Markdown', extensions: ['md'] }] });
-    if (result.canceled || !result.filePath) return false;
-    await writeFile(result.filePath, document.content, 'utf8'); return true;
-  });
+  registerPartnerDiaryIpc(ipcMain, diaries, requireSender);
   ipcMain.handle(AGENT_IPC.memoryFallbackListModels, async (event, value: unknown) => {
     requireSender(event);
     return memoryFallbackSettings.listModels(value, (provider, endpoint, apiKey) => apiProviders.listModels(provider, endpoint, apiKey));
