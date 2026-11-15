@@ -53,7 +53,7 @@ import { StudioAttachments } from './studio/StudioAttachments';
 import type { AppUpdateService } from './settings/AppUpdateService';
 import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
 import { ApiConnectionStore } from './api/ApiConnectionStore';
-import { apiConfigurationMutationSchema, apiRequestSettingsSchema, apiModelSettingsSchema } from '../shared/apiConnections';
+import { apiRequestSettingsSchema, apiModelSettingsSchema } from '../shared/apiConnections';
 import { ApiExtensionStore } from './api/ApiExtensionStore';
 import { McpConnectionManager } from './api/extensions/McpConnectionManager';
 import { McpManagementWorkspace } from './api/extensions/McpManagementWorkspace';
@@ -165,6 +165,7 @@ import {
   type ExistingThreadConnectionStatus,
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
+import { registerApiConnectionsIpc } from './ipc/apiConnectionsIpc';
 import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
@@ -2501,9 +2502,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerApiCredentialIpc(ipcMain, credentials, apiConnections, requireSender);
 
-  ipcMain.handle(AGENT_IPC.apiConnectionsGet, async (event) => {
-    requireSender(event); return apiConnections.snapshot();
-  });
+  registerApiConnectionsIpc(ipcMain, apiConnections, credentials, requireSender);
   ipcMain.handle(AGENT_IPC.apiConnectionsProbe, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.modelId !== 'string' || (value.tools !== undefined && typeof value.tools !== 'boolean')) throw new Error('INVALID_API_PROBE');
@@ -2527,13 +2526,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       return { text, toolCall };
     } catch { throw new Error('API_PROBE_FAILED'); }
     } finally { if (probeTimer) clearTimeout(probeTimer); apiProbes.delete(value.modelId); }
-  });
-  ipcMain.handle(AGENT_IPC.apiConnectionsMutate, async (event, value: unknown) => {
-    requireSender(event);
-    const request = apiConfigurationMutationSchema.parse(value);
-    if (request.action === 'service' && request.value.settings?.auth !== 'none' && !await credentials.has(request.value.credentialRef)) throw new Error('API_CREDENTIAL_REQUIRED');
-    if (request.action === 'service') for (const header of request.value.settings?.headers ?? []) if (!await credentials.has(header.credentialRef)) throw new Error('API_HEADER_CREDENTIAL_REQUIRED');
-    return apiConnections.mutate(request);
   });
 
   registerWebSearchCredentialIpc(ipcMain, credentials, BRAVE_SEARCH_CREDENTIAL_REF, requireSender);
