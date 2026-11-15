@@ -261,7 +261,8 @@ export class SqliteMemoryArchiveStore implements MemoryArchiveStore {
     mkdirSync(path.dirname(this.file), { recursive: true });
     const existed = existsSync(this.file);
     if (existed && (!lstatSync(this.file).isFile() || lstatSync(this.file).isSymbolicLink())) throw new Error('MEMORY_DATABASE_PATH_INVALID');
-    const db = new DatabaseSync(this.file);
+    // Windows SQLite also needs room for journal suffixes on deeply nested paths.
+    const db = new DatabaseSync(path.toNamespacedPath(this.file));
     let initialized = existed;
     try {
       db.exec('PRAGMA busy_timeout = 250; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;');

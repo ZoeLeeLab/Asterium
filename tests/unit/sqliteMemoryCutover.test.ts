@@ -10,8 +10,9 @@ import { MemoryFallbackJobStore, fallbackHash, type FallbackInput } from '../../
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
-async function fixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-cutover-')); roots.push(root);
+async function fixture(longPath = false) {
+  const isolated = await mkdtemp(path.join(os.tmpdir(), 'asterium-cutover-')); roots.push(isolated);
+  const root = longPath ? path.join(isolated, '长路径-' + 'a'.repeat(80), 'b'.repeat(80)) : isolated;
   const profiles = path.join(root, 'AsteriumData'); const partner = path.join(profiles, 'partners', '测试__p');
   const memory = path.join(partner, 'private-memory'); await mkdir(path.join(memory, 'archive-v1', 'records'), { recursive: true });
   await writeFile(path.join(partner, 'partner.json'), JSON.stringify({ partnerId: 'p', management: { memoryMode: 'asterium' } }));
@@ -44,6 +45,25 @@ it('does not consume revisions arriving after capture, including on baseline rep
   value.input.messages[0] = { ...value.input.messages[0], content: 'edited', hash: fallbackHash('edited') };
   await value.jobs.sync([value.input]); await value.make().run();
   expect((await value.jobs.list())[0].dirty).toBe(true);
+});
+
+it.runIf(process.platform === 'win32')('creates and reopens memory databases in long Windows paths', async () => {
+  const value = await fixture(true);
+  const filename = path.join(value.memory, 'memory.sqlite');
+  expect(filename.length).toBeGreaterThan(260);
+  const coordinator = value.make();
+  const manifest = await coordinator.run();
+  expect(manifest.state).toBe('complete');
+  const timestamp = new Date().toISOString();
+  await new SqliteMemoryArchiveStore(filename, 'p').create({
+    schemaVersion: 1, memoryId: 'long-path-memory', partnerId: 'p', type: 'stable_fact', status: 'active',
+    body: '合成长路径记忆', tags: [], weight: 3, comments: [], sources: [], createdAt: timestamp, updatedAt: timestamp,
+  });
+  expect((await new SqliteMemoryArchiveStore(filename, 'p').get('long-path-memory'))?.body).toBe('合成长路径记忆');
+  await coordinator.rollback(true);
+  expect(await readFile(path.join(value.memory, 'memory.md'))).toEqual(Buffer.from([0xef, 0xbb, 0xbf, 65, 13, 10]));
+  expect(await new SqliteMemoryArchiveStore(path.join(coordinator.backupDirectory(manifest), 'rollback-sqlite', 'p.sqlite'), 'p')
+    .get('long-path-memory')).toMatchObject({ memoryId: 'long-path-memory', body: '合成长路径记忆' });
 });
 it('refuses damaged backups and changed originals without deleting them', async () => {
   const value = await fixture();
