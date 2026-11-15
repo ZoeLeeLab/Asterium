@@ -35,6 +35,7 @@ const get = 'asterium:studio:get-room';
 const exportMarkdown = 'asterium:studio:export-markdown';
 const setMuted = 'asterium:studio:set-muted';
 const setSettings = 'asterium:studio:set-settings';
+const announce = 'asterium:studio:announce';
 const roomChanged = 'asterium:studio:room-changed';
 let dispose: (() => Promise<void>) | undefined;
 let ledgerPath: string;
@@ -155,4 +156,32 @@ it('filters room members, broadcasts saved settings, and rejects settings change
     .rejects.toThrow('STUDIO_ROUND_ALREADY_ACTIVE');
   await expect(invoke(get, roomId)).resolves.toEqual(active);
   expect(changes()).toEqual([]);
+});
+
+it('persists a system announcement and broadcasts its snapshot without starting a round in an idle room', async () => {
+  const roomId = 'fixture-room';
+  const initial = await rooms.syncRoom({
+    roomId, projectId: 'fixture-project', name: 'Fixture room', memberIds: ['fixture-partner'],
+  });
+  const request = { roomId, content: '  Fixture announcement.  ' };
+  const changes = () => sender.send.mock.calls.filter(([channel]) => channel === roomChanged);
+
+  await expect(invoke(announce, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+  await expect(invoke(announce, { roomId, content: null })).rejects.toThrow('INVALID_STUDIO_ANNOUNCEMENT');
+  await expect(invoke(announce, { ...request, content: ' \t\n ' })).rejects.toThrow('STUDIO_ANNOUNCEMENT_REQUIRED');
+  await expect(invoke(announce, { ...request, roomId: 'missing-fixture-room' })).rejects.toThrow('STUDIO_ROOM_NOT_FOUND');
+  await expect(invoke(get, roomId)).resolves.toEqual(initial);
+  expect(changes()).toEqual([]);
+
+  const saved = await invoke<StudioRoomSnapshot>(announce, request);
+  expect(saved).toEqual({
+    ...initial,
+    messages: [expect.objectContaining({
+      roomId, seq: 1, authorType: 'system', authorId: 'system',
+      content: 'Fixture announcement.', status: 'completed',
+    })],
+  });
+  expect(saved.activeRound).toBeUndefined();
+  await expect(rooms.getRoom(roomId)).resolves.toEqual(saved);
+  expect(changes()).toEqual([[roomChanged, saved]]);
 });

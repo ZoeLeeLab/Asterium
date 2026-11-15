@@ -1265,12 +1265,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return projectService.syncRoom(value);
   });
 
-  ipcMain.handle(AGENT_IPC.studioAnnounce, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roomId !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_STUDIO_ANNOUNCEMENT');
-    return studioRooms.appendSystemMessage(value.roomId, value.content);
-  });
-
   registerStudioNoteIpc(ipcMain, studioNotes, requireSender);
 
   registerProjectNotebookIpc(ipcMain, projectNotebooks, archivedMarkdownFileName, requireSender);
