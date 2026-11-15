@@ -33,7 +33,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { access, copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
-import { app, BrowserWindow, clipboard, dialog, safeStorage, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, clipboard, dialog, safeStorage, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { createAttachmentThumbnail } from './security/attachmentThumbnail';
 import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
@@ -177,6 +177,7 @@ import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
+import { registerStudioRoomIpc } from './ipc/studioRoomIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
@@ -1274,11 +1275,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerProjectNotebookIpc(ipcMain, projectNotebooks, archivedMarkdownFileName, requireSender);
 
-  ipcMain.handle(AGENT_IPC.studioGetRoom, async (event, roomId: unknown) => {
-    requireSender(event);
-    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
-    return studioRooms.getRoom(roomId);
-  });
+  registerStudioRoomIpc(ipcMain, studioRooms, archivedMarkdownFileName, requireSender);
 
   ipcMain.handle(AGENT_IPC.studioRetryProjectUploads, async (event, roomId: unknown) => {
     requireSender(event);
@@ -1289,26 +1286,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       projectCoordinator.assertProjectActive(current.metadata.projectId);
       await studioAttachments.archivePublished(current);
     });
-  });
-
-  ipcMain.handle(AGENT_IPC.studioExportMarkdown, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roomId !== 'string' || !value.roomId.trim()
-      || typeof value.content !== 'string' || Buffer.byteLength(value.content, 'utf8') > 10_000_000) {
-      throw new Error('INVALID_STUDIO_MARKDOWN_EXPORT');
-    }
-    const room = await studioRooms.getRoom(value.roomId);
-    if (!room) throw new Error('STUDIO_ROOM_NOT_FOUND');
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) throw new Error('STUDIO_EXPORT_WINDOW_UNAVAILABLE');
-    const result = await dialog.showSaveDialog(window, {
-      title: '导出群聊记录',
-      defaultPath: archivedMarkdownFileName(room.metadata.name, '群聊记录'),
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    });
-    if (result.canceled || !result.filePath) return false;
-    await writeFile(result.filePath, value.content, 'utf8');
-    return true;
   });
 
   ipcMain.handle(AGENT_IPC.studioRemoveRoom, async (event, roomId: unknown) => {
