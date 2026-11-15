@@ -177,6 +177,7 @@ import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
+import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
@@ -2568,23 +2569,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return apiConnections.mutate(request);
   });
 
-  ipcMain.handle(AGENT_IPC.saveWebSearchCredential, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.secret !== 'string' || !value.secret.trim()) throw new Error('INVALID_WEB_SEARCH_CREDENTIAL_REQUEST');
-    await credentials.save(value.secret.trim(), BRAVE_SEARCH_CREDENTIAL_REF);
-    return { configured: true, masked: '••••••••' };
-  });
-
-  ipcMain.handle(AGENT_IPC.webSearchCredentialStatus, async (event) => {
-    requireSender(event);
-    const configured = await credentials.has(BRAVE_SEARCH_CREDENTIAL_REF);
-    return { configured, masked: configured ? '••••••••' : '' };
-  });
-
-  ipcMain.handle(AGENT_IPC.deleteWebSearchCredential, async (event) => {
-    requireSender(event);
-    await credentials.delete(BRAVE_SEARCH_CREDENTIAL_REF);
-  });
+  registerWebSearchCredentialIpc(ipcMain, credentials, BRAVE_SEARCH_CREDENTIAL_REF, requireSender);
 
   registerExtensionsIpc(ipcMain, apiExtensions, mcpConnections, requireSender);
 
