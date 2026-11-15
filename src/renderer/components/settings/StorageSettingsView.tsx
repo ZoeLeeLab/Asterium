@@ -3,6 +3,7 @@ import type { StorageLocations } from '../../../shared/generalSettings';
 
 export function StorageSettingsView() {
   const [locations, setLocations] = useState<StorageLocations>();
+  const [nextUserDataDirectory, setNextUserDataDirectory] = useState<string>();
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   useEffect(() => {
     let active = true;
@@ -16,9 +17,23 @@ export function StorageSettingsView() {
     catch { setError('文件位置操作失败：请确认目录存在、可写且当前可访问。原设置保留。'); }
     finally { setBusy(false); }
   }
+  async function chooseUserDataDirectory() {
+    const api = window.asteriumStorage; if (!api || busy) return;
+    setBusy(true); setError('');
+    try {
+      const directory = await api.chooseUserDataDirectory();
+      if (directory) setNextUserDataDirectory(directory);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : '应用资料目录保存失败。');
+    } finally { setBusy(false); }
+  }
   return <section className="general-settings-card"><h2>文件与存储</h2>
     <p>默认位置只影响新项目。已有项目继续使用原文件夹，创建时也可以另选位置。</p>
     <label className="modal-field">应用资料目录<input className="storage-settings__app-data" readOnly value={locations?.userDataDirectory ?? ''} aria-label="应用资料目录" /></label>
+    {locations?.canChooseUserDataDirectory && <div className="storage-settings-actions">
+      <button className="secondary-button" type="button" disabled={busy || !locations} onClick={() => void chooseUserDataDirectory()}>选择应用资料目录</button>
+    </div>}
+    {nextUserDataDirectory && <p role="status">已保存 {nextUserDataDirectory}。请从托盘彻底退出星丛，再正常双击启动。</p>}
     <label className="modal-field">默认项目保存位置<input readOnly value={locations?.defaultProjectRoot ?? ''} aria-label="默认项目保存位置" /></label>
     <div className="storage-settings-actions">
       <button className="secondary-button" type="button" disabled={busy || !locations} onClick={() => void change('chooseProjectRoot')}>选择默认项目位置</button>

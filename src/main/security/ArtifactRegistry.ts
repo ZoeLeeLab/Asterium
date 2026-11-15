@@ -107,7 +107,8 @@ export class ArtifactRegistry {
   private readonly cacheDirectory: string;
   private readonly cacheLimitBytes: number;
   private readonly fetchImplementation: typeof fetch;
-  private loaded = false;
+  private loading?: Promise<void>;
+  private pendingWrite = Promise.resolve();
 
   constructor(options: string | ArtifactRegistryOptions = {}) {
     const normalized = typeof options === 'string' ? { storePath: options } : options;
@@ -141,11 +142,11 @@ export class ArtifactRegistry {
       if (fileStat?.isFile()) {
         sizeBytes = fileStat.size;
         availability = 'available';
-        const existing = context.runId ? [...this.items.values()].find((item) => item.runId === context.runId
+        const existing = context.runId ? [...this.items.values()].find((item) => item.runId === context.runId && item.conversationId === context.conversationId
           && item.source.kind === 'local_path'
           && localPathKey(item.source.path) === localPathKey(absolutePath)
           && item.availability === 'available') : undefined;
-        if (existing) return publicInfo(existing);
+        if (existing) return publicInfo({ ...existing, sizeBytes });
       } else availability = 'missing';
     } else if (claim.kind === 'content') {
       name ??= suggestedContentName(claim, mediaType);
@@ -213,6 +214,24 @@ export class ArtifactRegistry {
       if (item.source.kind === 'local_path') await this.refreshLocal(item);
       return publicInfo(item);
     }));
+  }
+
+  async listLatestConversation(conversationId: string): Promise<ArtifactInfo[]> {
+    await this.load();
+    const latest = new Map<string, RegisteredArtifact>();
+    for (const item of this.items.values()) {
+      if (item.conversationId !== conversationId || item.removedAt) continue;
+      const key = item.source.kind === 'local_path' ? 'path:' + localPathKey(item.source.path) : 'id:' + item.id;
+      const previous = latest.get(key);
+      if (!previous || item.createdAt >= previous.createdAt) latest.set(key, item);
+    }
+    const rows = [...latest.values()];
+    const results: ArtifactInfo[] = [];
+    for (let index = 0; index < rows.length; index += 16) {
+      const batch = await Promise.all(rows.slice(index, index + 16).map((item) => this.inspectIfRegistered(item.id)));
+      results.push(...batch.filter((item): item is ArtifactInfo => item !== undefined));
+    }
+    return results;
   }
 
   async resolveConversationLink(conversationId: string, href: string) {
@@ -508,9 +527,11 @@ export class ArtifactRegistry {
     await this.persist();
   }
 
-  private async load() {
-    if (this.loaded) return;
-    this.loaded = true;
+  private load() {
+    return this.loading ??= this.loadRecords();
+  }
+
+  private async loadRecords() {
     if (!this.storePath) return;
     try {
       const value = JSON.parse(await readFile(this.storePath, 'utf8')) as { items?: unknown[] };
@@ -548,11 +569,21 @@ export class ArtifactRegistry {
   }
 
   private async persist() {
-    if (!this.storePath) return;
-    await mkdir(path.dirname(this.storePath), { recursive: true });
-    const temporary = `${this.storePath}.${randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify({ version: 2, items: [...this.items.values()] }), { encoding: 'utf8', mode: 0o600 });
-    await rename(temporary, this.storePath);
+    const target = this.storePath;
+    if (!target) return;
+    const write = this.pendingWrite.then(async () => {
+      await mkdir(path.dirname(target), { recursive: true });
+      const temporary = `${target}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify({ version: 2, items: [...this.items.values()] }), { encoding: 'utf8', mode: 0o600 });
+        await rename(temporary, target);
+      } catch (error) {
+        await unlink(temporary).catch(() => undefined);
+        throw error;
+      }
+    });
+    this.pendingWrite = write.catch(() => undefined);
+    await write;
   }
 }
 

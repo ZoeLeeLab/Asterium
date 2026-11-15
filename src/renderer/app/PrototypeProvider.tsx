@@ -1,4 +1,6 @@
 import type { ContextHandoff } from '../../shared/contextHandoff';
+import type { ArtifactInfo } from '../../shared/desktopBridge';
+import { latestDeliveriesBySource, updateDeliveryInfo } from './conversationArtifacts';
 import { useAppearance } from './useAppearance';
 import { clearAttachmentDraft } from './attachmentDrafts';
 import type { AppearanceSettings, AppearanceUpdate } from './appearance';
@@ -435,7 +437,7 @@ function applyAgentEventToConversation(conversation: Conversation, event: Partne
       message.toolEvents!.push({ id: event.artifactId, label: `产出文件：${event.name}`, state: 'success' });
       message.timeline = appendTimeline(message, { id: event.eventId, sequence: event.sequence, kind: 'file', artifactId: event.artifactId, ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}), name: event.name, summary: `产出文件：${event.name}`, state: 'success', mediaType: event.mediaType, sizeBytes: event.sizeBytes, changeKind: event.changeKind });
       const artifact = { id: event.artifactId, name: event.name, artifactRef: event.artifactRef, mediaType: event.mediaType, sizeBytes: event.sizeBytes, createdAt: event.occurredAt, runId: event.runId, sourceKind: event.sourceKind, registrationMethod: event.registrationMethod, availability: event.availability, cached: event.cached, localSourceKey: event.localSourceKey };
-      next = { ...next, artifacts: [...(next.artifacts ?? []), artifact] };
+      next = { ...next, artifacts: latestDeliveriesBySource([...(next.artifacts ?? []), artifact]) };
     }
     if (event.type === 'authorization.requested') message.timeline = appendTimeline(message, { id: event.eventId, sequence: event.sequence, kind: 'authorization', authorizationId: event.authorizationId, ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}), summary: event.summary, detail: event.targets.join('\n'), action: event.action, risk: event.risk, state: 'running', purpose: event.purpose });
     if (event.type === 'authorization.resolved') message.timeline = appendTimeline(message, { id: event.eventId, sequence: event.sequence, kind: 'authorization', authorizationId: event.authorizationId, summary: event.extensionTrustGranted ? '已允许并持续信任此扩展' : event.decision === 'allow_once' ? '已允许本次操作' : '已拒绝本次操作', decision: event.decision, extensionTrustGranted: event.extensionTrustGranted, state: event.decision === 'allow_once' ? 'success' : 'failure' });
@@ -990,17 +992,33 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
           return { ...project, files };
         }),
       };
-    case 'addConversationArtifact':
+    case 'refreshConversationArtifacts': {
+      const previous = state.conversations.find((conversation) => conversation.id === action.conversationId)?.artifacts;
+      if (!previous?.length) return state;
+      const artifacts = previous.flatMap((artifact) => {
+        const info = action.inspections.get(artifact.artifactRef);
+        if (info === undefined) return [artifact];
+        if (info === null) return [];
+        return [updateDeliveryInfo(artifact, info)];
+      });
+      if (artifacts.length === previous.length && artifacts.every((artifact, index) => artifact === previous[index])) return state;
       return updateConversation(state, action.conversationId, (conversation) => ({
-        ...conversation,
-        artifacts: [...(conversation.artifacts ?? []).filter((item) => item.id !== action.artifact.id), action.artifact],
-        updatedAt: new Date().toISOString(),
+        ...conversation, artifacts,
       }));
+    }
+    case 'replaceConversationArtifacts': {
+      const current = state.conversations.find((conversation) => conversation.id === action.conversationId);
+      if (!current || current.artifacts !== action.previous) return state;
+      const previous = current.artifacts ?? [];
+      const byRef = new Map(previous.map(artifact => [artifact.artifactRef, artifact]));
+      const artifacts = action.latest.map(info => updateDeliveryInfo(byRef.get(info.id), info));
+      if (artifacts.length === previous.length && artifacts.every((artifact, index) => artifact === previous[index])) return state;
+      return updateConversation(state, action.conversationId, (conversation) => ({ ...conversation, artifacts }));
+    }
     case 'removeConversationArtifact':
       return updateConversation(state, action.conversationId, (conversation) => ({
         ...conversation,
         artifacts: (conversation.artifacts ?? []).filter((item) => item.id !== action.artifactId && item.artifactRef !== action.artifactId),
-        updatedAt: new Date().toISOString(),
       }));
     case 'sendStudioMessage':
       return {
@@ -1263,7 +1281,8 @@ interface PrototypeContextValue {
   sendChatMessage: (conversationId: string, content: string, attachments?: MessageAttachment[], messageId?: string, workspaceDecision?: WorkspaceSwitchDecision, quote?: MessageQuote, contextHandoff?: ContextHandoff) => Promise<boolean>;
   retryCodexMessage: (conversationId: string, messageId: string) => Promise<boolean>;
   sendChatGuidance: (conversationId: string, content: string, expectedRunId: RunId, quote?: MessageQuote, clientMessageId?: string) => Promise<'accepted' | 'deferred' | false>;
-  addConversationArtifact: (conversationId: string, artifact: ConversationArtifact) => void;
+  refreshConversationArtifacts: (conversationId: string, inspections: ReadonlyMap<string, ArtifactInfo | null>) => void;
+  replaceConversationArtifacts: (conversationId: string, previous: ConversationArtifact[] | undefined, latest: ArtifactInfo[]) => void;
   removeConversationArtifact: (conversationId: string, artifactId: string) => void;
   regenerateChatTurn: (conversationId: string, content?: string) => void;
   cancelChatRun: (conversationId: string) => void;
@@ -1368,6 +1387,12 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   const submittingChatRef = useRef(new Set<string>());
   const chatHistory = useSingleChatHistory(prototypeReducer);
   const { state, dispatch } = chatHistory;
+  const refreshConversationArtifacts = useCallback((conversationId: string, inspections: ReadonlyMap<string, ArtifactInfo | null>) => {
+    dispatch({ type: 'refreshConversationArtifacts', conversationId, inspections });
+  }, [dispatch]);
+  const replaceConversationArtifacts = useCallback((conversationId: string, previous: ConversationArtifact[] | undefined, latest: ArtifactInfo[]) => {
+    dispatch({ type: 'replaceConversationArtifacts', conversationId, previous, latest });
+  }, [dispatch]);
   const { appearanceError, appearance, updateAppearance, theme, setTheme, toggleTheme } = useAppearance();
   const [studioRooms, setStudioRooms] = useState<Record<string, StudioRoomSnapshot>>({});
   const [studioInteractions, setStudioInteractions] = useState<Record<string, StudioInteraction>>({});
@@ -2348,7 +2373,8 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    addConversationArtifact: (conversationId, artifact) => dispatch({ type: 'addConversationArtifact', conversationId, artifact }),
+    refreshConversationArtifacts,
+    replaceConversationArtifacts,
     removeConversationArtifact: (conversationId, artifactId) => dispatch({ type: 'removeConversationArtifact', conversationId, artifactId }),
     cancelChatRun: (conversationId) => {
       const conversation = state.conversations.find((item) => item.id === conversationId);
@@ -2546,7 +2572,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
       });
     },
     addProjectMember: (projectId, partnerId) => dispatch({ type: 'addProjectMember', projectId, partnerId }),
-  }), [chatHistory.needsRecent, chatHistory.selectedPage, historyPending, submitChatMessage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, dispatch, refreshProfiles, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
+  }), [chatHistory.needsRecent, chatHistory.selectedPage, historyPending, submitChatMessage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, dispatch, refreshProfiles, refreshConversationArtifacts, replaceConversationArtifacts, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
   return <PrototypeContext.Provider value={value}>
     {conversationAuthorityReady ? children : null}

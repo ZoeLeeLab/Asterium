@@ -13,6 +13,45 @@ afterEach(async () => {
 });
 
 describe('ArtifactRegistry', () => {
+  it('projects one local path after 120 changes and still resolves its original delivery after restart', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-artifact-latest-'));
+    temporaryDirectories.push(root);
+    const file = path.join(root, 'result.md');
+    const store = path.join(root, 'artifacts.json');
+    const registry = new ArtifactRegistry(store);
+    const contents = (revision: number) => '# 合成交付\n' + 'x'.repeat(revision);
+    for (let revision = 1; revision <= 120; revision += 1) {
+      await writeFile(file, contents(revision));
+      await registry.register({ kind: 'local_path', path: file }, {
+        id: 'delivery-' + revision, conversationId: 'chat-a', runId: 'fixture-run-' + revision,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, revision)).toISOString(), method: 'deliver_tool',
+      });
+    }
+    await Promise.all(['chat-b', 'chat-c'].map(conversationId => registry.register(
+      { kind: 'local_path', path: file },
+      { id: 'delivery-' + conversationId, conversationId, runId: 'fixture-run-120', method: 'deliver_tool' },
+    )));
+    // A further edit updates the current state even before a new delivery is registered.
+    await writeFile(file, contents(121));
+    const again = await registry.register({ kind: 'local_path', path: file }, {
+      id: 'same-run-repeat', conversationId: 'chat-a', runId: 'fixture-run-120', method: 'deliver_tool',
+    });
+    expect(again).toMatchObject({ id: 'delivery-120', sizeBytes: Buffer.byteLength(contents(121)) });
+    const persisted = await readFile(store);
+    const restarted = new ArtifactRegistry(store);
+    const [latest, old, link] = await Promise.all([
+      restarted.listLatestConversation('chat-a'),
+      restarted.read('delivery-1'),
+      restarted.resolveConversationLink('chat-a', pathToFileURL(file).href),
+    ]);
+    expect(latest).toEqual([expect.objectContaining({ id: 'delivery-120', sizeBytes: Buffer.byteLength(contents(121)) })]);
+    expect(old).toMatchObject({ info: { id: 'delivery-1' }, text: contents(121) });
+    expect(link).toMatchObject({ action: 'preview', artifact: { id: 'delivery-120' } });
+    expect(await restarted.listLatestConversation('chat-b')).toEqual([expect.objectContaining({ id: 'delivery-chat-b' })]);
+    expect(await restarted.listLatestConversation('chat-c')).toEqual([expect.objectContaining({ id: 'delivery-chat-c' })]);
+    expect(await readFile(store)).toEqual(persisted);
+  });
+
   it('resolves only exact local deliveries from the requested conversation', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-artifact-links-'));
     temporaryDirectories.push(root);

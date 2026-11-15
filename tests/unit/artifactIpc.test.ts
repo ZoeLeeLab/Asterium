@@ -45,6 +45,7 @@ type Handler = (event: { sender: typeof sender }, value?: unknown) => unknown;
 const handlers = new Map<string, Handler>();
 const artifactChannels = {
   artifactInspect: 'inspect',
+  artifactListLatestConversation: 'list-latest-conversation',
   artifactResolveConversationLink: 'resolve-conversation-link',
   artifactRead: 'read',
   artifactOpen: 'open',
@@ -108,7 +109,7 @@ afterEach(async () => {
 });
 
 describe('artifact IPC', () => {
-  it('registers exactly the original channels and checks the sender before validation', async () => {
+  it('registers each artifact channel once and checks the sender before validation', async () => {
     const channels = Object.entries(artifactChannels).map(([key, suffix]) => {
       const channel = DESKTOP_IPC[key as keyof typeof artifactChannels];
       expect(channel).toBe(`asterium:artifact:${suffix}`);
@@ -119,6 +120,7 @@ describe('artifact IPC', () => {
       await expect(invoke(channel, undefined, { send: vi.fn() })).rejects.toThrow('INVALID_IPC_SENDER');
       if (channel === DESKTOP_IPC.artifactCacheStats || channel === DESKTOP_IPC.artifactClearCache) continue;
       const error = channel === DESKTOP_IPC.artifactResolveConversationLink ? 'INVALID_ARTIFACT_LINK'
+        : channel === DESKTOP_IPC.artifactListLatestConversation ? 'INVALID_ARTIFACT_CONVERSATION'
         : channel === DESKTOP_IPC.artifactSaveToProject ? 'INVALID_PROJECT_ARTIFACT_REQUEST' : 'INVALID_ARTIFACT_ID';
       await expect(invoke(channel, undefined)).rejects.toThrow(error);
     }
@@ -126,6 +128,14 @@ describe('artifact IPC', () => {
       await expect(invoke(DESKTOP_IPC.artifactResolveConversationLink, value)).rejects.toThrow('INVALID_ARTIFACT_LINK');
     }
     await expect(invoke(DESKTOP_IPC.artifactSaveToProject, { artifactId: id, projectId: ' ' })).rejects.toThrow('INVALID_PROJECT_ARTIFACT_REQUEST');
+  });
+
+  it('lists only the requested conversation and keeps older artifact IDs readable', async () => {
+    await expect(invoke(DESKTOP_IPC.artifactListLatestConversation, conversationId)).resolves.toEqual([
+      expect.objectContaining({ id, name: '交付样例.md' }),
+    ]);
+    await expect(invoke(DESKTOP_IPC.artifactListLatestConversation, 'unrelated-chat')).resolves.toEqual([]);
+    await expect(invoke(DESKTOP_IPC.artifactRead, id)).resolves.toMatchObject({ text: content });
   });
 
   it('inspects, reads and resolves the exact delivered file only within its conversation', async () => {

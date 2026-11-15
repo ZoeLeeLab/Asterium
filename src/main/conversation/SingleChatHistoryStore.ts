@@ -6,6 +6,7 @@ import type { Conversation, Message } from '../../renderer/types/domain';
 import type { SingleChatHistoryChange, SingleChatHistorySnapshot, SingleChatHistoryWrite, SingleChatMetadata, SingleChatProfile, SingleChatToolOutputRequest } from '../../shared/singleChatHistory';
 import { AtomicJsonStore } from '../storage/AtomicJsonStore';
 import type { SingleChatHistoryPage, SingleChatPageRequest, SingleChatSearchRequest, SingleChatSearchResult } from '../../shared/singleChatHistory';
+import { withoutDeliveryState } from '../../shared/singleChatHistory';
 import { SingleChatHistoryIndex } from './SingleChatHistoryIndex';
 import { readToolOutput, removeToolOutputs, separateToolOutputs, storeToolOutput, TOOL_OUTPUT_ID } from './SingleChatToolOutputs';
 
@@ -85,7 +86,7 @@ export class SingleChatHistoryStore {
           const target = eventPath(stage, metadata.id);
           await mkdir(path.dirname(target), { recursive: true });
           const events: HistoryEvent[] = [
-            { type: 'conversation.imported', conversation: metadata },
+            { type: 'conversation.imported', conversation: withoutDeliveryState(metadata) },
             ...(await separateToolOutputs(path.dirname(target), messages)).map((message): HistoryEvent => ({ type: 'message.imported', message })),
           ];
           const source = events.map(event => JSON.stringify(event)).join('\n') + '\n';
@@ -365,7 +366,7 @@ export class SingleChatHistoryStore {
       if (!metadata) throw new Error('SINGLE_CHAT_HISTORY_UNKNOWN_CONVERSATION');
       const target = eventPath(this.root, conversationId);
       await mkdir(path.dirname(target), { recursive: true });
-      const source = JSON.stringify({ type: 'conversation.imported', conversation: metadata }) + '\n'
+      const source = JSON.stringify({ type: 'conversation.imported', conversation: withoutDeliveryState(metadata) }) + '\n'
         + JSON.stringify({ type: 'checkpoint', upsert: await separateToolOutputs(path.dirname(target), upsert), remove, busy, order }) + '\n';
       const verified = replay(Buffer.from(source), conversationId);
       await writeFile(target, source, { flush: true, mode: 0o600 });
@@ -385,7 +386,8 @@ export class SingleChatHistoryStore {
 
   private async append(conversationId: string, log: LogTip, event: Extract<HistoryEvent, { type: 'checkpoint' }>) {
     const target = eventPath(this.root, conversationId);
-    event = { ...event, upsert: await separateToolOutputs(path.dirname(target), event.upsert) };
+    event = { ...event, upsert: await separateToolOutputs(path.dirname(target), event.upsert),
+      metadata: event.metadata && withoutDeliveryState(event.metadata) };
     const serialized = JSON.stringify(event) + '\n';
     const previousFingerprint = this.indexedGeneration ? await fingerprint(target) : undefined;
     try {

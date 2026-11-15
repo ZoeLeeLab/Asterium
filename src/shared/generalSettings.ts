@@ -37,11 +37,13 @@ export interface AsteriumGeneralSettingsApi {
 
 export interface StorageLocations {
   userDataDirectory: string;
+  canChooseUserDataDirectory?: boolean;
   defaultProjectRoot: string;
   customized: boolean;
 }
 export interface AsteriumStorageApi {
   get(): Promise<StorageLocations>;
+  chooseUserDataDirectory(): Promise<string | null>;
   chooseProjectRoot(): Promise<StorageLocations | null>;
   resetProjectRoot(): Promise<StorageLocations>;
   openProjectRoot(): Promise<void>;

@@ -12,6 +12,7 @@ import { DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 
 contextBridge.exposeInMainWorld('asteriumStorage', {
   get: () => ipcRenderer.invoke(AGENT_IPC.storageGet),
+  chooseUserDataDirectory: () => ipcRenderer.invoke(AGENT_IPC.storageChooseUserDataDirectory),
   chooseProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageChooseProjectRoot),
   resetProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageResetProjectRoot),
   openProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageOpenProjectRoot),
@@ -164,6 +165,7 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
 
 contextBridge.exposeInMainWorld('asteriumArtifacts', {
   inspect: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactInspect, artifactId),
+  listLatestConversation: (conversationId) => ipcRenderer.invoke(AGENT_IPC.artifactListLatestConversation, conversationId),
   resolveConversationLink: (conversationId: string, href: string) => ipcRenderer.invoke(AGENT_IPC.artifactResolveConversationLink, { conversationId, href }),
   read: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactRead, artifactId),
   open: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpen, artifactId),

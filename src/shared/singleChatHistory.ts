@@ -3,6 +3,13 @@ import type { Conversation, Message, PrototypeState } from '../renderer/types/do
 export type SingleChatMetadata = Omit<Conversation, 'messages'>;
 export type SingleChatProfile = Omit<PrototypeState, 'conversations'>;
 
+export function withoutDeliveryState(metadata: SingleChatMetadata): SingleChatMetadata {
+  if (!Object.hasOwn(metadata, 'artifacts')) return metadata;
+  const saved = { ...metadata };
+  delete saved.artifacts;
+  return saved;
+}
+
 export interface SingleChatHistorySnapshot {
   generation: string;
   profile: SingleChatProfile;

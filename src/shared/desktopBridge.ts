@@ -209,6 +209,7 @@ export interface ArtifactReadResult {
 }
 
 export interface AsteriumArtifactsApi {
+  listLatestConversation?: (conversationId: string) => Promise<ArtifactInfo[]>;
   inspect: (artifactId: string) => Promise<ArtifactInfo | null>;
   resolveConversationLink: (conversationId: string, href: string) => Promise<{ artifact: ArtifactInfo; action: 'preview' | 'reveal' } | null>;
   read: (artifactId: string) => Promise<ArtifactReadResult>;

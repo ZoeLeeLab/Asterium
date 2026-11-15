@@ -18,6 +18,12 @@ interface ArtifactIpcDependencies {
 export function registerArtifactIpc(ipcMain: Pick<IpcMain, 'handle'>, {
   requireSender, artifacts, saveArtifactToProject, projectFileDeletions, publishProjectFiles,
 }: ArtifactIpcDependencies) {
+  ipcMain.handle(AGENT_IPC.artifactListLatestConversation, async (event, conversationId: unknown) => {
+    requireSender(event);
+    if (typeof conversationId !== 'string' || !conversationId.trim() || conversationId.length > 512) throw new Error('INVALID_ARTIFACT_CONVERSATION');
+    return artifacts.listLatestConversation(conversationId);
+  });
+
   ipcMain.handle(AGENT_IPC.artifactInspect, async (event, artifactId: unknown) => {
     requireSender(event);
     if (typeof artifactId !== 'string') throw new Error('INVALID_ARTIFACT_ID');

@@ -25,6 +25,38 @@ function logPath(profile: string, id: string) {
 }
 
 describe('single chat migration activation', () => {
+  it('reads legacy delivery data and keeps only message references in newly written history', async () => {
+    const profile = path.join(autoTestOutput(), 'delivery-references');
+    const store = new SingleChatHistoryStore(profile);
+    const oldMessage: Message = {
+      ...message('first'),
+      timeline: [{ id: 'file', sequence: 1, kind: 'file', artifactId: 'older-delivery', name: 'result.md', summary: '合成交付', state: 'success' }],
+    };
+    const legacy = chat('one', [oldMessage]);
+    legacy.artifacts = [{ id: 'older-delivery', artifactRef: 'older-delivery', name: 'result.md', createdAt: time }];
+    const manifest = await store.initialize(async () => ({ conversations: [legacy], deletedConversationIds: [] }));
+    const target = logPath(profile, 'one');
+    const original = await readFile(target, 'utf8');
+    expect(original).not.toContain('"artifacts"');
+
+    const [header, ...lines] = original.split('\n');
+    const decoded = JSON.parse(header);
+    decoded.conversation.artifacts = legacy.artifacts;
+    const legacyLog = [JSON.stringify(decoded), ...lines].join('\n');
+    await writeFile(target, legacyLog);
+    const reopened = new SingleChatHistoryStore(profile);
+    expect((await reopened.readConversation('one'))?.conversation.artifacts).toEqual(legacy.artifacts);
+    expect(await readFile(target, 'utf8')).toBe(legacyLog);
+    const { messages, ...metadata } = legacy;
+    await reopened.write({ generation: manifest.generation, changes: [{
+      conversationId: 'one', metadata, upsert: [messages[0]], remove: [],
+    }] });
+    const saved = await readFile(target, 'utf8');
+    expect(saved.startsWith(legacyLog)).toBe(true);
+    expect(saved.slice(legacyLog.length)).not.toContain('"artifacts"');
+    expect((await new SingleChatHistoryStore(profile).readConversation('one'))?.conversation.messages[0].timeline).toEqual(oldMessage.timeline);
+  });
+
   it('retains identities and ignores stale legacy imports after activation, including after restart', async () => {
     const profile = path.join(autoTestOutput(), 'activation');
     const store = new SingleChatHistoryStore(profile);

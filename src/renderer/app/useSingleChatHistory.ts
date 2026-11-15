@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { AsteriumConversationsApi } from '../../shared/desktopBridge';
 import type { SingleChatHistoryChange, SingleChatHistoryPage, SingleChatPageBounds, SingleChatProfile } from '../../shared/singleChatHistory';
+import { withoutDeliveryState } from '../../shared/singleChatHistory';
 import type { Conversation, Message, PrototypeAction, PrototypeState } from '../types/domain';
 import { createInitialState } from '../data/initialState';
 import {
@@ -121,7 +122,7 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
     if (!generation || writeFailed) return false;
     try {
       await bridge.writeHistory({ generation, changes: [{
-        conversationId: conversation.id, metadata: prepareSingleChatMetadata(conversation), metadataOnCreateOnly: true,
+        conversationId: conversation.id, metadata: withoutDeliveryState(prepareSingleChatMetadata(conversation)), metadataOnCreateOnly: true,
         upsert: [prepareSingleChatMessage(message)], remove: [], busy: Boolean(message.clientMessageId),
       }] });
       setSendSaveFailed(false);
@@ -168,6 +169,7 @@ const checkpointEvents = new Set<string>([
 
 export function collectHistoryChanges(previous: PrototypeState, next: PrototypeState, action: PrototypeAction): SingleChatHistoryChange[] {
   if (previous.conversations === next.conversations) return [];
+  if (action.type === 'refreshConversationArtifacts' || action.type === 'replaceConversationArtifacts' || action.type === 'removeConversationArtifact') return [];
   if ((action.type === 'agentEvent' || action.type === 'automationEvent') && !checkpointEvents.has(action.event.type)) return [];
   const before = new Map(previous.conversations.map(conversation => [conversation.id, conversation]));
   const changes: SingleChatHistoryChange[] = [];
@@ -202,7 +204,7 @@ export function collectHistoryChanges(previous: PrototypeState, next: PrototypeS
       }
     }
     changes.push({
-      conversationId: conversation.id, metadata: prepareSingleChatMetadata(conversation),
+      conversationId: conversation.id, metadata: withoutDeliveryState(prepareSingleChatMetadata(conversation)),
       metadataOnCreateOnly: action.type === 'createConversation' || action.type === 'rebindPartnerRoot',
       upsert, remove, order, busy: Boolean(conversation.activeRun || conversation.awaitingFirstResponse),
     });

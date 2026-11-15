@@ -1,6 +1,7 @@
 export const DESKTOP_IPC = {
   environmentGet: 'asterium:environment:get',
   storageGet: 'asterium:storage:get',
+  storageChooseUserDataDirectory: 'asterium:storage:choose-user-data-directory',
   storageChooseProjectRoot: 'asterium:storage:choose-project-root',
   storageResetProjectRoot: 'asterium:storage:reset-project-root',
   storageOpenProjectRoot: 'asterium:storage:open-project-root',
@@ -104,6 +105,7 @@ export const DESKTOP_IPC = {
   getExistingThreadFileCapabilities: 'asterium:agent:existing-thread-file-capabilities',
   sendExistingThreadMessage: 'asterium:agent:send-existing-thread-message',
   artifactInspect: 'asterium:artifact:inspect',
+  artifactListLatestConversation: 'asterium:artifact:list-latest-conversation',
   artifactResolveConversationLink: 'asterium:artifact:resolve-conversation-link',
   artifactRead: 'asterium:artifact:read',
   artifactOpen: 'asterium:artifact:open',
@@ -251,7 +253,7 @@ export type DesktopIpcChannel = typeof DESKTOP_IPC[keyof typeof DESKTOP_IPC];
 
 const DESKTOP_INVOKE_KEYS = [
   'environmentGet',
-  'storageGet', 'storageChooseProjectRoot', 'storageResetProjectRoot', 'storageOpenProjectRoot',
+  'storageGet', 'storageChooseUserDataDirectory', 'storageChooseProjectRoot', 'storageResetProjectRoot', 'storageOpenProjectRoot',
   'updatesGet', 'updatesCheck', 'updatesDownload', 'updatesCancel', 'updatesInstall', 'updatesOpenReleases',
   'desktopNavigationTake',
   'generalSettingsGet', 'generalSettingsUpdate',
@@ -270,7 +272,7 @@ const DESKTOP_INVOKE_KEYS = [
   'apiCredentialStatus', 'deleteApiCredential', 'saveWebSearchCredential', 'webSearchCredentialStatus',
   'deleteWebSearchCredential', 'deleteApiSession', 'sendApiMessage', 'listApiModels', 'saveBridgeCredential',
   'bridgeCredentialStatus', 'deleteBridgeCredential', 'testExistingThread', 'watchExistingThread',
-  'stopExistingThreadWatch', 'getExistingThreadFileCapabilities', 'sendExistingThreadMessage', 'artifactInspect', 'artifactResolveConversationLink', 'artifactRead', 'artifactOpen',
+  'stopExistingThreadWatch', 'getExistingThreadFileCapabilities', 'sendExistingThreadMessage', 'artifactInspect', 'artifactListLatestConversation', 'artifactResolveConversationLink', 'artifactRead', 'artifactOpen',
   'artifactOpenInBrowser', 'artifactReveal', 'artifactCopyPath', 'artifactSaveAs', 'artifactSaveToProject', 'artifactInspectDeletion', 'artifactDelete', 'artifactCacheStats',
   'artifactClearCache', 'attachmentChoose', 'attachmentStageClipboardImage', 'attachmentStageFiles', 'attachmentPasteFiles', 'attachmentDiscard', 'attachmentCommit', 'attachmentList',
   'attachmentInspect', 'attachmentRead', 'attachmentOpen', 'attachmentReveal', 'attachmentCopyPath',
