@@ -23,12 +23,22 @@ vi.mock('electron', () => ({
   shell: {},
 }));
 
-it('reads saved partner workspaces through the existing sender-checked IPC and leaves the grants intact', async () => {
+const getChannel = 'asterium:agent:get-partner-workspace';
+const syncChannel = 'asterium:agent:sync-partner-workspace';
+const changedChannel = 'asterium:agent:partner-workspace-changed';
+
+async function withWorkspaceIpc(run: (fixture: {
+  root: string;
+  userData: string;
+  invoke: (channel: string, value: unknown, caller?: object) => Promise<unknown>;
+  setWindowAvailable: (available: boolean) => void;
+  workspaceChanges: () => unknown[][];
+}) => Promise<void>) {
   const { registerAgentIpc } = await import('../../src/main/agentIpc');
   const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-partner-workspace-ipc-'));
   const userData = path.join(root, 'profile');
   electron.userData = userData;
-  const sender = { send: vi.fn() };
+  const sender = { send: vi.fn<(channel: string, payload: unknown) => void>() };
   const mainWindow = { webContents: sender, isDestroyed: () => false } as unknown as BrowserWindow;
   let window: BrowserWindow | null = mainWindow;
   type Handler = (event: { sender: object }, value: unknown) => Promise<unknown>;
@@ -40,19 +50,57 @@ it('reads saved partner workspaces through the existing sender-checked IPC and l
     },
     removeHandler: (name: string) => handlers.delete(name),
   } as unknown as IpcMain;
-  const channel = 'asterium:agent:get-partner-workspace';
+  const invoke = (channel: string, value: unknown, caller: object = sender) => {
+    const handler = handlers.get(channel);
+    if (!handler) throw new Error(`Missing IPC channel: ${channel}`);
+    return handler({ sender: caller }, value);
+  };
 
   try {
+    await mkdir(userData);
+    const dispose = registerAgentIpc(ipcMain, () => window, { environment: {
+      profile: 'autotest', label: 'Fixture', userDataDirectory: userData,
+      projectsDirectory: path.join(root, 'projects'), temporaryDirectory: root,
+      appUserModelId: 'Asterium.Test', allowStartup: false, allowUpdates: false,
+      restoreBackgroundServices: false, mcpPort: 0,
+    } });
+    try {
+      await run({
+        root, userData, invoke,
+        setWindowAvailable: available => { window = available ? mainWindow : null; },
+        workspaceChanges: () => sender.send.mock.calls.filter(([name]) => name === changedChannel),
+      });
+    } finally {
+      await dispose();
+    }
+    expect(handlers.has(getChannel)).toBe(false);
+    expect(handlers.has(syncChannel)).toBe(false);
+  } finally {
+    await testRm(root, { recursive: true, force: true });
+  }
+}
+
+function workspaceFiles(userData: string) {
+  const grantFile = path.join(userData, 'workspace-grants.v1.json');
+  const workspaceFile = path.join(userData, 'conversation-workspaces.v1.json');
+  const grants = new WorkspaceGrantStore(grantFile);
+  const store = new PartnerWorkspaceStore(workspaceFile, grants);
+  const snapshot = () => Promise.all([grantFile, workspaceFile].map(async file => ({
+    bytes: await readFile(file),
+    mtime: (await stat(file, { bigint: true })).mtimeNs,
+  })));
+  return { grants, store, snapshot };
+}
+
+it('reads saved partner workspaces through the existing sender-checked IPC and leaves the grants intact', async () => {
+  await withWorkspaceIpc(async ({ root, userData, invoke, setWindowAvailable }) => {
     const cwd = path.join(root, 'working-directory');
     const manual = path.join(root, 'manual-directory');
     const unavailable = path.join(root, 'unavailable-directory');
-    await Promise.all([userData, cwd, manual, unavailable].map(directory => mkdir(directory)));
-    const grantFile = path.join(userData, 'workspace-grants.v1.json');
-    const workspaceFile = path.join(userData, 'conversation-workspaces.v1.json');
-    const grants = new WorkspaceGrantStore(grantFile);
+    await Promise.all([cwd, manual, unavailable].map(directory => mkdir(directory)));
+    const { grants, store, snapshot } = workspaceFiles(userData);
     const [cwdGrant, manualGrant, unavailableGrant] = await Promise.all([cwd, manual, unavailable].map(directory => grants.add(directory)));
     const partnerId = 'fixture-partner';
-    const store = new PartnerWorkspaceStore(workspaceFile, grants);
     await store.ensure(partnerId, cwdGrant.grantId, [manualGrant.grantId, unavailableGrant.grantId]);
     await rename(unavailable, path.join(root, 'moved-directory'));
     const expected = {
@@ -62,44 +110,74 @@ it('reads saved partner workspaces through the existing sender-checked IPC and l
       version: 1,
       unavailableGrantIds: [unavailableGrant.grantId],
     };
-    const files = [grantFile, workspaceFile];
-    const snapshot = () => Promise.all(files.map(async file => ({
-      bytes: await readFile(file),
-      mtime: (await stat(file, { bigint: true })).mtimeNs,
-    })));
     const before = await snapshot();
 
-    const dispose = registerAgentIpc(ipcMain, () => window, { environment: {
-      profile: 'autotest', label: 'Fixture', userDataDirectory: userData,
-      projectsDirectory: path.join(root, 'projects'), temporaryDirectory: root,
-      appUserModelId: 'Asterium.Test', allowStartup: false, allowUpdates: false,
-      restoreBackgroundServices: false, mcpPort: 0,
-    } });
+    await expect(invoke(getChannel, '', {})).rejects.toThrow('INVALID_IPC_SENDER');
+    setWindowAvailable(false);
     try {
-      const handler = handlers.get(channel);
-      if (!handler) throw new Error(`Missing IPC channel: ${channel}`);
-      await expect(handler({ sender: {} }, '')).rejects.toThrow('INVALID_IPC_SENDER');
-      window = null;
-      try {
-        await expect(handler({ sender }, partnerId)).rejects.toThrow('INVALID_IPC_SENDER');
-      } finally {
-        window = mainWindow;
-      }
-      for (const invalid of [undefined, '', 1, { partnerId }]) {
-        await expect(handler({ sender }, invalid)).rejects.toThrow('INVALID_PARTNER_ID');
-      }
-      for (const unconfigured of ['unconfigured-fixture', ' ']) {
-        await expect(handler({ sender }, unconfigured)).resolves.toEqual({
-          partnerId: unconfigured, workspaces: [], version: 0, unavailableGrantIds: [],
-        });
-      }
-      await expect(handler({ sender }, partnerId)).resolves.toEqual(expected);
-      expect(await snapshot()).toEqual(before);
+      await expect(invoke(getChannel, partnerId)).rejects.toThrow('INVALID_IPC_SENDER');
     } finally {
-      await dispose();
+      setWindowAvailable(true);
     }
-    expect(handlers.has(channel)).toBe(false);
-  } finally {
-    await testRm(root, { recursive: true, force: true });
-  }
+    for (const invalid of [undefined, '', 1, { partnerId }]) {
+      await expect(invoke(getChannel, invalid)).rejects.toThrow('INVALID_PARTNER_ID');
+    }
+    for (const unconfigured of ['unconfigured-fixture', ' ']) {
+      await expect(invoke(getChannel, unconfigured)).resolves.toEqual({
+        partnerId: unconfigured, workspaces: [], version: 0, unavailableGrantIds: [],
+      });
+    }
+    await expect(invoke(getChannel, partnerId)).resolves.toEqual(expected);
+    expect(await snapshot()).toEqual(before);
+  });
+});
+
+it('syncs manual grants with version checks, retains project grants and publishes the saved workspace', async () => {
+  await withWorkspaceIpc(async ({ root, userData, invoke, workspaceChanges }) => {
+    const cwd = path.join(root, 'working-directory');
+    const manual = path.join(root, 'manual-directory');
+    const project = path.join(root, 'project-directory');
+    const protectedDirectory = path.join(userData, 'AsteriumData');
+    await Promise.all([cwd, manual, project].map(directory => mkdir(directory)));
+    await mkdir(protectedDirectory, { recursive: true });
+    const { grants, store, snapshot } = workspaceFiles(userData);
+    const [cwdGrant, manualGrant, protectedGrant] = await Promise.all([cwd, manual, protectedDirectory].map(directory => grants.add(directory)));
+    const partnerId = 'fixture-partner';
+    const projectId = 'fixture-project';
+    await store.ensure(partnerId, cwdGrant.grantId, []);
+    const [initial] = await store.reconcileProjects([{ projectId, rootPath: project, partnerIds: [partnerId] }]);
+    const before = await snapshot();
+    const request = {
+      partnerId,
+      cwdGrantId: cwdGrant.grantId,
+      workspaceGrantIds: [manualGrant.grantId, cwdGrant.grantId, manualGrant.grantId],
+    };
+
+    await expect(invoke(syncChannel, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    for (const invalid of [null, { ...request, partnerId: '' }, { ...request, cwdGrantId: 1 },
+      { ...request, workspaceGrantIds: undefined }, { ...request, workspaceGrantIds: [false] }, { ...request, expectedVersion: 1.5 }]) {
+      await expect(invoke(syncChannel, invalid)).rejects.toThrow('INVALID_PARTNER_WORKSPACE_SYNC');
+    }
+    await expect(invoke(syncChannel, { ...request, cwdGrantId: protectedGrant.grantId })).rejects.toThrow('PROFILE_DATA_ACCESS_DENIED');
+    await expect(invoke(syncChannel, { ...request, expectedVersion: initial.version - 1 })).rejects.toThrow('PARTNER_WORKSPACE_VERSION_CONFLICT');
+    expect(await snapshot()).toEqual(before);
+    expect(workspaceChanges()).toEqual([]);
+
+    const updated = {
+      ...initial,
+      workspaces: [{ grantId: manualGrant.grantId, displayPath: manual, source: 'manual' }, ...initial.workspaces],
+      version: initial.version + 1,
+    };
+    await expect(invoke(syncChannel, { ...request, expectedVersion: initial.version })).resolves.toEqual(updated);
+    expect(workspaceChanges()).toEqual([[changedChannel, updated]]);
+    await expect(invoke(getChannel, partnerId)).resolves.toEqual(updated);
+
+    const cleared = {
+      partnerId, workspaces: initial.workspaces, version: updated.version + 1, unavailableGrantIds: [],
+    };
+    await expect(invoke(syncChannel, { partnerId, workspaceGrantIds: [] })).resolves.toEqual(cleared);
+    await expect(invoke(getChannel, partnerId)).resolves.toEqual(cleared);
+    expect(workspaceChanges()).toEqual([[changedChannel, updated], [changedChannel, cleared]]);
+    expect((await snapshot())[0]).toEqual(before[0]);
+  });
 });

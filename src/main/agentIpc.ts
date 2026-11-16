@@ -2411,16 +2411,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await mcpConnections.revalidateManagementWorkspaces();
   });
 
-  ipcMain.handle(AGENT_IPC.syncPartnerWorkspace, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId
-      || (value.cwdGrantId !== undefined && typeof value.cwdGrantId !== 'string')
-      || !Array.isArray(value.workspaceGrantIds)
-      || !value.workspaceGrantIds.every((item) => typeof item === 'string')
-      || (value.expectedVersion !== undefined && !Number.isSafeInteger(value.expectedVersion))) throw new Error('INVALID_PARTNER_WORKSPACE_SYNC');
-    return partnerWorkspaces.sync(value.partnerId, value.cwdGrantId as string | undefined, value.workspaceGrantIds as string[], value.expectedVersion as number | undefined);
-  });
-
   registerPartnerWorkspaceIpc(ipcMain, partnerWorkspaces, requireSender);
 
   registerApiCredentialIpc(ipcMain, credentials, apiConnections, requireSender);
