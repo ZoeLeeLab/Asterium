@@ -185,6 +185,7 @@ import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
+import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
@@ -2469,11 +2470,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return partnerWorkspaces.sync(value.partnerId, value.cwdGrantId as string | undefined, value.workspaceGrantIds as string[], value.expectedVersion as number | undefined);
   });
 
-  ipcMain.handle(AGENT_IPC.getPartnerWorkspace, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string' || !value) throw new Error('INVALID_PARTNER_ID');
-    return partnerWorkspaces.configuredState(value);
-  });
+  registerPartnerWorkspaceIpc(ipcMain, partnerWorkspaces, requireSender);
 
   registerApiCredentialIpc(ipcMain, credentials, apiConnections, requireSender);
 
