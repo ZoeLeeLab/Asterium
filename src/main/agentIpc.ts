@@ -161,6 +161,7 @@ import {
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import { registerApiConnectionsIpc } from './ipc/apiConnectionsIpc';
+import { registerApiConnectionProbeIpc } from './ipc/apiConnectionProbeIpc';
 import { registerApiModelListIpc } from './ipc/apiModelListIpc';
 import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
@@ -272,7 +273,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const host = new AdapterHost();
   const credentials = new CredentialStore(() => path.join(app.getPath('userData'), 'secure-credentials.v1.json'), safeStorage);
   const apiConnections = new ApiConnectionStore(() => path.join(app.getPath('userData'), 'api-connections.v1.json'));
-  const apiProbes = new Map<string, AbortController>();
   const bridgeCursors = new BridgeCursorStore(() => path.join(app.getPath('userData'), 'bridge-cursors.v1.json'));
   const workspaceGrants = new WorkspaceGrantStore(() => path.join(app.getPath('userData'), 'workspace-grants.v1.json'));
   const profileDataRoot = path.join(app.getPath('userData'), 'AsteriumData');
@@ -2426,30 +2426,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerApiCredentialIpc(ipcMain, credentials, apiConnections, requireSender);
 
   registerApiConnectionsIpc(ipcMain, apiConnections, credentials, requireSender);
-  ipcMain.handle(AGENT_IPC.apiConnectionsProbe, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.modelId !== 'string' || (value.tools !== undefined && typeof value.tools !== 'boolean')) throw new Error('INVALID_API_PROBE');
-    if (value.cancel === true) { apiProbes.get(value.modelId)?.abort(); return; }
-    if (apiProbes.has(value.modelId)) throw new Error('API_PROBE_BUSY');
-    const probeController = new AbortController(); apiProbes.set(value.modelId, probeController);
-    let probeTimer: ReturnType<typeof setTimeout> | undefined;
-    try {
-    const data = await apiConnections.snapshot(); const model = data.models.find(m => m.id === value.modelId); const service = data.services.find(s => s.id === model?.serviceId);
-    if (!model || !service) throw new Error('API_MODEL_NOT_FOUND');
-    const provider = service.legacyDeepSeek ? 'deepseek' : ({ chat_completions: 'openai', responses: 'responses', anthropic_messages: 'anthropic', gemini: 'gemini' } as const)[service.protocol];
-    const apiOptions = await configuredApiOptions({ provider, endpoint: service.endpoint, model: model.model, credentialRef: service.credentialRef, requestSettings: service.settings, modelSettings: model.settings });
-    if (service.settings?.roundTimeoutMs) probeTimer = setTimeout(() => probeController.abort(), service.settings.roundTimeoutMs);
-    let text = '', toolCall = false;
-    try {
-      const adapter = apiProviders.require(provider).createAdapter({ ...apiOptions, endpoint: service.endpoint, model: model.model });
-      for await (const item of adapter.stream({ messages: [{ role: 'user', content: value.tools ? 'Call asterium_connection_probe once with value "ok". Do not call any other tool.' : 'This is a connection test. Reply briefly: OK.' }], tools: value.tools ? [{ name: 'asterium_connection_probe', description: 'Harmless synthetic connection probe; no operations are executed.', parameters: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } }] : [], signal: probeController.signal })) {
-        if (item.type === 'text.delta') text = (text + item.text).slice(0, 2000);
-        if (item.type === 'tool.delta' && item.name === 'asterium_connection_probe') toolCall = true;
-      }
-      return { text, toolCall };
-    } catch { throw new Error('API_PROBE_FAILED'); }
-    } finally { if (probeTimer) clearTimeout(probeTimer); apiProbes.delete(value.modelId); }
-  });
+  const disposeApiConnectionProbe = registerApiConnectionProbeIpc(ipcMain, { apiConnections, apiProviders, configuredApiOptions }, requireSender);
 
   registerWebSearchCredentialIpc(ipcMain, credentials, BRAVE_SEARCH_CREDENTIAL_REF, requireSender);
 
@@ -3363,7 +3340,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await automationHandles.scheduler?.dispose();
     unsubscribeAutomationWriters();
     unsubscribeAutomations();
-    for (const controller of apiProbes.values()) controller.abort(); apiProbes.clear();
+    disposeApiConnectionProbe();
     await studioWakeControl.dispose();
     await studioMcpStartup;
     await studioMcpHost.dispose();
