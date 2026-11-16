@@ -15,9 +15,6 @@ import { AutomationService } from './automation/AutomationService';
 import { AutomationAgentTools } from './automation/AutomationAgentTools';
 import { AutomationConfirmations } from './automation/AutomationConfirmations';
 import type { AutomationTargetOption } from '../shared/automations';
-import { apiEndpoint, apiModelsEndpoint } from '../shared/apiEndpoints';
-import { apiHeaders } from './api/ApiRequestConfiguration';
-import { listApiSiteModels } from './api/listApiSiteModels';
 import { ProjectRunChangeRecorder } from './project/ProjectRunChangeRecorder';
 import { ProjectBrowserService } from './project/ProjectBrowserService';
 import { SessionProfileReloadService, profileReloadPrompt } from './runtime/SessionProfileReloadService';
@@ -164,6 +161,7 @@ import {
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import { registerApiConnectionsIpc } from './ipc/apiConnectionsIpc';
+import { registerApiModelListIpc } from './ipc/apiModelListIpc';
 import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
@@ -2705,25 +2703,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return withDelegationChatPriority(request.command.conversationId, () => startApiRuntime(request));
   });
 
-  ipcMain.handle(AGENT_IPC.listApiModels, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || !apiProviders.has(value.provider) || typeof value.endpoint !== 'string'
-      || (value.credentialRef !== undefined && typeof value.credentialRef !== 'string')
-      || (value.secret !== undefined && typeof value.secret !== 'string')) throw new Error('INVALID_API_MODEL_LIST_REQUEST');
-    if (typeof value.serviceId === 'string') {
-      const service = (await apiConnections.snapshot()).services.find(s => s.id === value.serviceId);
-      if (!service) throw new Error('API_SERVICE_NOT_FOUND');
-      const options = await configuredApiOptions({ provider: value.provider, endpoint: service.endpoint, model: '', credentialRef: service.credentialRef, requestSettings: service.settings }, typeof value.secret === 'string' ? value.secret : undefined);
-      const url = service.settings?.modelsPath ? apiEndpoint(service.endpoint, service.protocol, service.settings.modelsPath) : apiModelsEndpoint(service.endpoint, service.protocol);
-      return listApiSiteModels(url, service.protocol, apiHeaders({ ...options, apiKey: typeof value.secret === 'string' && value.secret ? value.secret : options.apiKey, endpoint: service.endpoint, model: '' }, service.protocol), service.settings?.headerTimeoutMs);
-    }
-    const endpoint = apiProviders.require(value.provider).normalizeEndpoint(value.endpoint);
-    const apiKey = typeof value.secret === 'string' && value.secret ? value.secret
-      : typeof value.credentialRef === 'string' ? await credentials.get(value.credentialRef) : undefined;
-    if (!apiKey) throw new Error('API_CREDENTIAL_REQUIRED');
-    const protocol = value.provider === 'responses' ? 'responses' : value.provider === 'anthropic' ? 'anthropic_messages' : value.provider === 'gemini' ? 'gemini' : 'chat_completions';
-    return listApiSiteModels(apiModelsEndpoint(endpoint, protocol), protocol, apiHeaders({ endpoint, model: '', apiKey }, protocol));
-  });
+  registerApiModelListIpc(ipcMain, { apiProviders, apiConnections, credentials, configuredApiOptions }, requireSender);
 
   ipcMain.handle(AGENT_IPC.saveBridgeCredential, async (event, value: unknown) => {
     requireSender(event);
