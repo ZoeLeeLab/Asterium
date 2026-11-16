@@ -186,6 +186,7 @@ import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
+import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
@@ -2035,17 +2036,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     ...(session.workspaceRoot ? { workspaceRoot: session.workspaceRoot } : {}),
     capabilities: { streamingText: true, cancellation: false, toolEvents: false, fileEvents: false, reconnect: true },
   });
-  ipcMain.handle(AGENT_IPC.detectClaude, async (event) => {
-    requireSender(event);
-    claudeInstallation = await detectClaudeCode();
-    return publicClaudeInstallation(claudeInstallation);
-  });
-
-  ipcMain.handle(AGENT_IPC.detectCodex, async (event) => {
-    requireSender(event);
-    codexInstallation = await detectCodexCli();
-    return codexInstallation;
-  });
+  registerLocalRuntimeDetectionIpc(
+    ipcMain,
+    async () => {
+      claudeInstallation = await detectClaudeCode();
+      return claudeInstallation;
+    },
+    async () => {
+      codexInstallation = await detectCodexCli();
+      return codexInstallation;
+    },
+    requireSender,
+  );
 
   type CodexImportSelection = {
     file: string;
@@ -3736,15 +3738,4 @@ function isChangeLocalThreadLifecycleRequest(value: unknown): value is ChangeLoc
     && typeof value.threadId === 'string'
     && value.threadId.length > 0
     && ['archive', 'restore', 'delete'].includes(String(value.action));
-}
-
-function publicClaudeInstallation(installation: ClaudeInstallation) {
-  return {
-    installed: installation.installed,
-    loggedIn: installation.loggedIn,
-    version: installation.version,
-    authMethod: installation.authMethod,
-    executableLabel: installation.executableLabel,
-    error: installation.error,
-  };
 }
