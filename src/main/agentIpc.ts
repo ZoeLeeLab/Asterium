@@ -185,6 +185,7 @@ import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
+import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2479,12 +2480,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return saved;
   });
 
-  ipcMain.handle(AGENT_IPC.openProfileDirectory, async (event) => {
-    requireSender(event);
-    await mkdir(profileDataRoot, { recursive: true });
-    const error = await shell.openPath(profileDataRoot);
-    if (error) throw new Error(error);
-  });
+  registerProfileDirectoryIpc(ipcMain, profileDataRoot, requireSender);
 
   ipcMain.handle(AGENT_IPC.memoryFallbackGet, async (event) => {
     requireSender(event);
