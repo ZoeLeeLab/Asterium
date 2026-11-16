@@ -186,6 +186,7 @@ import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplat
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
+import { registerUserProfileIpc } from './ipc/userProfileIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2472,13 +2473,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return partnerProfiles.trashPartnerDirectory(value.partnerId, (directory) => shell.trashItem(directory));
   });
 
-  ipcMain.handle(AGENT_IPC.saveUserProfile, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isUserProfileSeed(value)) throw new Error('INVALID_USER_PROFILE');
-    const saved = await partnerProfiles.saveUser(value);
-    studioRuntimeCatalog.updateUser(saved);
-    return saved;
-  });
+  registerUserProfileIpc(ipcMain, { partnerProfiles, studioRuntimeCatalog, isUserProfileSeed }, requireSender);
 
   registerProfileDirectoryIpc(ipcMain, profileDataRoot, requireSender);
 
