@@ -41,7 +41,7 @@ import { readClaudeSessionFile } from './adapters/claudeSessionFile';
 import { codexSessionDirectoryDate, readCodexSessionDirectory, readCodexSessionHeader, sameCodexPath, sameCodexSessionRecord } from './adapters/codexSessionFile';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type CodexThreadDirectoryPreview, type CodexThreadImportPreview, type CodexThreadImportResult, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, listCodexModels, readCodexQuota, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -187,11 +187,11 @@ import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplat
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
+import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
-import type { CodexQuotaResult } from '../shared/codexQuota';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 import { isProjectPermissionMode } from '../shared/projectExecutionPolicy';
 import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectTaskCreateRequest, ProjectTaskRemoveRequest, ProjectTaskUpdateRequest, ProjectUpdateRequest } from '../shared/projectDomain';
@@ -2322,68 +2322,19 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
   });
 
-  ipcMain.handle(AGENT_IPC.listCodexModels, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || (value.partnerRootGrantId !== undefined && typeof value.partnerRootGrantId !== 'string')
-      || (value.conversationId !== undefined && typeof value.conversationId !== 'string')
-      || (value.partnerId !== undefined && typeof value.partnerId !== 'string')
-      || (value.codexRuntimeId !== undefined && typeof value.codexRuntimeId !== 'string')
-      || (value.codexRuntimeEnvironment !== undefined && !['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))) {
-      throw new Error('INVALID_CODEX_MODEL_LIST_REQUEST');
-    }
-    if (typeof value.conversationId === 'string' && typeof value.partnerId === 'string') {
-      const imported = await importedCodexBinding(value.partnerId, value.conversationId);
-      if (imported) {
-        const runtime = await resolveImportedCodexRuntime(imported.workspace);
-        const directory = await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
-        if (!directory) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
-        return listCodexModels(runtime.executablePath, directory);
-      }
-    }
-    const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime(value as import('../shared/codexModels').CodexModelListRequest);
-    return listCodexModels(runtime.executablePath, workingDirectory);
-  });
-
-  const codexQuotaRequests = new Map<string, Promise<CodexQuotaResult>>();
-  ipcMain.handle(AGENT_IPC.readCodexQuota, async (event, value: unknown): Promise<CodexQuotaResult> => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId.trim() || value.partnerId.length > 512
-      || (value.importedConversationId !== undefined && (typeof value.importedConversationId !== 'string'
-        || !value.importedConversationId.trim() || value.importedConversationId.length > 512))) {
-      throw new Error('INVALID_CODEX_QUOTA_REQUEST');
-    }
-    const partner = studioRuntimeCatalog.partner(value.partnerId);
-    if (!partner?.available || partner.runtime.kind !== 'local' || partner.runtime.adapterType !== 'codex_cli') {
-      return { status: 'runtime_unavailable' };
-    }
-    const imported = value.importedConversationId
-      ? await importedCodexBinding(partner.partnerId, value.importedConversationId)
-      : undefined;
-    if (value.importedConversationId && !imported) return { status: 'runtime_unavailable' };
-
-    const runtimeId = imported ? imported.workspace.runtimeId : partner.runtime.codexRuntimeId;
-    const environment = imported ? imported.workspace.runtimeEnvironment : partner.runtime.codexRuntimeEnvironment;
-    if (!runtimeId && !environment) return { status: 'runtime_unavailable' };
-    const select = ({ runtimes }: CodexInstallation) => resolveCodexRuntime(runtimes, runtimeId, environment);
-    const hadCachedRuntimes = Boolean(codexInstallation?.runtimes.length);
-    let runtime = select(await ensureCodexInstallation());
-    const stillInstalled = runtime && await access(runtime.executablePath).then(() => true, () => false);
-    if (!stillInstalled && hadCachedRuntimes) {
+  registerCodexRuntimeQueryIpc(ipcMain, {
+    studioRuntimeCatalog,
+    importedCodexBinding,
+    resolveImportedCodexRuntime,
+    availableImportedDirectory,
+    resolveCodexLifecycleRuntime,
+    currentCodexInstallation: () => codexInstallation,
+    ensureCodexInstallation,
+    refreshCodexInstallation: async () => {
       codexInstallation = await detectCodexCli();
-      runtime = select(codexInstallation);
-    }
-    if (!runtime || (imported && !sameCodexPath(runtime.codexHome, imported.workspace.codexHome))) {
-      return { status: 'runtime_unavailable' };
-    }
-
-    const key = runtime.runtimeId;
-    const existing = codexQuotaRequests.get(key);
-    if (existing) return existing;
-    // Quota is account-scoped. The request does not need a project or a native thread.
-    const request = readCodexQuota(runtime.executablePath, os.homedir()).finally(() => codexQuotaRequests.delete(key));
-    codexQuotaRequests.set(key, request);
-    return request;
-  });
+      return codexInstallation;
+    },
+  }, requireSender);
 
   ipcMain.handle(AGENT_IPC.getLocalThreadLifecycles, async (event, value: unknown): Promise<NativeThreadLifecycleResult[]> => {
     requireSender(event);
