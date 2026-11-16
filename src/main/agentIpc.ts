@@ -187,6 +187,7 @@ import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerUserProfileIpc } from './ipc/userProfileIpc';
+import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2497,10 +2498,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event); const config = await diarySettings.configure(value); await diaryScheduler.changed(); return config;
   });
   registerPartnerDiaryIpc(ipcMain, diaries, requireSender);
-  ipcMain.handle(AGENT_IPC.memoryFallbackListModels, async (event, value: unknown) => {
-    requireSender(event);
-    return memoryFallbackSettings.listModels(value, (provider, endpoint, apiKey) => apiProviders.listModels(provider, endpoint, apiKey));
-  });
+  registerMemoryFallbackModelListIpc(ipcMain, memoryFallbackSettings, apiProviders, requireSender);
   ipcMain.handle(AGENT_IPC.memoryFallbackConfigure, async (event, value: unknown) => {
     requireSender(event);
     await prepareMemoryStorage();
