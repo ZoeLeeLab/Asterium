@@ -1,8 +1,8 @@
 import type { DesktopNotifications } from './settings/DesktopNotifications';
 import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
 import { validateProjectDirectory } from './settings/projectDirectory';
-import { readMemoryBackup, writeMemoryBackup } from './memory/MemoryBackupFile';
-import { MEMORY_BACKUP_EXTENSION, type MemoryBackupData } from '../shared/memoryBackup';
+import { readMemoryBackup } from './memory/MemoryBackupFile';
+import type { MemoryBackupData } from '../shared/memoryBackup';
 import { trimChatHistory } from '../shared/chatHistory';
 import { CYBERBOSS_CHAT_IMAGE_EXTENSIONS } from '../shared/cyberBossChatAttachments';
 import { AutomationScheduler } from './automation/AutomationScheduler';
@@ -191,6 +191,7 @@ import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelLis
 import { registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackSettingsIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
 import { assertMemoryArchiveMutation, assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
+import { registerMemoryBackupExportIpc } from './ipc/memoryBackupExportIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2500,22 +2501,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const memoryBackupFilters = [{ name: '星丛伙伴记忆备份', extensions: ['gz'] }];
   let memoryBackupDraft: { id: string; partnerId: string; backup: MemoryBackupData } | undefined;
   let choosingMemoryBackup = false;
-  ipcMain.handle(AGENT_IPC.memoryBackupExport, async (event, value: unknown) => {
-    const window = requireSender(event);
-    const partnerId = assertMemoryPartnerId(value);
-    const profile = await partnerProfiles.runtimeProfile(partnerId);
-    if (profile?.management.memoryMode !== 'asterium') throw new Error('PARTNER_MEMORY_NOT_MANAGED');
-    const filename = profile.publicIdentity.displayName.replace(/[<>:"/\\|?*]/g, '_').slice(0, 80);
-    const result = await dialog.showSaveDialog(window, {
-      title: '导出伙伴记忆', defaultPath: `星丛记忆-${filename}-${new Date().toISOString().slice(0, 10)}.${MEMORY_BACKUP_EXTENSION}`, filters: memoryBackupFilters,
-    });
-    if (result.canceled || !result.filePath) return null;
-    const target = result.filePath;
-    await assertCanonicalPathOutsideProtectedRoots(target, [...protectedRoots, app.getPath('userData')]);
-    const backup = await partnerMemories.exportBackup(partnerId);
-    await writeMemoryBackup(target, backup);
-    return backup.records.length;
-  });
+  registerMemoryBackupExportIpc(ipcMain, { partnerProfiles, partnerMemories, protectedRoots, memoryBackupFilters }, requireSender);
   ipcMain.handle(AGENT_IPC.memoryBackupChoose, async (event, value: unknown) => {
     const window = requireSender(event);
     const partnerId = assertMemoryPartnerId(value);
