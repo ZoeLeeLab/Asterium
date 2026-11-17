@@ -108,7 +108,7 @@ import { SessionBootstrapService } from './runtime/SessionBootstrapService';
 import { MemorySourceService } from './memory/MemorySourceService';
 import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
 import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
-import { MEMORY_STATUSES, MEMORY_TYPES, type MemoryArchiveCommentRequest, type MemoryArchiveCreateRequest, type MemoryArchiveMutationRequest, type MemoryArchiveUpdateRequest, type MemorySourceAnchor } from '../shared/memoryArchive';
+import type { MemoryArchiveMutationRequest, MemorySourceAnchor } from '../shared/memoryArchive';
 import { NativeThreadBindingStore } from './studio/NativeThreadBindingStore';
 import { StudioRoomStore } from './studio/StudioRoomStore';
 import { StudioNoteStore } from './studio/StudioNoteStore';
@@ -2565,21 +2565,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerMemoryArchiveIpc(ipcMain, partnerMemoryManagement, requireSender);
 
-  ipcMain.handle(AGENT_IPC.memoryArchiveCreate, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.create(assertMemoryArchiveCreate(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.update(assertMemoryArchiveUpdate(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveComment, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.comment(assertMemoryArchiveComment(value));
-  });
-
   ipcMain.handle(AGENT_IPC.memoryArchiveSoftDelete, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.softDelete(assertMemoryArchiveMutation(value));
@@ -3335,24 +3320,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await singleChatHistory.flush();
     grants.clear();
   };
-}
-
-function assertMemoryArchiveCreate(value: unknown): MemoryArchiveCreateRequest {
-  if (!isRecord(value) || !MEMORY_TYPES.includes(value.type as never) || typeof value.body !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_CREATE');
-  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCreateRequest;
-}
-
-function assertMemoryArchiveUpdate(value: unknown): MemoryArchiveUpdateRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim() || typeof value.expectedUpdatedAt !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
-  if (value.type !== undefined && !MEMORY_TYPES.includes(value.type as never)) throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
-  if (value.status !== undefined && !MEMORY_STATUSES.includes(value.status as never)) throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
-  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveUpdateRequest;
-}
-
-function assertMemoryArchiveComment(value: unknown): MemoryArchiveCommentRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim()
-    || typeof value.expectedUpdatedAt !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_COMMENT');
-  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCommentRequest;
 }
 
 function assertMemoryArchiveMutation(value: unknown): MemoryArchiveMutationRequest {

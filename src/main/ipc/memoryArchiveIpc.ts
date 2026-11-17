@@ -1,11 +1,15 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
-import { MEMORY_STATUSES, MEMORY_TYPES, type MemoryArchiveQuery, type MemoryArchiveSourceReadRequest } from '../../shared/memoryArchive';
+import {
+  MEMORY_STATUSES, MEMORY_TYPES,
+  type MemoryArchiveCommentRequest, type MemoryArchiveCreateRequest, type MemoryArchiveQuery,
+  type MemoryArchiveSourceReadRequest, type MemoryArchiveUpdateRequest,
+} from '../../shared/memoryArchive';
 import type { PartnerMemoryManagementService } from '../memory/PartnerMemoryManagementService';
 
 export function registerMemoryArchiveIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  partnerMemoryManagement: Pick<PartnerMemoryManagementService, 'query' | 'briefing' | 'readSource'>,
+  partnerMemoryManagement: Pick<PartnerMemoryManagementService, 'query' | 'briefing' | 'create' | 'update' | 'comment' | 'readSource'>,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
   ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
@@ -16,6 +20,21 @@ export function registerMemoryArchiveIpc(
   ipcMain.handle(AGENT_IPC.memoryArchiveBriefing, async (event, partnerId: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.briefing(assertMemoryPartnerId(partnerId));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveCreate, async (event, value: unknown) => {
+    requireSender(event);
+    return partnerMemoryManagement.create(assertMemoryArchiveCreate(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveUpdate, async (event, value: unknown) => {
+    requireSender(event);
+    return partnerMemoryManagement.update(assertMemoryArchiveUpdate(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveComment, async (event, value: unknown) => {
+    requireSender(event);
+    return partnerMemoryManagement.comment(assertMemoryArchiveComment(value));
   });
 
   ipcMain.handle(AGENT_IPC.memoryArchiveReadSource, async (event, value: unknown) => {
@@ -42,6 +61,24 @@ function assertMemoryArchiveQuery(value: unknown): MemoryArchiveQuery {
   if (value.to !== undefined && typeof value.to !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
   if (value.limit !== undefined && !Number.isSafeInteger(value.limit)) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
   return { ...value, partnerId } as MemoryArchiveQuery;
+}
+
+function assertMemoryArchiveCreate(value: unknown): MemoryArchiveCreateRequest {
+  if (!isRecord(value) || !MEMORY_TYPES.includes(value.type as never) || typeof value.body !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_CREATE');
+  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCreateRequest;
+}
+
+function assertMemoryArchiveUpdate(value: unknown): MemoryArchiveUpdateRequest {
+  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim() || typeof value.expectedUpdatedAt !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
+  if (value.type !== undefined && !MEMORY_TYPES.includes(value.type as never)) throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
+  if (value.status !== undefined && !MEMORY_STATUSES.includes(value.status as never)) throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
+  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveUpdateRequest;
+}
+
+function assertMemoryArchiveComment(value: unknown): MemoryArchiveCommentRequest {
+  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim()
+    || typeof value.expectedUpdatedAt !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_COMMENT');
+  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCommentRequest;
 }
 
 function assertMemoryArchiveSourceRead(value: unknown): MemoryArchiveSourceReadRequest {

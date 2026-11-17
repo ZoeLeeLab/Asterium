@@ -32,6 +32,9 @@ const timestamp = '2026-01-18T10:00:00.000Z';
 const query = 'asterium:memory-archive:query';
 const readSource = 'asterium:memory-archive:read-source';
 const briefing = 'asterium:memory-archive:briefing';
+const create = 'asterium:memory-archive:create';
+const update = 'asterium:memory-archive:update';
+const comment = 'asterium:memory-archive:comment';
 const changed = 'asterium:memory-archive:changed';
 const record: MemoryRecord = {
   schemaVersion: 1, partnerId, memoryId: 'fixture-memory', type: 'stable_fact', status: 'active',
@@ -157,5 +160,35 @@ it('caches a briefing per archive version and date without publishing an archive
       vi.useRealTimers();
       cached.mockRestore();
     }
+  });
+});
+
+it('creates, updates and comments on records, rejects stale edits and announces each successful write', async () => {
+  await withArchive(async ({ invoke, store, changes }) => {
+    const newMemory = { partnerId, type: 'stable_fact', body: '新建的合成记忆' };
+    await expect(invoke(create, newMemory, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(create, { ...newMemory, type: 'invalid' })).rejects.toThrow('INVALID_MEMORY_ARCHIVE_CREATE');
+    expect(changes()).toEqual([]);
+
+    const created = await invoke<MemoryRecord>(create, newMemory);
+    expect(created).toMatchObject({ ...newMemory, memoryId: expect.any(String), comments: [] });
+    const target = { partnerId, memoryId: created.memoryId };
+    const edit = { ...target, expectedUpdatedAt: created.updatedAt, body: '更新的合成记忆' };
+    const note = { ...target, expectedUpdatedAt: created.updatedAt, content: '合成评论' };
+    await expect(invoke(update, edit, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(comment, note, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(update, { ...edit, status: 'invalid' })).rejects.toThrow('INVALID_MEMORY_ARCHIVE_UPDATE');
+    await expect(invoke(comment, { ...note, content: null })).rejects.toThrow('INVALID_MEMORY_ARCHIVE_COMMENT');
+    await expect(invoke(update, { ...edit, expectedUpdatedAt: timestamp })).rejects.toThrow('MEMORY_RECORD_STALE');
+    await expect(invoke(comment, { ...note, expectedUpdatedAt: timestamp })).rejects.toThrow('MEMORY_RECORD_STALE');
+    await expect(store.get(partnerId, created.memoryId)).resolves.toEqual(created);
+    expect(changes()).toEqual([[changed, { partnerId }]]);
+
+    const updated = await invoke<MemoryRecord>(update, edit);
+    expect(updated).toMatchObject({ ...target, body: edit.body, comments: [] });
+    const commented = await invoke<MemoryRecord>(comment, { ...note, expectedUpdatedAt: updated.updatedAt });
+    expect(commented).toMatchObject({ ...target, body: edit.body, comments: [{ content: note.content }] });
+    await expect(store.get(partnerId, created.memoryId)).resolves.toEqual(commented);
+    expect(changes()).toEqual([[changed, { partnerId }], [changed, { partnerId }], [changed, { partnerId }]]);
   });
 });
