@@ -188,6 +188,7 @@ import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerUserProfileIpc } from './ipc/userProfileIpc';
 import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
+import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2632,10 +2633,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     else await apiSessions.deletePartner(value.partnerId);
   });
 
-  ipcMain.handle(AGENT_IPC.getSessionStatus, async (event, value: unknown) => {
-    requireSender(event); assertSessionCommandTarget(value);
-    return sessionCommands.inspect(value);
-  });
+  registerSessionStatusIpc(ipcMain, sessionCommands, requireSender);
   ipcMain.handle(AGENT_IPC.executeSessionCommand, async (event, value: unknown) => {
     requireSender(event); assertSessionCommandTarget(value, true);
     return sessionCommands.execute(value);
