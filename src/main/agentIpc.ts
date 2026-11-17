@@ -177,6 +177,7 @@ import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerStudioRoomIpc } from './ipc/studioRoomIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
+import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
@@ -198,7 +199,7 @@ import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValid
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 import { isProjectPermissionMode } from '../shared/projectExecutionPolicy';
-import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectTaskCreateRequest, ProjectTaskRemoveRequest, ProjectTaskUpdateRequest, ProjectUpdateRequest } from '../shared/projectDomain';
+import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectUpdateRequest } from '../shared/projectDomain';
 import type {
   ProjectWorkflowActivateRequest,
   ProjectWorkflowCreateRequest,
@@ -1091,21 +1092,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (!isRecord(value) || typeof value.projectId !== 'string') throw new Error('INVALID_PROJECT_UPDATE_REQUEST');
     return projectService.updateProject(value as unknown as ProjectUpdateRequest);
   });
-  ipcMain.handle(AGENT_IPC.projectTaskCreate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.title !== 'string') throw new Error('INVALID_PROJECT_TASK_CREATE');
-    return projectService.createTask(value as unknown as ProjectTaskCreateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.taskId !== 'string') throw new Error('INVALID_PROJECT_TASK_UPDATE');
-    return projectService.updateTask(value as unknown as ProjectTaskUpdateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskRemove, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.taskId !== 'string') throw new Error('INVALID_PROJECT_TASK_REMOVE');
-    await projectService.removeTask(value as unknown as ProjectTaskRemoveRequest);
-  });
+  registerProjectTaskIpc(ipcMain, projectService, requireSender);
   registerProjectRoleIpc(ipcMain, projectService, requireSender);
   registerProjectWorkflowQueryIpc(ipcMain, projectService, requireSender);
   ipcMain.handle(AGENT_IPC.projectWorkflowCreate, async (event, value: unknown) => {
