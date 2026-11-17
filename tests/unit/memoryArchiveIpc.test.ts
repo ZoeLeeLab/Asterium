@@ -35,6 +35,8 @@ const briefing = 'asterium:memory-archive:briefing';
 const create = 'asterium:memory-archive:create';
 const update = 'asterium:memory-archive:update';
 const comment = 'asterium:memory-archive:comment';
+const softDelete = 'asterium:memory-archive:soft-delete';
+const restore = 'asterium:memory-archive:restore';
 const changed = 'asterium:memory-archive:changed';
 const record: MemoryRecord = {
   schemaVersion: 1, partnerId, memoryId: 'fixture-memory', type: 'stable_fact', status: 'active',
@@ -190,5 +192,33 @@ it('creates, updates and comments on records, rejects stale edits and announces 
     expect(commented).toMatchObject({ ...target, body: edit.body, comments: [{ content: note.content }] });
     await expect(store.get(partnerId, created.memoryId)).resolves.toEqual(commented);
     expect(changes()).toEqual([[changed, { partnerId }], [changed, { partnerId }], [changed, { partnerId }]]);
+  });
+});
+
+it('archives and restores a record with version checks, preserving its content and publishing each change', async () => {
+  await withArchive(async ({ invoke, store, changes }) => {
+    const active = { ...record, comments: [{ commentId: 'fixture-note', content: '保留的合成评论', createdAt: timestamp }] };
+    await store.create(partnerId, active);
+    const request = { partnerId, memoryId: active.memoryId, expectedUpdatedAt: active.updatedAt };
+    await expect(invoke(softDelete, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(restore, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(softDelete, { ...request, expectedUpdatedAt: null })).rejects.toThrow('INVALID_MEMORY_ARCHIVE_MUTATION');
+    await expect(invoke(restore, { ...request, memoryId: ' ' })).rejects.toThrow('INVALID_MEMORY_ARCHIVE_MUTATION');
+    await expect(invoke(softDelete, { ...request, expectedUpdatedAt: new Date(0).toISOString() })).rejects.toThrow('MEMORY_RECORD_STALE');
+    await expect(store.get(partnerId, active.memoryId)).resolves.toEqual(active);
+    expect(changes()).toEqual([]);
+
+    const archived = await invoke<MemoryRecord>(softDelete, request);
+    expect(archived).toMatchObject({ memoryId: active.memoryId, body: active.body, comments: active.comments, deletedAt: expect.any(String) });
+    await expect(invoke(query, { partnerId })).resolves.toMatchObject({ records: [] });
+    await expect(invoke(query, { partnerId, archivedOnly: true })).resolves.toMatchObject({ records: [archived] });
+    await expect(invoke(restore, request)).rejects.toThrow('MEMORY_RECORD_STALE');
+    expect(changes()).toEqual([[changed, { partnerId }]]);
+
+    const restored = await invoke<MemoryRecord>(restore, { ...request, expectedUpdatedAt: archived.updatedAt });
+    expect(restored).toEqual({ ...active, updatedAt: restored.updatedAt });
+    await expect(invoke(query, { partnerId })).resolves.toMatchObject({ records: [restored] });
+    await expect(invoke(query, { partnerId, archivedOnly: true })).resolves.toMatchObject({ records: [] });
+    expect(changes()).toEqual([[changed, { partnerId }], [changed, { partnerId }]]);
   });
 });

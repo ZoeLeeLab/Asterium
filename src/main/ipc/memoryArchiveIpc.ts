@@ -2,14 +2,15 @@ import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
 import {
   MEMORY_STATUSES, MEMORY_TYPES,
-  type MemoryArchiveCommentRequest, type MemoryArchiveCreateRequest, type MemoryArchiveQuery,
+  type MemoryArchiveCommentRequest, type MemoryArchiveCreateRequest, type MemoryArchiveMutationRequest, type MemoryArchiveQuery,
   type MemoryArchiveSourceReadRequest, type MemoryArchiveUpdateRequest,
 } from '../../shared/memoryArchive';
 import type { PartnerMemoryManagementService } from '../memory/PartnerMemoryManagementService';
 
 export function registerMemoryArchiveIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  partnerMemoryManagement: Pick<PartnerMemoryManagementService, 'query' | 'briefing' | 'create' | 'update' | 'comment' | 'readSource'>,
+  partnerMemoryManagement: Pick<PartnerMemoryManagementService,
+    'query' | 'briefing' | 'create' | 'update' | 'comment' | 'softDelete' | 'restore' | 'readSource'>,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
   ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
@@ -35,6 +36,16 @@ export function registerMemoryArchiveIpc(
   ipcMain.handle(AGENT_IPC.memoryArchiveComment, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.comment(assertMemoryArchiveComment(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveSoftDelete, async (event, value: unknown) => {
+    requireSender(event);
+    return partnerMemoryManagement.softDelete(assertMemoryArchiveMutation(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveRestore, async (event, value: unknown) => {
+    requireSender(event);
+    return partnerMemoryManagement.restore(assertMemoryArchiveMutation(value));
   });
 
   ipcMain.handle(AGENT_IPC.memoryArchiveReadSource, async (event, value: unknown) => {
@@ -79,6 +90,11 @@ function assertMemoryArchiveComment(value: unknown): MemoryArchiveCommentRequest
   if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim()
     || typeof value.expectedUpdatedAt !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_COMMENT');
   return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCommentRequest;
+}
+
+export function assertMemoryArchiveMutation(value: unknown): MemoryArchiveMutationRequest {
+  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim() || typeof value.expectedUpdatedAt !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
+  return { partnerId: assertMemoryPartnerId(value.partnerId), memoryId: value.memoryId, expectedUpdatedAt: value.expectedUpdatedAt };
 }
 
 function assertMemoryArchiveSourceRead(value: unknown): MemoryArchiveSourceReadRequest {

@@ -108,7 +108,7 @@ import { SessionBootstrapService } from './runtime/SessionBootstrapService';
 import { MemorySourceService } from './memory/MemorySourceService';
 import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
 import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
-import type { MemoryArchiveMutationRequest, MemorySourceAnchor } from '../shared/memoryArchive';
+import type { MemorySourceAnchor } from '../shared/memoryArchive';
 import { NativeThreadBindingStore } from './studio/NativeThreadBindingStore';
 import { StudioRoomStore } from './studio/StudioRoomStore';
 import { StudioNoteStore } from './studio/StudioNoteStore';
@@ -189,7 +189,7 @@ import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerUserProfileIpc } from './ipc/userProfileIpc';
 import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
-import { assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
+import { assertMemoryArchiveMutation, assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2565,16 +2565,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerMemoryArchiveIpc(ipcMain, partnerMemoryManagement, requireSender);
 
-  ipcMain.handle(AGENT_IPC.memoryArchiveSoftDelete, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.softDelete(assertMemoryArchiveMutation(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveRestore, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.restore(assertMemoryArchiveMutation(value));
-  });
-
   ipcMain.handle(AGENT_IPC.memoryArchivePurge, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.purge(assertMemoryArchiveMutation(value));
@@ -3320,11 +3310,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await singleChatHistory.flush();
     grants.clear();
   };
-}
-
-function assertMemoryArchiveMutation(value: unknown): MemoryArchiveMutationRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim() || typeof value.expectedUpdatedAt !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
-  return { partnerId: assertMemoryPartnerId(value.partnerId), memoryId: value.memoryId, expectedUpdatedAt: value.expectedUpdatedAt };
 }
 
 function isApiSendRequest(value: unknown): value is ApiSendRequest {
