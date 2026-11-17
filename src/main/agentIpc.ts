@@ -114,7 +114,6 @@ import { createAsteriumRuntimeTools, memoryToolAccess, projectNotebookToolAccess
 import { localRuntimeAdapterKey, PartnerRuntimeFactory } from './runtime/PartnerRuntimeFactory';
 import { PartnerRuntimePort } from './runtime/PartnerRuntimePort';
 import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
-import { isStudioMcpCredentialToken } from '../shared/studioMcp';
 import { StudioMcpAccessStore } from './studio/StudioMcpAccessStore';
 import { StudioMcpService } from './studio/StudioMcpService';
 import { StudioMcpHost } from './studio/StudioMcpHost';
@@ -173,6 +172,7 @@ import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRoomIpc';
 import { registerStudioMcpHostIpc } from './ipc/studioMcpHostIpc';
+import { registerStudioMcpCredentialIpc } from './ipc/studioMcpCredentialIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
@@ -1303,26 +1303,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
 
   registerStudioMcpHostIpc(ipcMain, { studioMcpHost, studioMcpStartup, wakeReadinessChanged }, requireSender);
-  ipcMain.handle(AGENT_IPC.studioMcpIssueCredential, async (event, partnerId: unknown) => {
-    requireSender(event);
-    if (typeof partnerId !== 'string') throw new Error('STUDIO_MCP_PARTNER_REQUIRED');
-    const issued = await projectCoordinator.run(async () => {
-      if (studioRuntimeCatalog.partner(partnerId)?.sourceMode !== 'existing_thread') throw new Error('STUDIO_MCP_PARTNER_REQUIRED');
-      return studioMcpAccess.issue(partnerId);
-    });
-    wakeReadinessChanged(); return issued;
-  });
-  ipcMain.handle(AGENT_IPC.studioMcpCopyCredential, (event, token: unknown) => {
-    requireSender(event);
-    if (!isStudioMcpCredentialToken(token)) throw new Error('STUDIO_MCP_CREDENTIAL_INVALID');
-    return clipboard.writeText(token);
-  });
-  ipcMain.handle(AGENT_IPC.studioMcpRevokeCredential, async (event, credentialId: unknown) => {
-    requireSender(event);
-    if (typeof credentialId !== 'string') throw new Error('STUDIO_MCP_CREDENTIAL_NOT_FOUND');
-    await projectCoordinator.run(() => studioMcpAccess.revoke(credentialId));
-    return studioMcpHost.status();
-  });
+  registerStudioMcpCredentialIpc(ipcMain, { projectCoordinator, studioRuntimeCatalog, studioMcpAccess, studioMcpHost, wakeReadinessChanged }, requireSender);
 
   ipcMain.handle(AGENT_IPC.studioStartRound, async (event, value: unknown) => {
     requireSender(event);
