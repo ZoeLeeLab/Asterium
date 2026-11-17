@@ -172,6 +172,7 @@ import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
 import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRoomIpc';
+import { registerStudioMcpHostIpc } from './ipc/studioMcpHostIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
@@ -1301,17 +1302,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return studioWakeControl.control(value.partnerId, value.action as import('../shared/studioWakeControl').StudioWakeAction, value.triggerId as string | undefined);
   });
 
-  ipcMain.handle(AGENT_IPC.studioMcpStatus, async (event) => {
-    requireSender(event);
-    await studioMcpStartup;
-    return studioMcpHost.status();
-  });
-  ipcMain.handle(AGENT_IPC.studioMcpConfigure, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value)) throw new Error('STUDIO_MCP_CONFIGURATION_INVALID');
-    const status = await studioMcpHost.configure(value as unknown as import('../shared/studioMcp').StudioMcpConfiguration);
-    wakeReadinessChanged(); return status;
-  });
+  registerStudioMcpHostIpc(ipcMain, { studioMcpHost, studioMcpStartup, wakeReadinessChanged }, requireSender);
   ipcMain.handle(AGENT_IPC.studioMcpIssueCredential, async (event, partnerId: unknown) => {
     requireSender(event);
     if (typeof partnerId !== 'string') throw new Error('STUDIO_MCP_PARTNER_REQUIRED');
