@@ -1299,12 +1299,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await memoryFallbackInventory.refresh();
   });
 
-  ipcMain.handle(AGENT_IPC.studioResolveDiscussion, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roomId !== 'string' || !['continue', 'end'].includes(String(value.decision))) throw new Error('INVALID_STUDIO_DISCUSSION_DECISION');
-    return studioRooms.resolveDiscussion(value.roomId, value.decision as 'continue' | 'end');
-  });
-
   ipcMain.handle(AGENT_IPC.studioCancelRound, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.roomId !== 'string' || !value.roomId) throw new Error('INVALID_STUDIO_CANCEL_REQUEST');

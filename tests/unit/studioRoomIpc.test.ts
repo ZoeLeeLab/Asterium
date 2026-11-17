@@ -1,9 +1,10 @@
 // @vitest-environment node
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { BrowserWindow, IpcMain } from 'electron';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { StudioOrchestrator } from '../../src/main/studio/StudioOrchestrator';
 import { StudioRoomStore } from '../../src/main/studio/StudioRoomStore';
 import type { StudioRoomSnapshot } from '../../src/shared/studioRuntime';
 import { testRm } from '../helpers/autoTest.mjs';
@@ -36,6 +37,7 @@ const exportMarkdown = 'asterium:studio:export-markdown';
 const setMuted = 'asterium:studio:set-muted';
 const setSettings = 'asterium:studio:set-settings';
 const announce = 'asterium:studio:announce';
+const resolveDiscussion = 'asterium:studio:resolve-discussion';
 const roomChanged = 'asterium:studio:room-changed';
 let dispose: (() => Promise<void>) | undefined;
 let ledgerPath: string;
@@ -184,4 +186,43 @@ it('persists a system announcement and broadcasts its snapshot without starting 
   expect(saved.activeRound).toBeUndefined();
   await expect(rooms.getRoom(roomId)).resolves.toEqual(saved);
   expect(changes()).toEqual([[roomChanged, saved]]);
+});
+
+it('continues or ends a pending discussion, rejects repeats and forwards the saved round snapshot', async () => {
+  const roomId = 'fixture-room';
+  const partnerId = 'fixture-partner';
+  const room = { roomId, projectId: 'fixture-project', name: 'Fixture room', memberIds: [partnerId] };
+  await rooms.syncRoom(room);
+  await rooms.startRound({ room, messageId: 'fixture-discussion', content: '合成讨论', authorId: 'fixture-user', speakerQueue: [partnerId] });
+  const pending = JSON.parse(await readFile(ledgerPath, 'utf8'));
+  pending.rooms[roomId].activeRound.state = 'waiting_discussion_decision';
+  await writeFile(ledgerPath, JSON.stringify(pending), 'utf8');
+
+  const request = { roomId, decision: 'continue' };
+  const changes = () => sender.send.mock.calls.filter(([channel]) => channel === roomChanged);
+  const handleSnapshot = vi.spyOn(StudioOrchestrator.prototype, 'handleSnapshot').mockImplementation(() => undefined);
+  try {
+    await expect(invoke(resolveDiscussion, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(resolveDiscussion, { ...request, decision: 'invalid' })).rejects.toThrow('INVALID_STUDIO_DISCUSSION_DECISION');
+    await expect(invoke(resolveDiscussion, { ...request, roomId: 'fixture-missing-room' })).rejects.toThrow('STUDIO_ROOM_NOT_FOUND');
+    expect(changes()).toEqual([]);
+    expect(handleSnapshot).not.toHaveBeenCalled();
+
+    const continued = await invoke<StudioRoomSnapshot>(resolveDiscussion, request);
+    expect(continued.activeRound).toMatchObject({ state: 'queued', discussionPauseCount: 1, members: [{ partnerId, state: 'queued' }] });
+    await expect(invoke(get, roomId)).resolves.toEqual(continued);
+    await expect(invoke(resolveDiscussion, request)).rejects.toThrow('STUDIO_DISCUSSION_DECISION_NOT_PENDING');
+    expect(changes()).toEqual([[roomChanged, continued]]);
+    expect(handleSnapshot).toHaveBeenCalledExactlyOnceWith(continued);
+
+    await writeFile(ledgerPath, JSON.stringify(pending), 'utf8');
+    const ended = await invoke<StudioRoomSnapshot>(resolveDiscussion, { roomId, decision: 'end' });
+    expect(ended.activeRound).toMatchObject({ state: 'completed', members: [{ partnerId, state: 'cancelled' }] });
+    await expect(invoke(get, roomId)).resolves.toEqual(ended);
+    await expect(invoke(resolveDiscussion, { roomId, decision: 'end' })).rejects.toThrow('STUDIO_DISCUSSION_DECISION_NOT_PENDING');
+    expect(changes()).toEqual([[roomChanged, continued], [roomChanged, ended]]);
+    expect(handleSnapshot.mock.calls).toEqual([[continued], [ended]]);
+  } finally {
+    handleSnapshot.mockRestore();
+  }
 });

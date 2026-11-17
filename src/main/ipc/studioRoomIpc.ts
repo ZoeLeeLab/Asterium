@@ -5,7 +5,7 @@ import type { StudioRoomStore } from '../studio/StudioRoomStore';
 
 export function registerStudioRoomIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  studioRooms: Pick<StudioRoomStore, 'getRoom' | 'setMuted' | 'setSettings' | 'appendSystemMessage'>,
+  studioRooms: Pick<StudioRoomStore, 'getRoom' | 'setMuted' | 'setSettings' | 'appendSystemMessage' | 'resolveDiscussion'>,
   archivedMarkdownFileName: (name: string, suffix: string) => string,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
@@ -58,6 +58,12 @@ export function registerStudioRoomIpc(
     requireSender(event);
     if (!isRecord(value) || typeof value.roomId !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_STUDIO_ANNOUNCEMENT');
     return studioRooms.appendSystemMessage(value.roomId, value.content);
+  });
+
+  ipcMain.handle(AGENT_IPC.studioResolveDiscussion, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.roomId !== 'string' || !['continue', 'end'].includes(String(value.decision))) throw new Error('INVALID_STUDIO_DISCUSSION_DECISION');
+    return studioRooms.resolveDiscussion(value.roomId, value.decision as 'continue' | 'end');
   });
 }
 
