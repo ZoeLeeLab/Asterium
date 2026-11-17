@@ -188,6 +188,7 @@ import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerUserProfileIpc } from './ipc/userProfileIpc';
 import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
+import { registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackSettingsIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
 import { assertMemoryArchiveMutation, assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
@@ -2474,11 +2475,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerProfileDirectoryIpc(ipcMain, profileDataRoot, requireSender);
 
-  ipcMain.handle(AGENT_IPC.memoryFallbackGet, async (event) => {
-    requireSender(event);
-    await prepareMemoryStorage();
-    return memoryFallbackScheduler.snapshot();
-  });
   ipcMain.handle(AGENT_IPC.diaryGet, async (event) => {
     requireSender(event);
     const configs = await diarySettings.list(); const notices: Record<string, string> = {};
@@ -2495,22 +2491,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
   registerPartnerDiaryIpc(ipcMain, diaries, requireSender);
   registerMemoryFallbackModelListIpc(ipcMain, memoryFallbackSettings, apiProviders, requireSender);
-  ipcMain.handle(AGENT_IPC.memoryFallbackConfigure, async (event, value: unknown) => {
-    requireSender(event);
-    await prepareMemoryStorage();
-    await memoryFallbackSettings.configure(value);
-    memoryFallbackScheduler.cancelCurrent();
-    await memoryFallbackScheduler.reconfigure();
-    return memoryFallbackScheduler.snapshot();
-  });
-  ipcMain.handle(AGENT_IPC.memoryFallbackSetPartner, async (event, value: unknown) => {
-    requireSender(event);
-    await prepareMemoryStorage();
-    await memoryFallbackSettings.setPartner(value);
-    memoryFallbackScheduler.cancelCurrent();
-    await memoryFallbackInventory.refresh();
-    return memoryFallbackScheduler.snapshot();
-  });
+  registerMemoryFallbackSettingsIpc(ipcMain, {
+    prepareMemoryStorage, memoryFallbackSettings, memoryFallbackScheduler, memoryFallbackInventory,
+  }, requireSender);
 
   registerMemoryImportIpc(ipcMain, memoryImport, requireSender);
 
