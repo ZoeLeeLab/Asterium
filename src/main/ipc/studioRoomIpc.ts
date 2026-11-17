@@ -1,7 +1,22 @@
 import { writeFile } from 'node:fs/promises';
 import { BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
+import type { StudioRoomMetadata } from '../../shared/studioRuntime';
+import type { ProjectService } from '../project/ProjectService';
 import type { StudioRoomStore } from '../studio/StudioRoomStore';
+
+export function registerStudioRoomSyncIpc(
+  ipcMain: Pick<IpcMain, 'handle'>,
+  projectService: Pick<ProjectService, 'syncRoom'>,
+  isStudioRoomMetadata: (value: unknown) => value is StudioRoomMetadata,
+  requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
+) {
+  ipcMain.handle(AGENT_IPC.studioSyncRoom, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isStudioRoomMetadata(value)) throw new Error('INVALID_STUDIO_ROOM');
+    return projectService.syncRoom(value);
+  });
+}
 
 export function registerStudioRoomIpc(
   ipcMain: Pick<IpcMain, 'handle'>,

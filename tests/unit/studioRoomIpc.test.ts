@@ -32,6 +32,7 @@ const sender = { send: vi.fn() };
 const window = { webContents: sender, isDestroyed: () => false } as unknown as BrowserWindow;
 type Handler = (event: { sender: object }, request: unknown) => Promise<unknown>;
 const handlers = new Map<string, Handler>();
+const sync = 'asterium:studio:sync-room';
 const get = 'asterium:studio:get-room';
 const exportMarkdown = 'asterium:studio:export-markdown';
 const setMuted = 'asterium:studio:set-muted';
@@ -83,6 +84,36 @@ afterEach(async () => {
     if (electron.root) await testRm(electron.root, { recursive: true, force: true });
     electron.root = '';
   }
+});
+
+it('syncs room metadata and publishes snapshots without overwriting committed members or changing the project', async () => {
+  const [first, second] = ['fixture-first-partner', 'fixture-second-partner'];
+  const metadata = { roomId: 'fixture-room', projectId: 'fixture-project', name: '合成群聊', memberIds: [first, second] };
+  await expect(invoke(sync, metadata, {})).rejects.toThrow('INVALID_IPC_SENDER');
+  for (const invalid of [null, { ...metadata, roomId: '' }, { ...metadata, projectId: '' }, { ...metadata, name: ' ' },
+    { ...metadata, memberIds: [''] }, { ...metadata, archived: 'true' }]) {
+    await expect(invoke(sync, invalid)).rejects.toThrow('INVALID_STUDIO_ROOM');
+  }
+  expect(sender.send.mock.calls.filter(([channel]) => channel === roomChanged)).toEqual([]);
+
+  const created = await invoke<StudioRoomSnapshot>(sync, metadata);
+  expect(created.metadata).toEqual(metadata);
+  await expect(rooms.getRoom(metadata.roomId)).resolves.toEqual(created);
+  const [committed] = await rooms.applyProjectMemberships(metadata.projectId, [{
+    room: { ...metadata, memberIds: [second] }, announcements: ['合成成员变更记录'],
+  }]);
+  const stale = { ...metadata, name: '  合成群聊改名  ' };
+  const synced = await invoke<StudioRoomSnapshot>(sync, stale);
+  expect(synced.metadata).toEqual({ ...metadata, name: '合成群聊改名', memberIds: [second] });
+  expect(synced.messages).toEqual(committed.messages);
+  await expect(invoke(get, metadata.roomId)).resolves.toEqual(synced);
+
+  const ledger = await readFile(ledgerPath);
+  await expect(invoke(sync, { ...metadata, projectId: 'fixture-other-project' })).rejects.toThrow('PROJECT_ROOM_SCOPE_MISMATCH');
+  await expect(readFile(ledgerPath)).resolves.toEqual(ledger);
+  expect(sender.send.mock.calls.filter(([channel]) => channel === roomChanged)).toEqual([
+    [roomChanged, created], [roomChanged, synced],
+  ]);
 });
 
 it('reads an archived studio room and exports the supplied Markdown unchanged through IPC', async () => {

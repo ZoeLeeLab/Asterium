@@ -175,7 +175,7 @@ import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
-import { registerStudioRoomIpc } from './ipc/studioRoomIpc';
+import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRoomIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
@@ -1256,11 +1256,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await projectChanges.removeProject(value.projectId).catch((error) => console.error('Project change cleanup failed', error));
   });
 
-  ipcMain.handle(AGENT_IPC.studioSyncRoom, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isStudioRoomMetadata(value)) throw new Error('INVALID_STUDIO_ROOM');
-    return projectService.syncRoom(value);
-  });
+  registerStudioRoomSyncIpc(ipcMain, projectService, isStudioRoomMetadata, requireSender);
 
   registerStudioNoteIpc(ipcMain, studioNotes, requireSender);
 
