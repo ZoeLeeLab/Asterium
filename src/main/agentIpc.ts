@@ -31,7 +31,6 @@ import { app, clipboard, dialog, safeStorage, shell, type BrowserWindow, type Ip
 import { createAttachmentThumbnail } from './security/attachmentThumbnail';
 import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
-import { readClaudeSessionFile } from './adapters/claudeSessionFile';
 import { codexSessionDirectoryDate, readCodexSessionDirectory, readCodexSessionHeader, sameCodexPath, sameCodexSessionRecord } from './adapters/codexSessionFile';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type CodexThreadDirectoryPreview, type CodexThreadImportPreview, type CodexThreadImportResult, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
@@ -180,6 +179,7 @@ import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplat
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
+import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
 import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerUserProfileIpc } from './ipc/userProfileIpc';
 import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
@@ -2350,22 +2350,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerWorkspaceGrantSelectionIpc(ipcMain, { workspaceGrants, grants, protectedRoots }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.importClaudeSession, async (event) => {
-    const window = requireSender(event);
-    const result = await dialog.showOpenDialog(window, {
-      title: '选择要导入的 Claude Code 会话文件',
-      buttonLabel: '导入此会话',
-      defaultPath: path.join(os.homedir(), '.claude', 'projects'),
-      properties: ['openFile'],
-      filters: [{ name: 'Claude Code session', extensions: ['jsonl'] }],
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    const imported = await readClaudeSessionFile(result.filePaths[0]);
-    if (await nativeBindings.isBoundNativeThread(imported.sessionId)) throw new Error('NATIVE_THREAD_ALREADY_BOUND');
-    const workspaceGrant = await workspaceGrants.add(imported.workingDirectory);
-    grants.set(workspaceGrant.grantId, workspaceGrant.displayPath);
-    return { sessionId: imported.sessionId, sessionFilePath: imported.sessionFilePath, workspaceGrant };
-  });
+  registerClaudeSessionImportIpc(ipcMain, { nativeBindings, workspaceGrants, grants }, requireSender);
 
   registerWorkspaceGrantRevocationIpc(ipcMain, { workspaceGrants, grants, extensionLaunchBackend, mcpConnections }, requireSender);
 
