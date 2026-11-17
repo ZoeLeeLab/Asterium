@@ -110,6 +110,53 @@ describe('Composer attachments', () => {
     expect(screen.queryByText('截图.png')).not.toBeInTheDocument();
   });
 
+  it('returns a chosen file and a still-staging screenshot to their original conversation only', async () => {
+    const file = { selectionId: 'file-draft', name: '草稿.txt', mediaType: 'text/plain', sizeBytes: 4 };
+    const screenshot = { selectionId: 'image-draft', name: '草稿截图.png', mediaType: 'image/png', sizeBytes: 1 };
+    let finish!: (value: typeof screenshot) => void;
+    const stageClipboardImage = vi.fn(() => new Promise<typeof screenshot>(resolve => { finish = resolve; }));
+    const discard = vi.fn(async () => undefined);
+    mockAttachmentApi({ choose: vi.fn(async () => [file]), stageClipboardImage, discard });
+    const onSend = vi.fn(async () => true);
+    const first = <Composer key="first" draftKey="chat:attachment-draft-a" placeholder="第一段对话" onSend={onSend} attachmentsEnabled />;
+    const second = <Composer key="second" draftKey="chat:attachment-draft-b" placeholder="第二段对话" onSend={onSend} attachmentsEnabled />;
+    const view = render(first);
+    fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
+    await screen.findByText(file.name);
+    const image = { type: 'image/png', size: 1, arrayBuffer: async () => new ArrayBuffer(1) };
+    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [image] } });
+    await waitFor(() => expect(stageClipboardImage).toHaveBeenCalledOnce());
+    view.rerender(second);
+    finish(screenshot);
+    expect(screen.queryByText(file.name)).not.toBeInTheDocument();
+    view.rerender(first);
+    await screen.findByAltText(screenshot.name);
+    expect(screen.getByText(file.name)).toBeVisible();
+    expect(discard).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('', [file, screenshot]));
+    await waitFor(() => expect(screen.queryByText(file.name)).not.toBeInTheDocument());
+  });
+
+  it('keeps a pending send locked across remount and clears its attachments on success', async () => {
+    const file = { selectionId: 'file-send', name: '正在发送.txt', mediaType: 'text/plain', sizeBytes: 4 };
+    let finish!: (sent: boolean) => void;
+    const onSend = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
+    mockAttachmentApi({ choose: vi.fn(async () => [file]) });
+    const first = <Composer key="first" draftKey="chat:attachment-draft-send" placeholder="第一段对话" onSend={onSend} attachmentsEnabled />;
+    const view = render(first);
+    fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
+    await screen.findByText(file.name);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    view.rerender(<Composer key="second" draftKey="chat:attachment-draft-other" placeholder="另一段对话" onSend={vi.fn()} />);
+    view.rerender(first);
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
+    expect(screen.getByText(file.name)).toBeVisible();
+    finish(true);
+    await waitFor(() => expect(screen.queryByText(file.name)).not.toBeInTheDocument());
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
   it('uses a two-line input and exposes source-neutral permission modes plus Plan in the command menu', () => {
     const onPermissionModeChange = vi.fn();
     const onPlanModeChange = vi.fn();

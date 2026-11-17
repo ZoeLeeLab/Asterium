@@ -51,19 +51,25 @@ it('stages a dropped file and a pasted screenshot in the group draft without cha
   ]));
 });
 
-it('retains a failed attachment draft, reports limits and discards pending files when switching rooms', async () => {
+it('retains failed attachments when switching rooms and releases them when removed', async () => {
   const attachment = { selectionId: 'pending-attachment-two', name: 'test.txt', sizeBytes: 40, mediaType: 'text/plain' };
   const choose = vi.fn().mockRejectedValueOnce(new Error('ATTACHMENT_TOO_LARGE')).mockResolvedValue([attachment]);
   const discard = vi.fn(async () => undefined);
   window.asteriumAttachments = { choose, discard } as never;
-  const view = render(<StudioComposer placeholder="附件测试" members={members} onSend={async () => { throw new Error('offline'); }} />);
+  const first = <StudioComposer key="first" draftKey="studio:attachment-draft-a" placeholder="附件测试" members={members} onSend={async () => { throw new Error('offline'); }} />;
+  const view = render(first);
   fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('20MB');
   fireEvent.click(screen.getByRole('button', { name: '添加图片或文件' })); await screen.findByText('test.txt');
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('附件已保留');
   expect(screen.getByText('test.txt')).toBeInTheDocument();
-  view.unmount(); expect(discard).toHaveBeenCalledWith([attachment.selectionId]);
+  view.rerender(<StudioComposer key="second" draftKey="studio:attachment-draft-b" placeholder="另一个群" members={members} onSend={vi.fn()} />);
+  expect(screen.queryByText('test.txt')).not.toBeInTheDocument();
+  expect(discard).not.toHaveBeenCalled();
+  view.rerender(first);
+  fireEvent.click(screen.getByRole('button', { name: '移除 test.txt' }));
+  expect(discard).toHaveBeenCalledWith([attachment.selectionId]);
 });
 
 describe('StudioComposer mentions', () => {

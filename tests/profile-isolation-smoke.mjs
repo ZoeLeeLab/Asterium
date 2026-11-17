@@ -2,7 +2,7 @@ import { runAutoTest, spawnTestProcess as spawn, testRm as rm } from './helpers/
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { build } from 'vite';
@@ -23,6 +23,7 @@ const common = { appData: path.join(worker, 'roaming'), localAppData: path.join(
 const children = [];
 const links = [];
 let passed = false;
+const dailyDirectoryOnly = process.argv.includes('--daily-directory-only');
 
 async function waitFor(test, description) {
   const until = Date.now() + 20000;
@@ -32,9 +33,9 @@ async function waitFor(test, description) {
   }
   throw new Error(`Timed out: ${description}`);
 }
-async function launch(name, options, shortcut) {
+async function launch(name, options, shortcut, selectDailyDirectory) {
   const directory = path.join(worker, name); await mkdir(directory);
-  const config = { options: { ...common, ...options }, shortcut, report: path.join(directory, 'report.json'), stop: path.join(directory, 'stop') };
+  const config = { options: { ...common, ...options }, shortcut, selectDailyDirectory, report: path.join(directory, 'report.json'), stop: path.join(directory, 'stop') };
   const configFile = path.join(directory, 'input.json'); await writeFile(configFile, JSON.stringify(config));
   const env = { ...process.env, ASTERIUM_PROFILE_DRIVER_CONFIG: configFile };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -64,6 +65,27 @@ async function rejectLinks(directory) {
   }
 }
 
+async function verifyRelocatedDaily(dailyOptions, oldDaily) {
+  const migrated = path.join(worker, 'migrated daily');
+  await rename(oldDaily, migrated);
+  const selecting = await launch('daily-select-directory', { ...dailyOptions, userData: migrated }, undefined, migrated);
+  assert.equal(selecting.result.status, 'ready', JSON.stringify(selecting.result));
+  assert.equal(selecting.result.settings.sendShortcut, 'enter');
+  await stop(selecting.entry);
+  const moved = await launch('daily-after-relocation', dailyOptions);
+  assert.equal(moved.result.status, 'ready', JSON.stringify(moved.result));
+  assert.equal(moved.result.paths.userData, migrated);
+  assert.equal(moved.result.paths.sessionData, migrated);
+  assert.equal(moved.result.settings.sendShortcut, 'enter');
+  await stop(moved.entry);
+  await rename(migrated, path.join(worker, 'disconnected'));
+  const unavailable = await launch('daily-directory-unavailable', dailyOptions);
+  assert.equal(unavailable.result.status, 'error');
+  assert.ok(unavailable.result.error.includes(migrated));
+  await waitFor(() => unavailable.entry.exited, 'unavailable process exit');
+  await assert.rejects(lstat(oldDaily), { code: 'ENOENT' });
+}
+
 try {
   // Build only this fixture into the new run directory; no product package or installer.
   await build({ configFile: false, logLevel: 'error', ssr: { noExternal: true },
@@ -71,6 +93,15 @@ try {
       rollupOptions: { external: ['electron', /^node:/], output: { format: 'cjs', entryFileNames: 'driver.cjs' } } } });
   assert.equal((await lstat(path.join(worker, 'bundle', 'driver.cjs'))).isFile(), true);
   const dailyOptions = { profile: 'daily', isPackaged: true };
+  if (dailyDirectoryOnly) {
+    const daily = await launch('daily-first', dailyOptions, 'enter');
+    assert.equal(daily.result.status, 'ready', JSON.stringify(daily.result));
+    await stop(daily.entry);
+    await verifyRelocatedDaily(dailyOptions, daily.result.paths.userData);
+    console.log('Daily directory relocation and missing-directory behavior passed in real Electron.');
+    passed = true;
+    return;
+  }
   const devOptions = { profile: 'dev' };
   const acceptanceOptions = { profile: 'acceptance', acceptanceBatch: 'minimal-r1', mcpPort: '17363' };
   const autoOptions = { profile: 'autotest', userData: path.join(run, 'worker-0', 'user-data') };
@@ -100,9 +131,10 @@ try {
   assert.equal(restarted[0].result.settings.sendShortcut, 'enter');
   assert.equal(restarted[1].result.settings.sendShortcut, 'ctrl_enter');
   await Promise.all(restarted.map(e => stop(e.entry)));
+  await verifyRelocatedDaily(dailyOptions, active[0].result.paths.userData);
   const report = { status: 'passed', scope: 'production startup function, real Electron processes and settings; not full packaged UI acceptance',
     profiles: active.map(e => ({ profile: e.result.environment.profile, paths: e.result.paths, shortcut: e.result.settings.sendShortcut })),
-    distinctDirectories: true, duplicateBlocked: true, junctionBlocked: true, restartPersistence: true };
+    distinctDirectories: true, duplicateBlocked: true, junctionBlocked: true, restartPersistence: true, relocatedDailyPersistence: true, inaccessibleDailyBlocked: true };
   await writeFile(path.join(run, 'result.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
   passed = true;

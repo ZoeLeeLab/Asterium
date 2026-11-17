@@ -9,7 +9,7 @@ interface CodexModelPickerProps extends CodexModelListRequest {
   onChange: (selection: CodexModelSelection) => void;
 }
 
-export function CodexModelPicker({ partnerRootGrantId, codexRuntimeId, codexRuntimeEnvironment, selection, currentModel, disabled, onChange }: CodexModelPickerProps) {
+export function CodexModelPicker({ partnerRootGrantId, partnerId, conversationId, codexRuntimeId, codexRuntimeEnvironment, selection, currentModel, disabled, onChange }: CodexModelPickerProps) {
   const [catalog, setCatalog] = useState<CodexModelOption[]>();
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -22,7 +22,7 @@ export function CodexModelPicker({ partnerRootGrantId, codexRuntimeId, codexRunt
     setLoading(true);
     setFailed(false);
     try {
-      setCatalog(await list({ partnerRootGrantId, codexRuntimeId, codexRuntimeEnvironment }));
+      setCatalog(await list({ partnerRootGrantId, codexRuntimeId, codexRuntimeEnvironment, ...(conversationId && partnerId ? { conversationId, partnerId } : {}) }));
     } catch {
       setFailed(true);
     } finally {

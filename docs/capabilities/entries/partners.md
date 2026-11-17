@@ -17,6 +17,7 @@
   "status": "experimental",
   "codeEntries": [
     "src/main/adapters/CodexCliAdapter.ts",
+    "src/renderer/components/ui/CodexQuotaDetail.tsx",
     "src/renderer/app/nativeCodexHistory.ts",
     "src/shared/codexHistory.ts",
     "src/main/adapters/ClaudeCodeAdapter.ts",
@@ -29,6 +30,8 @@
   ],
   "tests": [
     "tests/unit/codexCliAdapter.test.ts",
+    "tests/renderer/PartnerQuickCard.test.tsx",
+    "tests/unit/codexThreadImport.test.ts",
     "tests/unit/nativeCodexHistory.test.ts",
     "tests/renderer/SingleChatHistoryCutover.test.tsx",
     "tests/unit/apiAgentRuntime.test.ts",
@@ -48,11 +51,13 @@
     "docs/claude-cli-compatibility.md",
     "docs/claude-cli-release-blocker.md"
   ],
-  "lastVerifiedCommit": "109f3881c043a69f184a84e3e6b5c123d2a83ae8"
+  "lastVerifiedCommit": "a3eb8cbbf62962f346c24901b5fe1266e669629d"
 }
 ---
 
 伙伴接入的当前代码入口、测试和权限边界见以上元数据。
+
+单聊右侧伙伴卡在展开后查询本机 Codex 伙伴所用的 ChatGPT 套餐额度。卡片按服务返回的周期展示剩余百分比和重置时间，七天周期显示为「每周额度」，也可手动刷新。主进程通过伙伴绑定的本机运行时调用 Codex App Server 的账户查询接口，凭据由 Codex 管理。查询无需原生线程或聊天消息。额度查询和显示通过合成回归验证。
 
 Claude 改为未修改官方 CLI，MCP 使用 stdio，经账户和当前 CLI 进程树绑定的本机 IPC 调用主进程业务与审批。原生工具显式 ask，路径检查与卡片归属为主，Hooks 仅为额外防线；无 SDK 回退或产品 HTTP 桥接。真实订阅仍待验收，版本支持以 Windows 合成服务实测报告为准，不推断更高版本。
 
@@ -86,6 +91,18 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 ## 本机 Codex 原线程历史（当前工作区）
 
 打开有原线程绑定的本机 Codex 单聊时，星丛可以只读加载原线程历史和更早页。主进程校验当前会话绑定、删除状态和工作区授权。原线程记录可补回旧星丛快照缺失的正文，续聊沿用原线程 ID。核验范围为合成会话和本机 App Server 的模拟模型回复。迁移模块、桌面接入范围和验收边界见 [第一阶段记录](../../single-chat-storage-stage-1.md)。
+
+## 从 Windows 文件选择器导入 Codex 原线程
+
+在 Codex 伙伴设置中点击「导入已有线程」，从所选运行时的 `sessions` 目录选择年、月或日文件夹，再点「读取线程」。再次打开选择器时，从上次所选文件夹的上一级开始。弹窗列出所选日期范围内可导入的线程，显示标题、最后更新时间和原工作目录。支持普通 `.jsonl` 和 Codex 压缩的 `.jsonl.zst`。星丛只读取文件头来核对线程 ID，续聊由 Codex 恢复原记录。同一线程只显示一次，续接 Codex 当前使用的记录，确认时再次核对。导入单聊使用自己的工作目录，普通单聊沿用伙伴的配置来源。重复导入会打开原窗口。
+
+Codex 更新后，星丛会在原数据目录下重新匹配已登录的同类运行时。匹配结果用于导入。
+
+目录不可访问时可以查看、搜索和翻页。点击「重新选择目录」为此单聊授权可访问的目录，继续使用同一条线程。普通单聊和其他伙伴保留原有目录与授权。
+
+当前分支的导入实现入口是 `src/main/adapters/codexSessionFile.ts` 和 `src/shared/codexThreadImport.ts`。
+
+Codex 桌面端占用写入时，可在释放原会话后使用消息旁的「重试」。导入的对话可继续发消息和引用，编辑并重新生成会涉及改变原生线程，因此导入的对话暂不提供该操作。已归档的线程须先在 Codex 恢复，再从 `sessions` 选择。
 
 ## 本机 Codex 单聊模型切换（当前工作区）
 

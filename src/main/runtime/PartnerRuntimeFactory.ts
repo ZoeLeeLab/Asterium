@@ -56,6 +56,7 @@ export interface LocalRuntimeRequest {
   partnerRoot: string;
   additionalDirectories: string[];
   runtimeTools?: AsteriumRuntimeToolController;
+  importedCodexThread?: boolean;
 }
 
 export interface PartnerRuntimeFactoryOptions {
@@ -150,7 +151,7 @@ export class PartnerRuntimeFactory {
     }
     const resolveAttachment = (attachmentId: string, conversationId: string) => this.options.attachments.pathFor(attachmentId, conversationId);
     adapter = request.adapterType === 'codex_cli'
-      ? new CodexCliAdapter(request.executablePath, request.partnerRoot, undefined, request.additionalDirectories, resolveAttachment, request.runtimeTools, this.options.protectedRoots)
+      ? new CodexCliAdapter(request.executablePath, request.partnerRoot, undefined, request.additionalDirectories, resolveAttachment, request.runtimeTools, this.options.protectedRoots, request.importedCodexThread)
       : new ClaudeCodeAdapter(request.executablePath, request.partnerRoot, undefined, undefined, request.additionalDirectories, resolveAttachment, request.runtimeTools, this.options.protectedRoots);
     return this.options.host.set(request.adapterKey, adapter);
   }

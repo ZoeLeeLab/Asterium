@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { MAX_MESSAGE_ATTACHMENT_BYTES } from '../shared/contracts/attachments';
-import type { ApiModelSummary, ApiPartnerConnection, CancelRunCommand, ChangeLocalThreadLifecycleRequest, ClaudeDetectionResult, ClaudeSessionImport, CodexDetectionResult, CodexRuntimeInfo, CodexThreadSummary, ConversationAttachmentInfo, CredentialStatus, ExistingThreadConnection, ExistingThreadConnectionStatus, LocalThreadLifecycleRequest, MessageAttachment, NativeThreadLifecycleResult, PartnerProfileSeed, PartnerProfileSnapshot, PartnerProfilesSyncResult, PartnerWorkspaceState, PendingMessageAttachment, RendererAgentEvent, ResolveAuthorizationCommand, ResolveUserInputCommand, ResumeSessionCommand, SendGuidanceCommand, SendGuidanceResult, SendMessageCommand, SendMessageReceipt, WorkspaceGrant } from '../shared/agentProtocol';
+import type { ApiModelSummary, ApiPartnerConnection, CancelRunCommand, ChangeLocalThreadLifecycleRequest, ClaudeDetectionResult, ClaudeSessionImport, CodexDetectionResult, CodexRuntimeInfo, ConversationAttachmentInfo, CredentialStatus, ExistingThreadConnection, ExistingThreadConnectionStatus, LocalThreadLifecycleRequest, MessageAttachment, NativeThreadLifecycleResult, PartnerProfileSeed, PartnerProfileSnapshot, PartnerProfilesSyncResult, PartnerWorkspaceState, PendingMessageAttachment, RendererAgentEvent, ResolveAuthorizationCommand, ResolveUserInputCommand, ResumeSessionCommand, SendGuidanceCommand, SendGuidanceResult, SendMessageCommand, SendMessageReceipt, WorkspaceGrant } from '../shared/agentProtocol';
 import type { StudioAnnouncementRequest, StudioCancelRoundRequest, StudioPrepareTurnRequest, StudioPreparedTurn, StudioResolveDiscussionRequest, StudioRoomMarkdownExportRequest, StudioRoomMetadata, StudioRoomSnapshot, StudioSetMutedRequest, StudioSetSettingsRequest, StudioStartRoundRequest } from '../shared/studioRuntime';
 import type { SaveStudioNoteRequest, StudioNote, StudioNoteStatus } from '../shared/studioNotes';
 import type { ProjectNotebook, ProjectNotebookTarget, ProjectNotebookUserReplaceRequest } from '../shared/projectNotebook';
@@ -12,6 +12,7 @@ import { DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 
 contextBridge.exposeInMainWorld('asteriumStorage', {
   get: () => ipcRenderer.invoke(AGENT_IPC.storageGet),
+  chooseUserDataDirectory: () => ipcRenderer.invoke(AGENT_IPC.storageChooseUserDataDirectory),
   chooseProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageChooseProjectRoot),
   resetProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageResetProjectRoot),
   openProjectRoot: () => ipcRenderer.invoke(AGENT_IPC.storageOpenProjectRoot),
@@ -98,9 +99,13 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
   detectClaude: (): Promise<ClaudeDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectClaude),
   detectCodex: (): Promise<CodexDetectionResult> => ipcRenderer.invoke(AGENT_IPC.detectCodex),
   listCodexModels: (request: import('../shared/codexModels').CodexModelListRequest): Promise<import('../shared/codexModels').CodexModelOption[]> => ipcRenderer.invoke(AGENT_IPC.listCodexModels, request),
+  readCodexQuota: (request: import('../shared/codexQuota').CodexQuotaRequest) => ipcRenderer.invoke(AGENT_IPC.readCodexQuota, request),
   searchCodexHistory: (request: import('../shared/codexHistory').CodexHistorySearchRequest): Promise<import('../shared/codexHistory').CodexHistorySearchPage> => ipcRenderer.invoke(AGENT_IPC.searchCodexHistory, request),
   readCodexHistory: (request: import('../shared/codexHistory').CodexHistoryRequest): Promise<import('../shared/codexHistory').CodexHistoryPage> => ipcRenderer.invoke(AGENT_IPC.readCodexHistory, request),
-  listCodexThreads: (runtimeId: string, workspaceGrantId: string): Promise<CodexThreadSummary[]> => ipcRenderer.invoke(AGENT_IPC.listCodexThreads, { runtimeId, workspaceGrantId }),
+  chooseCodexThreadDirectory: (request: import('../shared/codexThreadImport').CodexThreadDirectoryRequest) => ipcRenderer.invoke(AGENT_IPC.chooseCodexThreadDirectory, request),
+  confirmCodexThreadImport: (selectionId: string, partnerId: string, permissionMode: import('../shared/agentProtocol').PermissionMode) => ipcRenderer.invoke(AGENT_IPC.confirmCodexThreadImport, { selectionId, partnerId, permissionMode }),
+  codexImportedWorkspaceStatus: (partnerId: string, conversationId: string) => ipcRenderer.invoke(AGENT_IPC.codexImportedWorkspaceStatus, { partnerId, conversationId }),
+  chooseCodexImportedDirectory: (partnerId: string, conversationId: string) => ipcRenderer.invoke(AGENT_IPC.chooseCodexImportedDirectory, { partnerId, conversationId }),
   getLocalThreadLifecycles: (request: LocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult[]> => ipcRenderer.invoke(AGENT_IPC.getLocalThreadLifecycles, request),
   changeLocalThreadLifecycle: (request: ChangeLocalThreadLifecycleRequest): Promise<NativeThreadLifecycleResult> => ipcRenderer.invoke(AGENT_IPC.changeLocalThreadLifecycle, request),
   importClaudeSession: (): Promise<ClaudeSessionImport | null> => ipcRenderer.invoke(AGENT_IPC.importClaudeSession),
@@ -160,6 +165,8 @@ contextBridge.exposeInMainWorld('asteriumAgents', {
 
 contextBridge.exposeInMainWorld('asteriumArtifacts', {
   inspect: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactInspect, artifactId),
+  listLatestConversation: (conversationId) => ipcRenderer.invoke(AGENT_IPC.artifactListLatestConversation, conversationId),
+  resolveConversationLink: (conversationId: string, href: string) => ipcRenderer.invoke(AGENT_IPC.artifactResolveConversationLink, { conversationId, href }),
   read: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactRead, artifactId),
   open: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpen, artifactId),
   openInBrowser: (artifactId: string) => ipcRenderer.invoke(AGENT_IPC.artifactOpenInBrowser, artifactId),
@@ -221,10 +228,14 @@ contextBridge.exposeInMainWorld('asteriumAttachments', {
   saveToProject: (attachmentId: string, conversationId: string, projectId: string) => ipcRenderer.invoke(AGENT_IPC.attachmentSaveToProject, { attachmentId, conversationId, projectId }),
   thumbnail: (id: string, conversationId?: string): Promise<string> => ipcRenderer.invoke(AGENT_IPC.attachmentThumbnail, { id, conversationId }),
   deleteConversation: (conversationId: string): Promise<void> => ipcRenderer.invoke(AGENT_IPC.attachmentDeleteConversation, conversationId),
+  previewSnapshotCleanup: () => ipcRenderer.invoke(AGENT_IPC.attachmentPreviewSnapshotCleanup),
+  clearSnapshots: (planId) => ipcRenderer.invoke(AGENT_IPC.attachmentClearSnapshots, planId),
 } satisfies AsteriumAttachmentsApi);
 
 contextBridge.exposeInMainWorld('asteriumConversations', {
   openHistory: (recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationOpenHistory, recent),
+  previewSnapshotCleanup: () => ipcRenderer.invoke(AGENT_IPC.conversationPreviewSnapshotCleanup),
+  clearSnapshots: (planId) => ipcRenderer.invoke(AGENT_IPC.conversationClearSnapshots, planId),
   migrateHistory: (source: import('../shared/singleChatHistory').SingleChatHistoryImport, recent?: boolean) => ipcRenderer.invoke(AGENT_IPC.conversationMigrateHistory, source, recent),
   readHistoryPage: (request: import('../shared/singleChatHistory').SingleChatPageRequest) => ipcRenderer.invoke(AGENT_IPC.conversationReadHistoryPage, request),
   readToolOutput: (request: import('../shared/singleChatHistory').SingleChatToolOutputRequest) => ipcRenderer.invoke(AGENT_IPC.conversationReadToolOutput, request),
@@ -397,6 +408,12 @@ contextBridge.exposeInMainWorld('asteriumMemory', {
     cancel: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportCancel, input),
     undo: (input) => ipcRenderer.invoke(AGENT_IPC.memoryImportUndo, input),
   } satisfies import('../shared/memoryImport').MemoryImportApi,
+  backup: {
+    export: partnerId => ipcRenderer.invoke(AGENT_IPC.memoryBackupExport, partnerId),
+    choose: partnerId => ipcRenderer.invoke(AGENT_IPC.memoryBackupChoose, partnerId),
+    import: (partnerId, id) => ipcRenderer.invoke(AGENT_IPC.memoryBackupImport, partnerId, id),
+    cancel: (partnerId, id) => ipcRenderer.invoke(AGENT_IPC.memoryBackupCancel, partnerId, id),
+  },
   query: (request: MemoryArchiveQuery) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveQuery, request),
   briefing: (partnerId: string) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveBriefing, partnerId),
   create: (request: MemoryArchiveCreateRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveCreate, request),
@@ -405,6 +422,7 @@ contextBridge.exposeInMainWorld('asteriumMemory', {
   softDelete: (request: MemoryArchiveMutationRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveSoftDelete, request),
   restore: (request: MemoryArchiveMutationRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveRestore, request),
   purge: (request: MemoryArchiveMutationRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchivePurge, request),
+  purgeArchived: request => ipcRenderer.invoke(AGENT_IPC.memoryArchiveBulkPurge, request),
   readSource: (request: MemoryArchiveSourceReadRequest) => ipcRenderer.invoke(AGENT_IPC.memoryArchiveReadSource, request),
   onChanged: (listener: (change: MemoryArchiveChange) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, value: MemoryArchiveChange) => listener(value);

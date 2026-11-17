@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, locateCodexHistoryTurn, parseCodexLoginStatus, parseCodexThreads, rankCodexRuntimes, readCodexThreadHistory, recommendedCodexRuntime, searchCodexThreadHistory, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, CodexCliAdapter, codexTurnText, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, listCodexModels, locateCodexHistoryTurn, parseCodexLoginStatus, rankCodexRuntimes, readCodexQuota, readCodexThreadHistory, recommendedCodexRuntime, searchCodexThreadHistory, type CodexRuntimeInstallation } from '../../src/main/adapters/CodexCliAdapter';
 import { PLAN_EXECUTION_QUESTION_ID, PLAN_EXECUTION_START, PLAN_EXECUTION_STOP } from '../../src/main/adapters/planExecutionDecision';
 import type { CodexAppServerTransport, CodexRpcMessage, JsonRpcId } from '../../src/main/adapters/codexAppServerProtocol';
 import { AGENT_PROTOCOL_VERSION, CODEX_NATIVE_TOOL_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
@@ -33,6 +33,36 @@ function command(sessionId?: string, clientMessageId = 'client-1'): SendMessageC
     content: { type: 'text', text: '你好' },
   };
 }
+
+it('reads the Codex quota bucket without starting a thread or exposing account details', async () => {
+  const transport = new FakeTransport();
+  const request = vi.spyOn(transport, 'request')
+    .mockResolvedValueOnce({ account: { type: 'chatgpt', email: 'fixture@example.com' } })
+    .mockResolvedValueOnce({
+      rateLimits: { limitId: 'other', primary: { usedPercent: 10 } },
+      rateLimitsByLimitId: { codex: {
+        primary: { usedPercent: 32, windowDurationMins: 300, resetsAt: 1_794_655_200 },
+        secondary: { usedPercent: 100, windowDurationMins: 10_080, resetsAt: null },
+      } },
+    });
+  await expect(readCodexQuota('codex.exe', '.', () => transport)).resolves.toEqual({
+    status: 'available', checkedAt: expect.any(Number),
+    windows: [{ usedPercent: 32, durationMinutes: 300, resetsAt: 1_794_655_200 }, { usedPercent: 100, durationMinutes: 10_080 }],
+  });
+  expect(request.mock.calls).toEqual([['account/read', { refreshToken: false }], ['account/rateLimits/read']]);
+  expect(transport.connected).toBe(false);
+});
+
+it.each([
+  [null, 'login_required'],
+  [{ type: 'apiKey' }, 'chatgpt_required'],
+])('reports the login state without querying plan limits for %j', async (account, status) => {
+  const transport = new FakeTransport();
+  const request = vi.spyOn(transport, 'request').mockResolvedValue({ account });
+  await expect(readCodexQuota('codex.exe', '.', () => transport)).resolves.toEqual({ status });
+  expect(request.mock.calls).toEqual([['account/read', { refreshToken: false }]]);
+  expect(transport.connected).toBe(false);
+});
 
 it('reads visible model choices and supported effort from the selected runtime across pages', async () => {
   const transport = new FakeTransport();
@@ -380,18 +410,6 @@ describe('CodexCliAdapter', () => {
     expect(ranked.map((item) => item.runtimeId)).toEqual(['global', 'desktop', 'vscode']);
     expect(recommendedCodexRuntime(ranked)?.runtimeId).toBe('global');
     expect(ranked).toHaveLength(3);
-  });
-
-  it('normalizes thread choices and limits imports to the authorized directory', () => {
-    const threads = parseCodexThreads({ data: [
-      { id: 'thread-1', name: '命名线程', preview: 'ignored', cwd: 'K:\\qa', updatedAt: 1_700_000_000 },
-      { id: 'thread-2', name: null, preview: '第二条线程', cwd: 'K:\\qa', updatedAt: 1_600_000_000 },
-      { id: 'thread-outside', preview: 'outside', cwd: 'D:\\other', updatedAt: 1_500_000_000 },
-    ] }, 'K:\\qa');
-
-    expect(threads).toHaveLength(2);
-    expect(threads[0]).toMatchObject({ threadId: 'thread-1', title: '命名线程', cwd: 'K:\\qa' });
-    expect(threads[1]).toMatchObject({ threadId: 'thread-2', title: '第二条线程' });
   });
 
   it('starts a thread and turn, then streams text, tools, files, and completion in order', async () => {

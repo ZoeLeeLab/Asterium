@@ -56,3 +56,21 @@ it('shows the API destination, lets the user edit and select a subset, then show
   fireEvent.click(screen.getByRole('button', { name: '撤销本批' }));
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已移入归档库 1 条'));
 });
+
+it('imports a memory backup into the selected partner only after confirmation and without a model', async () => {
+  const choose = vi.fn(async () => ({ id: 'backup', fileName: '伙伴.asterium-memory.gz', total: 3, archived: 1 }));
+  const restore = vi.fn(async () => ({ added: 2, skipped: 1 }));
+  const preview = vi.fn();
+  window.asteriumMemory = { backup: { choose, import: restore, cancel: vi.fn(), export: vi.fn() }, importText: { preview } } as unknown as NonNullable<typeof window.asteriumMemory>;
+  window.asteriumMemoryFallback = { get: vi.fn(async () => ({ settings: { credentialConfigured: false } })) } as unknown as NonNullable<typeof window.asteriumMemoryFallback>;
+  render(<MemoryImportPanel partnerId="new-partner" partnerName="小伙伴" />);
+  fireEvent.click(screen.getByText('导入旧对话'));
+  fireEvent.click(screen.getByRole('button', { name: '导入星丛记忆' }));
+  expect(await screen.findByRole('dialog', { name: '导入记忆备份' })).toHaveTextContent(/3 条记忆导入「小伙伴」，其中 1 条留在归档库/);
+  expect(choose).toHaveBeenCalledWith('new-partner');
+  expect(restore).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '确认导入备份' }));
+  await screen.findByText('已恢复 2 条记忆，跳过 1 条已有记录。');
+  expect(restore).toHaveBeenCalledWith('new-partner', 'backup');
+  expect(preview).not.toHaveBeenCalled();
+});

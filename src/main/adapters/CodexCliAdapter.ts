@@ -3,6 +3,7 @@ import { normalizeHistoryQuery, searchableHistoryText } from '../../shared/histo
 import { SINGLE_CHAT_SEARCH_SIZE } from '../../shared/singleChatHistory';
 import { visibleAssistantText } from '../../shared/visibleAssistantText';
 import { isCodexEffort, isCodexModelId, type CodexModelOption } from '../../shared/codexModels';
+import type { CodexQuotaResult, CodexQuotaWindow } from '../../shared/codexQuota';
 import { withHandoffContext } from '../../shared/contextHandoff';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -10,6 +11,7 @@ import { statSync } from 'node:fs';
 import { access, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { sameCodexPath } from './codexSessionFile';
 import { promisify } from 'node:util';
 import { AUTOMATION_TOOL_DESCRIPTION, automationToolJsonSchema } from '../../shared/automationTool';
 import type { AsteriumRuntimeToolController, AttachmentPathResolver, PartnerAdapter } from './PartnerAdapter';
@@ -50,7 +52,6 @@ import {
   type CancelRunCommand,
   type CodexDetectionResult,
   type CodexRuntimeInfo,
-  type CodexThreadSummary,
   type NativeThreadLifecycleAction,
   type NativeThreadLifecycleResult,
   type PartnerEvent,
@@ -222,22 +223,96 @@ export async function detectCodexCli(): Promise<CodexInstallation> {
   };
 }
 
-export async function listCodexThreads(executablePath: string, workingDirectory: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<CodexThreadSummary[]> {
+async function readThreadMetadata(client: CodexAppServerTransport, threadId: string, signal: AbortSignal) {
+  const { thread } = await abortable(client.request<{ thread?: unknown }>('thread/read', { threadId, includeTurns: false }), signal);
+  if (!isRecord(thread) || thread.id !== threadId || !text(thread.cwd)) throw new Error('CODEX_THREAD_METADATA_INVALID');
+  const timestamp = typeof thread.updatedAt === 'number' ? new Date(thread.updatedAt * 1000) : undefined;
+  return {
+    cwd: text(thread.cwd),
+    title: text(thread.name) || text(thread.preview).replace(/\s+/g, ' ').slice(0, 100) || '未命名 Codex 线程',
+    updatedAt: timestamp && Number.isFinite(timestamp.getTime()) ? timestamp.toISOString() : undefined,
+    file: text(thread.path),
+  };
+}
+
+export async function readCodexThreadMetadata(executablePath: string, workingDirectory: string, threadId: string, createTransport: CreateCodexTransport = defaultCreateTransport) {
   const client = createTransport(executablePath, workingDirectory);
+  const signal = AbortSignal.timeout(10_000);
   try {
-    await client.start();
-    const result = await client.request<{ data?: unknown }>('thread/list', {
-      cwd: workingDirectory,
-      limit: 100,
-      sortKey: 'updated_at',
-      sortDirection: 'desc',
-      sourceKinds: CODEX_THREAD_SOURCE_KINDS,
-      archived: false,
-    });
-    return parseCodexThreads(result, workingDirectory);
+    await abortable(client.start(), signal);
+    return await readThreadMetadata(client, threadId, signal);
   } finally {
     await client.close().catch(() => undefined);
   }
+}
+
+export async function readCodexThreadsMetadata(executablePath: string, workingDirectory: string, threadIds: string[], createTransport: CreateCodexTransport = defaultCreateTransport) {
+  const client = createTransport(executablePath, workingDirectory);
+  const results: Array<{ threadId: string; metadata?: Awaited<ReturnType<typeof readThreadMetadata>> }> = [];
+  try {
+    await abortable(client.start(), AbortSignal.timeout(10_000));
+    const batchSize = 8;
+    for (let offset = 0; offset < threadIds.length; offset += batchSize) {
+      const ids = threadIds.slice(offset, offset + batchSize);
+      const signal = AbortSignal.timeout(10_000);
+      const batch = await Promise.allSettled(ids.map(threadId => readThreadMetadata(client, threadId, signal)));
+      for (const [index, result] of batch.entries()) {
+        results.push({ threadId: ids[index], metadata: result.status === 'fulfilled' ? result.value : undefined });
+      }
+      // A stalled server would otherwise leave each remaining batch waiting for the same timeout.
+      if (signal.aborted || !client.connected) break;
+    }
+    return results;
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+export async function getImportedCodexThreadLifecycle(executablePath: string, workingDirectory: string, codexHome: string, threadId: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<NativeThreadLifecycleResult> {
+  const checkedAt = new Date().toISOString();
+  try {
+    const { file } = await readCodexThreadMetadata(executablePath, workingDirectory, threadId, createTransport);
+    const archived = file && sameCodexPath(path.dirname(file), path.join(codexHome, 'archived_sessions'));
+    return { threadId, state: archived ? 'archived' : 'active', checkedAt };
+  } catch (error) {
+    if (isCodexThreadMissingError(error)) return { threadId, state: 'deleted', checkedAt, message: '原生线程已被删除。' };
+    return { threadId, state: 'unavailable', checkedAt, message: '暂时无法确认这个原生线程的状态。' };
+  }
+}
+
+export async function readCodexQuota(executablePath: string, workingDirectory: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<CodexQuotaResult> {
+  const client = createTransport(executablePath, workingDirectory);
+  const signal = AbortSignal.timeout(12_000);
+  try {
+    await abortable(client.start(), signal);
+    const account = await abortable(client.request<{ account?: unknown }>('account/read', { refreshToken: false }), signal);
+    if (account?.account === null) return { status: 'login_required' };
+    if (!isRecord(account?.account)) return { status: 'unavailable' };
+    if (account.account.type !== 'chatgpt') return { status: 'chatgpt_required' };
+
+    const response = await abortable(client.request<{ rateLimits?: unknown; rateLimitsByLimitId?: unknown }>('account/rateLimits/read'), signal);
+    const byId = isRecord(response?.rateLimitsByLimitId) ? response.rateLimitsByLimitId.codex : undefined;
+    const legacy = response?.rateLimits;
+    const limits = isRecord(byId) ? byId
+      : isRecord(legacy) && (legacy.limitId == null || legacy.limitId === 'codex') ? legacy
+      : undefined;
+    const windows = [limits?.primary, limits?.secondary].flatMap(codexQuotaWindow);
+    return windows.length ? { status: 'available', windows, checkedAt: Date.now() } : { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+function codexQuotaWindow(value: unknown): CodexQuotaWindow[] {
+  if (!isRecord(value) || typeof value.usedPercent !== 'number' || !Number.isFinite(value.usedPercent) || value.usedPercent < 0) return [];
+  const { windowDurationMins, resetsAt } = value;
+  return [{
+    usedPercent: Math.min(100, value.usedPercent),
+    ...(typeof windowDurationMins === 'number' && Number.isSafeInteger(windowDurationMins) && windowDurationMins > 0 ? { durationMinutes: windowDurationMins } : {}),
+    ...(typeof resetsAt === 'number' && Number.isSafeInteger(resetsAt) && resetsAt > 0 && resetsAt <= 8.64e12 ? { resetsAt } : {}),
+  }];
 }
 
 export async function listCodexModels(executablePath: string, workingDirectory: string, createTransport: CreateCodexTransport = defaultCreateTransport): Promise<CodexModelOption[]> {
@@ -585,22 +660,6 @@ async function listAllCodexThreadIds(client: CodexAppServerTransport, workingDir
   return ids;
 }
 
-export function parseCodexThreads(result: unknown, workingDirectory: string): CodexThreadSummary[] {
-  const value = isRecord(result) ? result : {};
-  const data = Array.isArray(value.data) ? value.data : [];
-  return data.filter(isRecord).map((thread) => {
-    const updatedAt = typeof thread.updatedAt === 'number' && Number.isFinite(thread.updatedAt)
-      ? new Date(thread.updatedAt * 1000).toISOString()
-      : undefined;
-    return {
-      threadId: text(thread.id),
-      title: text(thread.name) || text(thread.preview) || '未命名 Codex 线程',
-      cwd: text(thread.cwd) || workingDirectory,
-      updatedAt,
-    };
-  }).filter((thread) => Boolean(thread.threadId) && path.resolve(thread.cwd).toLowerCase() === path.resolve(workingDirectory).toLowerCase());
-}
-
 type StreamInput = { kind: 'raw'; message: CodexRpcMessage } | { kind: 'mapped'; event: CodexMappedEvent };
 
 interface ActiveRun {
@@ -682,6 +741,7 @@ export class CodexCliAdapter implements PartnerAdapter {
     private readonly resolveAttachment?: AttachmentPathResolver,
     private runtimeTools?: AsteriumRuntimeToolController,
     private readonly protectedRoots: readonly string[] = [],
+    private readonly importedThread = false,
   ) {}
 
   replaceRuntimeTools(runtimeTools: AsteriumRuntimeToolController) {
@@ -1037,6 +1097,7 @@ export class CodexCliAdapter implements PartnerAdapter {
           threadId: requestedSessionId,
           cwd: this.workingDirectory,
           ...this.runtimeWorkspaceRoots(runtimeWorkspaceDirectories),
+          ...(this.importedThread ? { excludeTurns: true } : {}),
         });
         const id = text(result?.thread?.id) || requestedSessionId;
         if (id !== requestedSessionId) throw new Error('CODEX_RESUMED_THREAD_MISMATCH');

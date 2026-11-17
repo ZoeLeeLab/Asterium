@@ -17,7 +17,7 @@ import {
   TerminalSquare,
   Wrench,
 } from 'lucide-react';
-import { Fragment, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import type { Conversation, Message, TurnOperationCategory, TurnTimelineItem } from '../../types/domain';
 import { visibleAssistantText } from '../../app/messageQuote';
 import { friendlyRuntimeErrorMessage } from '../../app/runtimeErrorPresentation';
@@ -40,6 +40,7 @@ interface TurnTimelineProps {
   onResolveAuthorization: (decision: 'allow_once' | 'deny', persistExtensionTrust?: boolean) => void;
   onResolveUserInput: (answers: Record<string, string[]>, customAnswers?: Record<string, string>, requestId?: string) => void | Promise<void>;
   onOpenArtifact: (artifactId: string) => void;
+  onLocalArtifactLink?: (href: string) => void;
   onArtifactContextMenu?: (artifactId: string, event: ReactMouseEvent<HTMLElement>) => void;
   onQuoteSelection?: (text: string, x: number, y: number) => void;
 }
@@ -59,16 +60,22 @@ type TimelineBlock =
   | { kind: 'delegation'; receipt: DelegationReceipt }
   | { kind: 'entry'; id: string; row: Exclude<ProcessItem, ActionItem | ReasoningItem | FileItem> };
 
-export function TurnTimeline({ message, delegationReceipts = [], partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
-  const timeline = message.timeline ?? [];
-  if (!timeline.length) return <div className="turn-timeline">
-    {delegationReceipts.map(receipt => <Fragment key={receipt.id}>{receipt.card}</Fragment>)}
-    {visibleAssistantText(message.content) && <QuoteableText onQuoteSelection={onQuoteSelection}><MarkdownContent>{visibleAssistantText(message.content)}</MarkdownContent></QuoteableText>}
+const emptyReceipts: readonly DelegationReceipt[] = [];
+
+export function TurnTimeline({ message, delegationReceipts, partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onLocalArtifactLink, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
+  const timeline = message.timeline;
+  const receipts = delegationReceipts?.length ? delegationReceipts : emptyReceipts;
+  const completed = message.runState === 'completed';
+  const coalescedTimeline = useMemo(() => timeline ? coalesceActionEvents(timeline) : [], [timeline]);
+  const blocks = useMemo(() => timeline?.length ? buildTimelineBlocks(timeline, coalescedTimeline, receipts, completed) : [],
+    [timeline, coalescedTimeline, receipts, completed]);
+
+  if (!timeline?.length) return <div className="turn-timeline">
+    {receipts.map(receipt => <Fragment key={receipt.id}>{receipt.card}</Fragment>)}
+    {visibleAssistantText(message.content) && <QuoteableText onQuoteSelection={onQuoteSelection}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{visibleAssistantText(message.content)}</MarkdownContent></QuoteableText>}
     {message.toolNote && <details className="timeline-entry state-success"><summary><Check size={15} /><span>{message.toolNote}</span></summary></details>}
     {message.error && <div className="timeline-entry timeline-entry--error state-failure"><CircleAlert size={15} /><span>{friendlyErrorLabel(message.error.message, partnerName)}</span></div>}
   </div>;
-
-  const blocks = buildTimelineBlocks(timeline, delegationReceipts, message.runState === 'completed');
 
   return <div className="turn-timeline" onContextMenu={onArtifactContextMenu && ((event) => {
     if (event.defaultPrevented || !(event.target instanceof Element)) return;
@@ -78,7 +85,7 @@ export function TurnTimeline({ message, delegationReceipts = [], partnerName, pe
     {blocks.map((block) => {
       if (block.kind === 'text') {
         const text = visibleAssistantText(block.text);
-        return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection}><MarkdownContent>{text}</MarkdownContent></QuoteableText> : null;
+        return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{text}</MarkdownContent></QuoteableText> : null;
       }
       if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} partnerName={partnerName} />;
       if (block.kind === 'delegation') return <Fragment key={block.receipt.id}>{block.receipt.card}</Fragment>;
@@ -301,11 +308,10 @@ function categoryMeta(category: TurnOperationCategory) {
   }[category];
 }
 
-function buildTimelineBlocks(timeline: TurnTimelineItem[], delegationReceipts: DelegationReceipt[], completed: boolean): TimelineBlock[] {
+function buildTimelineBlocks(timeline: TurnTimelineItem[], coalescedTimeline: TurnTimelineItem[], delegationReceipts: readonly DelegationReceipt[], completed: boolean): TimelineBlock[] {
   const blocks: TimelineBlock[] = [];
   let pendingActions: Array<ActionItem | FileItem> = [];
   const authorizationToolIds = new Set(timeline.flatMap((item) => item.kind === 'authorization' && item.toolCallId ? [item.toolCallId] : []));
-  const coalescedTimeline = coalesceActionEvents(timeline);
   const suppressedActionIds = new Set(coalescedTimeline.flatMap((item) => {
     if (item.kind !== 'tool') return [];
     const presentation = actionPresentation(item);

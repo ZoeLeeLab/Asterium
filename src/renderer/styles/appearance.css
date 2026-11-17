@@ -28,7 +28,7 @@
 .appearance-swatches i { flex: 1; }
 .appearance-themes .appearance-swatches { width: min(100%,140px); height: 32px; }
 .appearance-swatches--rainy-study { background: url('../assets/rainy-study-light.png') center 48% / cover; }
-.appearance-swatches--rainy-study i, .appearance-swatches--sea-letter i, .appearance-swatches--olympian-garden i { visibility: hidden; }
+.appearance-swatches--rainy-study i, .appearance-swatches--sea-letter i, .appearance-swatches--olympian-garden i, .appearance-swatches--alice-wonderland i { visibility: hidden; }
 :root[data-theme='dark'] .appearance-swatches--rainy-study { background-image: url('../assets/rainy-study-dark.png'); }
 .appearance-hint { margin-top: 12px; color: var(--muted); font-size: calc(11px * var(--ui-font-scale,1)); line-height: 1.65; }
 .appearance-sizes { display: grid; gap: 20px; }
@@ -58,3 +58,6 @@
 
 .appearance-swatches--olympian-garden { background: url('../assets/olympian-garden-light.png') center 52% / cover; }
 :root[data-theme='dark'] .appearance-swatches--olympian-garden { background-image: url('../assets/olympian-garden-dark.png'); }
+
+.appearance-swatches--alice-wonderland { background: url('../assets/alice-wonderland-light.png') center 42% / cover; }
+:root[data-theme='dark'] .appearance-swatches--alice-wonderland { background-image: url('../assets/alice-wonderland-dark.png'); }

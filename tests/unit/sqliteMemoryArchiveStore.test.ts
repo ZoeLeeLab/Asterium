@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MemoryRecord } from '../../src/shared/memoryArchive';
 import { SqliteMemoryArchiveStore } from '../../src/main/memory/SqliteMemoryArchiveStore';
+import { readMemoryBackup, writeMemoryBackup } from '../../src/main/memory/MemoryBackupFile';
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -40,6 +41,23 @@ describe('SQLite memory archive', () => {
     await store.softDelete('m'); expect(await store.get('m')).toBeUndefined(); await store.restore('m');
     await store.softDelete('m'); await store.purge('m'); expect(await store.get('m', { includeDeleted: true })).toBeUndefined();
   });
+  it('permanently removes a selected archive in one transaction and preserves unselected references', async () => {
+    const { store } = await fixture();
+    await store.create(record('older'));
+    await store.create(record('replacement'));
+    await store.create(record('active'));
+    await store.revise('older', { status: 'superseded', supersededByMemoryId: 'replacement' });
+    const older = await store.softDelete('older');
+    const replacement = await store.softDelete('replacement');
+    const targets = [replacement, older].map(row => ({ memoryId: row.memoryId, expectedUpdatedAt: row.updatedAt }));
+    const before = await store.snapshot({ includeDeleted: true });
+    await expect(store.purgeArchived([targets[0]])).rejects.toThrow('MEMORY_SUPERSESSION_INVALID');
+    await expect(store.purgeArchived([targets[0], { ...targets[1], expectedUpdatedAt: 'stale' }])).rejects.toThrow('MEMORY_RECORD_STALE');
+    await expect(store.purgeArchived([...targets, { memoryId: 'active' }])).rejects.toThrow('MEMORY_PURGE_REQUIRES_SOFT_DELETE');
+    expect(await store.snapshot({ includeDeleted: true })).toEqual(before);
+    await expect(store.purgeArchived(targets)).resolves.toEqual([replacement, older]);
+    expect((await store.list({ includeDeleted: true })).map(row => row.memoryId)).toEqual(['active']);
+  });
   it('atomically rolls back fallback, supports replay and durable noop receipts', async () => {
     const { file, store } = await fixture(); const version = (await store.snapshot()).archiveVersion;
     const crashing = new SqliteMemoryArchiveStore(file, 'p', { afterFallbackRecordWrite: () => { throw new Error('crash'); } });
@@ -66,6 +84,31 @@ describe('SQLite memory archive', () => {
       sources: [{ kind: 'single_chat', conversationId: 'c', messageId: 'source', contentHash: 'a'.repeat(64), frozenExcerpt: { capturedAt: record().createdAt, messages: [{ messageId: 'source', content: '证据', contentHash: 'a'.repeat(64), authorId: 'u', authorType: 'user', createdAt: record().createdAt, offset: 0 }] } }] };
     await store.create(value); expect(await new SqliteMemoryArchiveStore(file, 'p').get('m')).toEqual(value);
     expect(await readdir(path.dirname(file))).toEqual(['memory.sqlite']);
+  });
+  it('restores a compressed backup into a different partner, preserving archives, sources and existing edits', async () => {
+    const { file, store } = await fixture();
+    const original = { ...record('archived'), comments: [{ commentId: 'note', content: '备注', createdAt: record().createdAt }],
+      sources: [{ kind: 'imported_text' as const, messageId: '1', label: '旧文件', documentHash: 'a'.repeat(64), excerpt: '来源摘要' }] };
+    const version = (await store.snapshot()).archiveVersion;
+    await store.applyFallback('test-operation', version, [original, record('replacement'), record('fallback')], 'ok');
+    await store.revise(original.memoryId, { status: 'superseded', supersededByMemoryId: 'replacement' });
+    await store.softDelete(original.memoryId);
+    const backupPath = path.join(path.dirname(file), 'test.asterium-memory.gz');
+    const exported = await store.exportBackup();
+    await writeMemoryBackup(backupPath, exported);
+    const backup = await readMemoryBackup(backupPath);
+    expect(backup).toEqual(exported);
+
+    const newPartner = new SqliteMemoryArchiveStore(path.join(path.dirname(file), 'restored.sqlite'), 'new-partner');
+    await newPartner.create({ ...record('replacement'), partnerId: 'new-partner', body: '保留本机编辑' });
+    await expect(newPartner.importBackup(backup)).resolves.toEqual({ added: 2, skipped: 1 });
+    expect(await newPartner.get(original.memoryId)).toBeUndefined();
+    expect(await newPartner.get(original.memoryId, { includeDeleted: true })).toEqual({ ...exported.records[0], partnerId: 'new-partner' });
+    expect(await newPartner.fallbackMemoryIds()).toEqual(['fallback']);
+    expect((await newPartner.get('replacement'))?.body).toBe('保留本机编辑');
+    await expect(newPartner.importBackup(backup)).resolves.toEqual({ added: 0, skipped: 3 });
+    await writeFile(backupPath, 'broken');
+    await expect(readMemoryBackup(backupPath)).rejects.toThrow('MEMORY_BACKUP_INVALID');
   });
   it('keeps invariants for conflicts, missing updates, source replacement and noops', async () => {
     const { store } = await fixture(); await store.create(record());

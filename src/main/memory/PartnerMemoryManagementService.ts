@@ -9,7 +9,7 @@ import type {
 } from '../../shared/memoryArchive';
 import type { PartnerMemoryBriefingService } from './PartnerMemoryBriefingService';
 import type { PartnerMemoryService } from './PartnerMemoryService';
-import { PartnerMemoryToolService, searchMemoryRecords } from './PartnerMemoryToolService';
+import { filterAndSortMemoryRecords, searchMemoryRecords, type PartnerMemoryToolService } from './PartnerMemoryToolService';
 
 export class PartnerMemoryManagementService {
   constructor(
@@ -19,11 +19,14 @@ export class PartnerMemoryManagementService {
   ) {}
 
   async query(request: MemoryArchiveQuery): Promise<MemoryArchiveQueryResult> {
-    const snapshot = await this.memories.snapshot(request.partnerId, { includeDeleted: request.includeDeleted });
+    const snapshot = await this.memories.snapshot(request.partnerId, { includeDeleted: request.archivedOnly || request.includeDeleted });
+    const records = request.archivedOnly ? snapshot.records.filter(record => record.deletedAt) : snapshot.records;
     return {
       partnerId: request.partnerId,
       archiveVersion: snapshot.archiveVersion,
-      records: searchMemoryRecords(snapshot.records, request),
+      records: request.limit === undefined
+        ? filterAndSortMemoryRecords(records, request)
+        : searchMemoryRecords(records, request),
       fallbackMemoryIds: await this.memories.fallbackMemoryIds(request.partnerId),
     };
   }

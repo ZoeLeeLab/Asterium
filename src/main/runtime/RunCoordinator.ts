@@ -15,6 +15,7 @@ import {
   type SendMessageReceipt,
 } from '../../shared/agentProtocol';
 import { isPartnerEvent } from '../../shared/agentProtocolValidation';
+import { codexThreadInUseFailure } from '../../shared/codexThreadInUse';
 import { conversationWriterScope, WriterLeaseCoordinator, type WriterLease } from './WriterLeaseCoordinator';
 
 export interface RunCoordinatorHooks {
@@ -46,6 +47,7 @@ export interface RunReleasedContext {
 export interface StartRunOptions {
   disposeAfter?: boolean;
   artifactBaseDirectory?: string;
+  validateBeforeStart?: () => Promise<void>;
 }
 
 export class RunCoordinator {
@@ -74,10 +76,13 @@ export class RunCoordinator {
   async start(adapter: PartnerAdapter, command: SendMessageCommand, options: StartRunOptions = {}): Promise<SendMessageReceipt> {
     if (/^(compact|reload):/.test(this.writerLeases.ownerFor(conversationWriterScope(command)) ?? '')) throw new Error('COMPACT_CONVERSATION_BUSY');
     const lease = await this.writerLeases.acquire(conversationWriterScope(command), `runtime:${command.commandId}`);
-    this.hooks.deliver(command, 'awaiting_confirmation');
+    let iterator: AsyncIterator<PartnerEvent> | undefined;
+    let boundRunId: string | undefined;
     try {
+      this.hooks.deliver(command, 'awaiting_confirmation');
+      await options.validateBeforeStart?.();
       await this.hooks.prepare?.(command);
-      const iterator = adapter.sendMessage(command)[Symbol.asyncIterator]();
+      iterator = adapter.sendMessage(command)[Symbol.asyncIterator]();
       const first = await iterator.next();
       if (first.done || !isPartnerEvent(first.value) || first.value.type !== 'session.bound') throw new Error('ADAPTER_SESSION_NOT_BOUND');
       const firstEvent = withCommandRoute(first.value, command) as Extract<PartnerEvent, { type: 'session.bound' }>;
@@ -87,14 +92,17 @@ export class RunCoordinator {
       this.hooks.emit(firstEvent);
       const receipt = { runId: firstEvent.runId, sessionId: firstEvent.sessionId };
       this.host.bindRun(receipt.runId, adapter);
+      boundRunId = receipt.runId;
       this.host.bindSession(command.partnerId, command.conversationId, receipt.sessionId, adapter);
       await this.hooks.onBound?.(firstEvent, command);
       void this.consume(iterator, adapter, command, receipt, firstEvent.sequence, options, lease);
       return receipt;
     } catch (error) {
-      lease.release();
+      if (boundRunId) this.host.releaseRun(boundRunId);
+      await iterator?.return?.().catch(() => undefined);
+      await this.release(lease, adapter, options.disposeAfter).catch(() => undefined);
       await this.hooks.onStartFailure?.(error, command);
-      this.hooks.deliver(command, 'failed', {
+      this.hooks.deliver(command, 'failed', codexThreadInUseFailure(error) ?? {
         code: 'ADAPTER_START_FAILED',
         message: '无法启动伙伴会话。',
         stage: 'adapter',
@@ -187,9 +195,17 @@ export class RunCoordinator {
       });
     } finally {
       this.host.releaseRun(receipt.runId);
-      lease.release();
-      if (options.disposeAfter) await adapter.dispose?.();
+      await iterator.return?.().catch(() => undefined);
+      await this.release(lease, adapter, options.disposeAfter).catch(() => undefined);
       await this.hooks.onReleased?.({ command, receipt });
+    }
+  }
+
+  private async release(lease: WriterLease, adapter: PartnerAdapter, disposeAfter?: boolean) {
+    try {
+      if (disposeAfter) await adapter.dispose?.();
+    } finally {
+      lease.release();
     }
   }
 }

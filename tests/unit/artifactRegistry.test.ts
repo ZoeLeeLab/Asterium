@@ -2,6 +2,7 @@ import { testRm as rm } from '../helpers/autoTest.mjs';
 import { mkdir, mkdtemp, readFile, rename, truncate, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ArtifactRegistry } from '../../src/main/security/ArtifactRegistry';
 
@@ -12,6 +13,113 @@ afterEach(async () => {
 });
 
 describe('ArtifactRegistry', () => {
+  it('persists one current entity after 100 deliveries and resolves historic references after restart', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-artifact-latest-'));
+    temporaryDirectories.push(root);
+    const file = path.join(root, 'result.md');
+    const store = path.join(root, 'artifacts.json');
+    const registry = new ArtifactRegistry(store);
+    const contents = (revision: number) => '# 合成交付\n' + 'x'.repeat(revision);
+    for (let revision = 1; revision <= 100; revision += 1) {
+      await writeFile(file, contents(revision));
+      await registry.register({ kind: 'local_path', path: file }, {
+        id: 'delivery-' + revision, conversationId: 'chat-a', runId: 'fixture-run-' + revision,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, revision)).toISOString(), method: 'deliver_tool',
+      });
+    }
+    const afterHundred = JSON.parse(await readFile(store, 'utf8'));
+    expect(afterHundred.items).toEqual([]);
+    expect(afterHundred.localFiles).toEqual([expect.objectContaining({ source: { kind: 'local_path', path: file }, sizeBytes: Buffer.byteLength(contents(100)) })]);
+    expect(afterHundred.localLinks).toHaveLength(100);
+    expect(afterHundred.localLinks[0]).toEqual({
+      id: 'delivery-1', fileIndex: 0, conversationId: 'chat-a', runId: 'fixture-run-1',
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, 1)).toISOString(), registrationMethod: 'deliver_tool',
+    });
+    await Promise.all(['chat-b', 'chat-c'].map(conversationId => registry.register(
+      { kind: 'local_path', path: file },
+      { id: 'delivery-' + conversationId, conversationId, runId: 'fixture-run-100', method: 'deliver_tool' },
+    )));
+    await writeFile(file, contents(101));
+    const again = await registry.register({ kind: 'local_path', path: './result.md' }, {
+      id: 'same-run-repeat', baseDirectory: root, conversationId: 'chat-a', runId: 'fixture-run-100', method: 'deliver_tool',
+    });
+    expect(again).toMatchObject({ id: 'delivery-100', sizeBytes: Buffer.byteLength(contents(101)) });
+    expect(JSON.parse(await readFile(store, 'utf8')).localFiles).toEqual([
+      expect.objectContaining({ sizeBytes: Buffer.byteLength(contents(101)) }),
+    ]);
+    const persisted = await readFile(store);
+    const restarted = new ArtifactRegistry(store);
+    const [latest, old, link] = await Promise.all([
+      restarted.listLatestConversation('chat-a'),
+      restarted.read('delivery-1'),
+      restarted.resolveConversationLink('chat-a', pathToFileURL(file).href),
+    ]);
+    expect(latest).toEqual([expect.objectContaining({ id: 'delivery-100', sizeBytes: Buffer.byteLength(contents(101)) })]);
+    expect(old).toMatchObject({ info: { id: 'delivery-1' }, text: contents(101) });
+    expect(link).toMatchObject({ action: 'preview', artifact: { id: 'delivery-100' } });
+    expect(await restarted.listLatestConversation('chat-b')).toEqual([expect.objectContaining({ id: 'delivery-chat-b' })]);
+    expect(await restarted.listLatestConversation('chat-c')).toEqual([expect.objectContaining({ id: 'delivery-chat-c' })]);
+    expect(await readFile(store)).toEqual(persisted);
+  });
+
+  it('keeps v2 IDs, project provenance and tombstones when the registry next saves', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-artifact-v2-'));
+    temporaryDirectories.push(root);
+    const file = path.join(root, 'result.txt');
+    const store = path.join(root, 'artifacts.json');
+    await writeFile(file, 'current contents');
+    const first = {
+      id: 'old-id', name: 'old.txt', extension: '.txt', mediaType: 'text/plain', sizeBytes: 2, previewKind: 'text',
+      source: { kind: 'local_path', path: file }, sourceKind: 'local_path', conversationId: 'chat-a',
+      registrationMethod: 'deliver_tool', cached: false, availability: 'available', createdAt: '2026-01-01T00:00:00Z',
+      projectDeliveries: [{ artifactId: 'old-id', projectId: 'project-a', relativePath: 'old.txt', contentHash: 'hash', sizeBytes: 2, savedAt: '2026-01-01T00:00:00Z' }],
+    };
+    const removed = { ...first, id: 'removed-id', projectDeliveries: undefined, removedAt: '2026-01-02T00:00:00Z' };
+    const legacy = JSON.stringify({ version: 2, items: [first, removed] });
+    await writeFile(store, legacy);
+    const registry = new ArtifactRegistry(store);
+    await expect(registry.read('old-id')).resolves.toMatchObject({ text: 'current contents' });
+    expect(await readFile(store, 'utf8')).toBe(legacy);
+    await registry.register({ kind: 'local_path', path: file }, { id: 'current-id', conversationId: 'chat-a', method: 'automatic' });
+    const current = JSON.parse(await readFile(store, 'utf8'));
+    expect(current.localFiles).toHaveLength(1);
+    expect(current.localLinks).toHaveLength(3);
+    const restarted = new ArtifactRegistry(store);
+    await expect(restarted.read('old-id')).resolves.toMatchObject({ info: { id: 'old-id', name: 'result.txt' }, text: 'current contents' });
+    await expect(restarted.inspect('removed-id')).rejects.toThrow('ARTIFACT_NOT_REGISTERED');
+    expect(await restarted.allProjectDeliveries()).toEqual(first.projectDeliveries);
+  });
+
+  it('resolves only exact local deliveries from the requested conversation', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-artifact-links-'));
+    temporaryDirectories.push(root);
+    const file = path.join(root, '测试 预览.md');
+    const launcher = path.join(root, 'launcher.VBS');
+    const unregistered = path.join(root, 'other', path.basename(file));
+    await mkdir(path.dirname(unregistered));
+    await Promise.all([file, launcher, unregistered].map((name) => writeFile(name, 'fixture')));
+    const registry = new ArtifactRegistry({ storePath: path.join(root, 'artifacts.json') });
+    await registry.register({ kind: 'local_path', path: file }, { id: 'old', conversationId: 'chat-a', createdAt: '2026-01-01T00:00:00Z', method: 'automatic' });
+    await registry.register({ kind: 'local_path', path: file }, { id: 'new', conversationId: 'chat-a', createdAt: '2026-01-02T00:00:00Z', method: 'automatic' });
+    await registry.register({ kind: 'local_path', path: file }, { id: 'other-chat', conversationId: 'chat-b', createdAt: '2026-01-03T00:00:00Z', method: 'automatic' });
+    // The executable format must come from the registered path, even with a different display name.
+    await registry.register({ kind: 'local_path', path: launcher }, { id: 'launcher', name: 'fixture.txt', conversationId: 'chat-a', method: 'automatic' });
+
+    const asUrl = pathToFileURL(file);
+    const barePath = asUrl.pathname.replace(/^\/(?=[a-z]:\/)/i, '');
+    for (const href of [asUrl.href, asUrl.pathname, barePath]) {
+      await expect(registry.resolveConversationLink('chat-a', href)).resolves.toMatchObject({ action: 'preview', artifact: { id: 'new', availability: 'available' } });
+    }
+    await expect(registry.resolveConversationLink('chat-a', pathToFileURL(launcher).href)).resolves.toMatchObject({ action: 'reveal', artifact: { id: 'launcher' } });
+    await expect(registry.resolveConversationLink('chat-b', pathToFileURL(launcher).href)).resolves.toBeUndefined();
+    await expect(registry.resolveConversationLink('chat-a', pathToFileURL(unregistered).href)).resolves.toBeUndefined();
+    await expect(registry.resolveConversationLink('chat-a', path.basename(file))).resolves.toBeUndefined();
+    await expect(registry.resolveConversationLink('chat-a', 'file://example.com/fixture.md')).resolves.toBeUndefined();
+    await registry.markRemoved('new');
+    await rename(file, file + '.moved');
+    await expect(registry.resolveConversationLink('chat-a', asUrl.href)).resolves.toMatchObject({ artifact: { id: 'old', availability: 'missing' } });
+  });
+
   it('allows startup refreshes to probe stale renderer records without throwing', async () => {
     const registry = new ArtifactRegistry();
     await expect(registry.inspectIfRegistered('stale-artifact-id')).resolves.toBeUndefined();
@@ -56,6 +164,10 @@ describe('ArtifactRegistry', () => {
     const restored = new ArtifactRegistry({ storePath: path.join(root, '.state', 'artifacts.json') });
     expect(await restored.inspect('automatic-file')).toMatchObject({ localSourceKey: nextRun.localSourceKey });
     expect(await restored.listConversation('conversation-1')).toHaveLength(3);
+    expect(await restored.listLatestConversation('conversation-1')).toHaveLength(2);
+    expect((await restored.read('automatic-file')).text).toBe('# final');
+    expect((await restored.read('same-name')).text).toBe('# separate delivery');
+    expect(JSON.parse(await readFile(path.join(root, '.state', 'artifacts.json'), 'utf8')).localFiles).toHaveLength(2);
   });
 
   it('keeps delivery history when the original local file moves', async () => {

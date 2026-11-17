@@ -9,6 +9,7 @@ export interface PreviewTab extends ConversationArtifact {
   content?: { info: { previewKind: 'markdown' | 'text' | 'html' | 'pdf' | 'image' | 'word' | 'sheet' | 'slides' | 'unsupported' }; text?: string; dataUrl?: string; diff?: string };
   error?: string;
   open?: () => void;
+  previewOnly?: boolean;
 }
 
 interface FilePreviewPaneProps {
@@ -219,5 +220,5 @@ function previewError(reason: unknown, fallback: string) {
 }
 
 function PreviewFallback({ tab, message }: { tab: PreviewTab; message: string }) {
-  return <div className="preview-fallback"><FileQuestion size={34} /><strong>{tab.name}</strong><p>{message}</p>{(tab.open || tab.artifactRef) && <button className="secondary-button" type="button" onClick={() => tab.open ? tab.open() : window.asteriumArtifacts?.open(tab.artifactRef)}><ExternalLink size={15} />用系统应用打开</button>}</div>;
+  return <div className="preview-fallback"><FileQuestion size={34} /><strong>{tab.name}</strong><p>{message}</p>{!tab.previewOnly && (tab.open || tab.artifactRef) && <button className="secondary-button" type="button" onClick={() => tab.open ? tab.open() : window.asteriumArtifacts?.open(tab.artifactRef)}><ExternalLink size={15} />用系统应用打开</button>}</div>;
 }

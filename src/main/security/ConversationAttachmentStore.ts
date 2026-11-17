@@ -1,10 +1,12 @@
 import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFile, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { studioAttachmentConversationId } from '../../shared/studioRuntime';
 import { MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentSendRecord, type ConversationAttachmentInfo, type MessageAttachment, type PendingMessageAttachment, type SendMessageCommand } from '../../shared/agentProtocol';
 import { assertCanonicalPathOutsideProtectedRoots } from './ProtectedPathPolicy';
+import type { SnapshotCleanupPreview, SnapshotCleanupResult } from '../../shared/snapshotCleanup';
+import { attachmentSnapshotFile, clearAttachmentSnapshotDuplicate, planAttachmentSnapshotCleanup, type AttachmentSnapshotCandidate, type AttachmentSnapshotDuplicate } from './AttachmentSnapshotCleanup';
 
 export const MAX_MESSAGE_ATTACHMENTS = 10;
 export { MAX_MESSAGE_ATTACHMENT_BYTES };
@@ -68,6 +70,7 @@ export class ConversationAttachmentStore {
   }
   private readonly pending = new Map<string, PendingRecord>();
   private mutation = Promise.resolve();
+  private snapshotPlan?: { id: string; entries: AttachmentSnapshotDuplicate[] };
   private initialized?: Promise<void>;
   private readonly rootDirectory: string | (() => string);
   private readonly legacyIndexPath?: string | (() => string);
@@ -351,6 +354,49 @@ export class ConversationAttachmentStore {
     this.groupScopes.clear();
     this.pending.clear();
     await this.mutate(() => rm(this.pendingDirectory(), { recursive: true, force: true }));
+  }
+
+  async previewSnapshotCleanup(): Promise<SnapshotCleanupPreview> {
+    await this.mutation;
+    const root = this.root();
+    const directories = await readdir(root, { withFileTypes: true }).catch(error => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+      throw error;
+    });
+    const candidates: AttachmentSnapshotCandidate[] = [];
+    for (const directory of directories) {
+      const id = directory.name;
+      if (!directory.isDirectory() || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(id) || id.startsWith('studio-attachments-')) continue;
+      // Scope this operation to regular, registered snapshot files inside the store.
+      try { await attachmentSnapshotFile(root, this.indexPath(id)); } catch { continue; }
+      const index = await this.readIndex(id);
+      for (const record of Object.values(index.attachments)) {
+        if (record.localReference || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(record.id)
+          || !/^[a-f0-9]{64}$/.test(record.sha256) || record.sizeBytes < 1 || record.sizeBytes > MAX_MESSAGE_ATTACHMENT_BYTES) continue;
+        candidates.push({ file: this.contentPath(id, record.id), sha256: record.sha256, sizeBytes: record.sizeBytes });
+      }
+    }
+    const { entries, skippedCount } = await planAttachmentSnapshotCleanup(root, candidates);
+    const planId = randomUUID();
+    this.snapshotPlan = { id: planId, entries };
+    return { planId, count: entries.length, bytes: entries.reduce((total, entry) => total + entry.duplicate.sizeBytes, 0), skippedCount };
+  }
+
+  clearSnapshots(planId: string): Promise<SnapshotCleanupResult> {
+    return this.mutate(async () => {
+      const plan = this.snapshotPlan;
+      if (!plan || plan.id !== planId) throw new Error('SNAPSHOT_PLAN_EXPIRED');
+      this.snapshotPlan = undefined;
+      const result = { clearedCount: 0, freedBytes: 0, skippedCount: 0 };
+      for (const entry of plan.entries) {
+        try {
+          await clearAttachmentSnapshotDuplicate(this.root(), entry);
+          result.clearedCount++;
+          result.freedBytes += entry.duplicate.sizeBytes;
+        } catch { result.skippedCount++; }
+      }
+      return result;
+    });
   }
 
   private async initialize() {

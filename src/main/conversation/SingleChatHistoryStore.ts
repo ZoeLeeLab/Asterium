@@ -6,6 +6,9 @@ import type { Conversation, Message } from '../../renderer/types/domain';
 import type { SingleChatHistoryChange, SingleChatHistorySnapshot, SingleChatHistoryWrite, SingleChatMetadata, SingleChatProfile, SingleChatToolOutputRequest } from '../../shared/singleChatHistory';
 import { AtomicJsonStore } from '../storage/AtomicJsonStore';
 import type { SingleChatHistoryPage, SingleChatPageRequest, SingleChatSearchRequest, SingleChatSearchResult } from '../../shared/singleChatHistory';
+import { withoutDeliveryState } from '../../shared/singleChatHistory';
+import type { SnapshotCleanupPreview, SnapshotCleanupResult } from '../../shared/snapshotCleanup';
+import { historySnapshotStamp, inspectHistorySnapshots, stageHistorySnapshotCleanup, type HistorySnapshotPlan } from './SingleChatSnapshotCleanup';
 import { SingleChatHistoryIndex } from './SingleChatHistoryIndex';
 import { readToolOutput, removeToolOutputs, separateToolOutputs, storeToolOutput, TOOL_OUTPUT_ID } from './SingleChatToolOutputs';
 
@@ -44,6 +47,7 @@ export class SingleChatHistoryStore {
   private profileCache?: SingleChatProfile;
   private indexedGeneration?: string;
   private readonly busy = new Set<string>();
+  private snapshotPlan?: { id: string; generation?: string; entries: Map<string, HistorySnapshotPlan> };
   private readonly settings: AtomicJsonStore<SingleChatProfile>;
   private readonly manifests: AtomicJsonStore<HistoryManifest>;
 
@@ -85,7 +89,7 @@ export class SingleChatHistoryStore {
           const target = eventPath(stage, metadata.id);
           await mkdir(path.dirname(target), { recursive: true });
           const events: HistoryEvent[] = [
-            { type: 'conversation.imported', conversation: metadata },
+            { type: 'conversation.imported', conversation: withoutDeliveryState(metadata) },
             ...(await separateToolOutputs(path.dirname(target), messages)).map((message): HistoryEvent => ({ type: 'message.imported', message })),
           ];
           const source = events.map(event => JSON.stringify(event)).join('\n') + '\n';
@@ -117,6 +121,57 @@ export class SingleChatHistoryStore {
 
   async flush() {
     await this.mutation;
+  }
+
+  async previewSnapshotCleanup(): Promise<SnapshotCleanupPreview> {
+    const manifest = await this.exclusive(() => this.readManifest());
+    const entries = new Map<string, HistorySnapshotPlan>();
+    const preview = { planId: randomUUID(), count: 0, bytes: 0, skippedCount: 0 };
+    for (const id of manifest?.chats ?? []) {
+      if (this.busy.has(id)) { preview.skippedCount++; continue; }
+      try {
+        const plan = await inspectHistorySnapshots(this.root, eventPath(this.root, id));
+        if (plan.count) {
+          entries.set(id, plan);
+          preview.count += plan.count;
+          preview.bytes += plan.bytes;
+        }
+      } catch { preview.skippedCount++; }
+    }
+    this.snapshotPlan = { id: preview.planId, generation: manifest?.generation, entries };
+    return preview;
+  }
+
+  async clearSnapshots(planId: string): Promise<SnapshotCleanupResult> {
+    const plan = this.snapshotPlan;
+    if (!plan || plan.id !== planId) throw new Error('SNAPSHOT_PLAN_EXPIRED');
+    this.snapshotPlan = undefined;
+    const result = { clearedCount: 0, freedBytes: 0, skippedCount: 0 };
+    for (const [id, entry] of plan.entries) {
+      const target = eventPath(this.root, id);
+      const temporary = target + '.snapshot-cleanup-' + randomUUID();
+      let staged = false;
+      try {
+        if (this.busy.has(id) || await historySnapshotStamp(this.root, target) !== entry.stamp) {
+          throw new Error('SNAPSHOT_PLAN_CHANGED');
+        }
+        await stageHistorySnapshotCleanup(target, temporary, entry);
+        staged = true;
+        // Validate all retained records with the normal history reader before activation.
+        await scanLog(temporary, id);
+        await this.exclusive(async () => {
+          const manifest = await this.readManifest();
+          if (!manifest?.chats.includes(id) || manifest.generation !== plan.generation || this.busy.has(id)
+            || await historySnapshotStamp(this.root, target) !== entry.stamp) throw new Error('SNAPSHOT_PLAN_CHANGED');
+          await rename(temporary, target);
+          this.logs.delete(id);
+        });
+        result.clearedCount += entry.count;
+        result.freedBytes += entry.bytes;
+      } catch { result.skippedCount++; }
+      finally { if (staged) await rm(temporary, { force: true }).catch(() => undefined); }
+    }
+    return result;
   }
 
   isActive() {
@@ -219,6 +274,22 @@ export class SingleChatHistoryStore {
         await this.settings.writeNow(request.profile);
         this.profileCache = request.profile;
       }
+    });
+  }
+
+  createImportedCodexConversation(metadata: SingleChatMetadata) {
+    return this.exclusive(async () => {
+      const manifest = await this.readManifest();
+      if (!manifest || manifest.deleted.includes(metadata.id)) throw new Error('SINGLE_CHAT_HISTORY_IMPORT_UNAVAILABLE');
+      if (manifest.chats.includes(metadata.id)) {
+        const existing = (await this.readTip(metadata.id)).metadata;
+        if (existing.partnerId !== metadata.partnerId || existing.sessionId !== metadata.sessionId || !existing.importedCodexThread) {
+          throw new Error('SINGLE_CHAT_HISTORY_IMPORT_CONFLICT');
+        }
+        return existing;
+      }
+      await this.applyChange(manifest, { conversationId: metadata.id, metadata, upsert: [], remove: [] });
+      return metadata;
     });
   }
 
@@ -349,7 +420,7 @@ export class SingleChatHistoryStore {
       if (!metadata) throw new Error('SINGLE_CHAT_HISTORY_UNKNOWN_CONVERSATION');
       const target = eventPath(this.root, conversationId);
       await mkdir(path.dirname(target), { recursive: true });
-      const source = JSON.stringify({ type: 'conversation.imported', conversation: metadata }) + '\n'
+      const source = JSON.stringify({ type: 'conversation.imported', conversation: withoutDeliveryState(metadata) }) + '\n'
         + JSON.stringify({ type: 'checkpoint', upsert: await separateToolOutputs(path.dirname(target), upsert), remove, busy, order }) + '\n';
       const verified = replay(Buffer.from(source), conversationId);
       await writeFile(target, source, { flush: true, mode: 0o600 });
@@ -369,7 +440,8 @@ export class SingleChatHistoryStore {
 
   private async append(conversationId: string, log: LogTip, event: Extract<HistoryEvent, { type: 'checkpoint' }>) {
     const target = eventPath(this.root, conversationId);
-    event = { ...event, upsert: await separateToolOutputs(path.dirname(target), event.upsert) };
+    event = { ...event, upsert: await separateToolOutputs(path.dirname(target), event.upsert),
+      metadata: event.metadata && withoutDeliveryState(event.metadata) };
     const serialized = JSON.stringify(event) + '\n';
     const previousFingerprint = this.indexedGeneration ? await fingerprint(target) : undefined;
     try {

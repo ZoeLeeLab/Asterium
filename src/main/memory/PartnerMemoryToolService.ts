@@ -158,14 +158,18 @@ export class PartnerMemoryToolService {
 }
 
 export function searchMemoryRecords(records: MemoryRecord[], input: SearchMemoryInput) {
+  const limit = input.limit ?? 20;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('MEMORY_SEARCH_LIMIT_INVALID');
+  return filterAndSortMemoryRecords(records, input).slice(0, limit);
+}
+
+export function filterAndSortMemoryRecords(records: MemoryRecord[], input: Omit<SearchMemoryInput, 'limit'>) {
   const tags = normalizeTags(input.tags ?? []);
   const types = uniqueEnum(input.types ?? [], MEMORY_TYPES, 'MEMORY_TYPE_INVALID');
   const statuses = uniqueEnum(input.statuses ?? [], MEMORY_STATUSES, 'MEMORY_STATUS_INVALID');
   const from = optionalTimestamp(input.from);
   const to = optionalTimestamp(input.to);
   if (from && to && from > to) throw new Error('MEMORY_TIME_RANGE_INVALID');
-  const limit = input.limit ?? 20;
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('MEMORY_SEARCH_LIMIT_INVALID');
   const text = input.text?.trim().toLocaleLowerCase();
   return records
     .filter((record) => !types.length || types.includes(record.type))
@@ -177,8 +181,7 @@ export function searchMemoryRecords(records: MemoryRecord[], input: SearchMemory
     })
     .filter((record) => !text || [record.body, ...record.tags, ...record.comments.map((comment) => comment.content)]
       .some((value) => value.toLocaleLowerCase().includes(text)))
-    .sort(compareSearchResults)
-    .slice(0, limit);
+    .sort(compareSearchResults);
 }
 
 function normalizeTags(tags: string[]) {

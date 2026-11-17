@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { testRmSync as rmSync } from '../helpers/autoTest.mjs';
 import { afterAll, describe, expect, it } from 'vitest';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PROFILE_MARKER, canonicalDirectory, prepareRuntimeEnvironment, resolveRuntimeEnvironment, type RuntimeEnvironmentOptions } from '../../src/main/settings/runtimeEnvironment';
+import { PROFILE_MARKER, canonicalDirectory, inspectDailyDataDirectory, prepareRuntimeEnvironment, resolveRuntimeEnvironment, saveDailyDataDirectory, type RuntimeEnvironmentOptions } from '../../src/main/settings/runtimeEnvironment';
 
 const tempBase = path.join(os.tmpdir(), 'Asterium-AutoTest');
 mkdirSync(tempBase, { recursive: true });
@@ -26,6 +26,45 @@ function fixture(overrides: Partial<RuntimeEnvironmentOptions> = {}) {
 }
 
 describe('startup environment boundaries', () => {
+  it('uses a migrated daily directory at the next ordinary startup, preserving legacy state and files', () => {
+    const f = fixture({ isPackaged: true }), original = f.resolve();
+    mkdirSync(original.userDataDirectory, { recursive: true });
+    const migrated = path.join(f.worker, 'migrated daily');
+    mkdirSync(path.join(migrated, 'AsteriumData'), { recursive: true });
+    const settings = path.join(migrated, 'general-settings.v1.json');
+    writeFileSync(settings, 'synthetic-old-settings');
+
+    const selection = inspectDailyDataDirectory(f.options.appData, migrated);
+    expect(selection).toEqual({ directory: migrated, existing: true });
+    saveDailyDataDirectory(f.options.appData, selection);
+    const restarted = f.resolve();
+    prepareRuntimeEnvironment(restarted);
+    expect(restarted.userDataDirectory).toBe(migrated);
+    expect(readFileSync(settings, 'utf8')).toBe('synthetic-old-settings');
+    expect(readdirSync(original.userDataDirectory)).toEqual([]);
+    expect(f.resolve({ userData: original.userDataDirectory }).userDataDirectory).toBe(original.userDataDirectory);
+    expect(f.resolve({ profile: 'dev' }).userDataDirectory).toBe(path.join(f.options.localAppData, 'Asterium-Dev'));
+    expect(() => prepareRuntimeEnvironment(f.resolve({ profile: 'dev', userData: migrated }))).toThrow('ASTERIUM_PROFILE_OWNER_MISMATCH');
+  });
+
+  it('recognizes empty selections, preserves an existing choice if validation fails, and refuses missing saved paths', () => {
+    const f = fixture({ isPackaged: true });
+    mkdirSync(f.options.appData);
+    const first = path.join(f.worker, 'empty first'), other = path.join(f.worker, 'unrelated');
+    mkdirSync(first); mkdirSync(other);
+    const firstSelection = inspectDailyDataDirectory(f.options.appData, first);
+    expect(firstSelection.existing).toBe(false);
+    saveDailyDataDirectory(f.options.appData, firstSelection);
+    writeFileSync(path.join(other, 'unrelated.txt'), 'keep');
+    expect(() => inspectDailyDataDirectory(f.options.appData, other)).toThrow('空文件夹');
+    expect(f.resolve().userDataDirectory).toBe(first);
+
+    renameSync(first, first + '-offline');
+    expect(() => f.resolve()).toThrow(first);
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(path.join(f.options.appData, 'Asterium-Beta'))).toBe(false);
+  });
+
   it('keeps packaged daily paths compatible and gives source startup independent defaults', () => {
     const f = fixture(), daily = f.resolve({ isPackaged: true }), dev = f.resolve();
     expect(daily.profile).toBe('daily'); expect(dev.profile).toBe('dev');

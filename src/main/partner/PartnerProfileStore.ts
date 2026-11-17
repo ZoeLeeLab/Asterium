@@ -93,9 +93,7 @@ export class PartnerProfileStore {
         const current = await readFile(this.userProfilePath(), 'utf8').catch(() => '');
         if (user.revision !== createHash('sha256').update(current).digest('hex')) throw new Error('PROFILE_VERSION_CONFLICT');
       }
-      const normalized = { ...user, displayName: user.displayName.trim(), introduction: user.introduction.trim(), updatedAt: new Date().toISOString() };
-      await atomicWrite(this.userProfilePath(), renderUserProfile(normalized));
-      return { ...normalized, revision: createHash('sha256').update(renderUserProfile(normalized)).digest('hex') };
+      return this.writeUserProfile({ displayName: user.displayName.trim(), introduction: user.introduction.trim() });
     });
     if (this.lastSyncInput) this.lastSyncInput = { ...this.lastSyncInput, user: { ...result } };
     return result;
@@ -309,6 +307,14 @@ export class PartnerProfileStore {
     return path.join(this.rootDirectory, 'user', 'user-profile.md');
   }
 
+  private async writeUserProfile(profile: Pick<UserProfileSeed, 'displayName' | 'introduction'>) {
+    const profilePath = this.userProfilePath();
+    const content = renderUserProfile(profile);
+    await atomicWrite(profilePath, content);
+    const { mtime } = await stat(profilePath);
+    return { ...profile, updatedAt: mtime.toISOString(), revision: createHash('sha256').update(content).digest('hex') };
+  }
+
   private async ensureUser(seed: UserProfileSeed) {
     try {
       const profilePath = this.userProfilePath();
@@ -319,9 +325,7 @@ export class PartnerProfileStore {
       return { ...parseUserProfile(content, metadata.mtime.toISOString()), revision: createHash('sha256').update(content).digest('hex') };
     } catch (error) {
       if (!isNodeError(error) || error.code !== 'ENOENT') throw error;
-      const normalized = { ...seed, displayName: seed.displayName.trim() || '用户', introduction: seed.introduction.trim(), updatedAt: new Date().toISOString() };
-      await atomicWrite(this.userProfilePath(), renderUserProfile(normalized));
-      return { ...normalized, revision: createHash('sha256').update(renderUserProfile(normalized)).digest('hex') };
+      return this.writeUserProfile({ displayName: seed.displayName.trim() || '用户', introduction: seed.introduction.trim() });
     }
   }
 
@@ -478,7 +482,7 @@ export class PartnerProfileStore {
 
 }
 
-function renderUserProfile(profile: { displayName: string; introduction: string; updatedAt: string }) {
+function renderUserProfile(profile: Pick<UserProfileSeed, 'displayName' | 'introduction'>) {
   return `# 用户介绍\n\n## 名字\n\n${profile.displayName}\n\n## 介绍\n\n${profile.introduction || '（未设置）'}\n`;
 }
 

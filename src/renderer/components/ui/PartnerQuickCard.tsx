@@ -4,17 +4,19 @@ import type { WorkspaceGrant } from '../../../shared/agentProtocol';
 import { defaultApiModelImages } from '../../../shared/apiConnections';
 import type { Conversation, Partner, Project } from '../../types/domain';
 import { Avatar } from './Avatar';
+import { CodexQuotaDetail } from './CodexQuotaDetail';
 
 interface PartnerQuickCardProps {
   partner?: Partner;
   conversation?: Conversation;
   projects?: Project[];
   codexModelPicker?: ReactNode;
+  visible?: boolean;
   onUpdatePartner: (partner: Partner) => void | Promise<void>;
   onUpdateWorkspaceGrants: (partnerId: string, grants: WorkspaceGrant[], preferredGrantId?: string) => void;
 }
 
-export function PartnerQuickCard({ partner, conversation, projects = [], codexModelPicker, onUpdatePartner, onUpdateWorkspaceGrants }: PartnerQuickCardProps) {
+export function PartnerQuickCard({ partner, conversation, projects = [], codexModelPicker, visible = true, onUpdatePartner, onUpdateWorkspaceGrants }: PartnerQuickCardProps) {
   const [open, setOpen] = useState(true);
   const [models, setModels] = useState<string[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
@@ -144,6 +146,9 @@ export function PartnerQuickCard({ partner, conversation, projects = [], codexMo
   const conversationModel = conversation?.partnerId === partner.id ? conversation.runtimeModel : undefined;
   const currentModel = conversationModel?.status === 'current' ? conversationModel : undefined;
   const observedModel = currentModel ?? conversationModel ?? partner.recentModel;
+  const localCodex = partner.sourceMode === 'local_cli' && partner.adapterType === 'codex_cli'
+    && partner.connectionKind === 'local_codex' && !partner.isPrototype && !partner.isRemoved;
+  const importedConversationId = conversation?.partnerId === partner.id && conversation.importedCodexThread ? conversation.id : undefined;
 
   return (
     <section className={`partner-quick-card ${open ? 'open' : ''}`}>
@@ -164,11 +169,12 @@ export function PartnerQuickCard({ partner, conversation, projects = [], codexMo
               <strong title={partner.partnerRoot}>{partner.partnerRoot || '旧版星丛私有目录（请重新选择）'}</strong>
               <small>仅可在伙伴设置中修改</small>
             </div>
-            <div className="quick-detail">
-              <span>MCP</span>
-              <strong>跟随 {partner.adapterType === 'claude_code' ? 'Claude Code' : 'Codex'} 会话</strong>
-              <small>以伙伴配置来源中的实际连接状态为准</small>
-            </div>
+            {localCodex && <CodexQuotaDetail
+              key={JSON.stringify([partner.id, partner.codexRuntimeId, partner.codexRuntime?.environment, importedConversationId])}
+              partnerId={partner.id}
+              importedConversationId={importedConversationId}
+              visible={visible}
+            />}
           </> : <div className="quick-detail">
             <span>{partner.sourceMode === 'api_partner' ? '伙伴配置来源' : '伙伴工作区'}</span>
             <strong title={partner.sourceMode === 'api_partner' ? apiWorkspace : partner.workspaceRoot}>{partner.sourceMode === 'api_partner' ? apiWorkspace || '空' : partner.workspaceRoot || '空'}</strong>

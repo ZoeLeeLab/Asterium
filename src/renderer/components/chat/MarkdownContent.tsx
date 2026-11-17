@@ -1,7 +1,8 @@
 import { Check, Copy } from 'lucide-react';
 import { isValidElement, memo, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { isLocalArtifactLink } from '../../../shared/artifactLinks';
 
 let mermaidModule: Promise<typeof import('mermaid')> | undefined;
 let mermaidRenderQueue = Promise.resolve();
@@ -111,19 +112,10 @@ const markdownComponents: Components = {
     }
     return <pre>{codeBlock}</pre>;
   },
-  a: ({ href, children: label }) => (
-    <a
-      href={href}
-      rel="noreferrer"
-      title="使用默认浏览器打开"
-      onClick={(event) => {
-        if (!href || !/^https?:/i.test(href)) return event.preventDefault();
-        event.preventDefault();
-        window.open(href, '_blank', 'noopener,noreferrer');
-      }}
-    >{label}</a>
-  ),
 };
+
+const chatLinkUrlTransform: UrlTransform = (url, key, node) =>
+  key === 'href' && node.tagName === 'a' && isLocalArtifactLink(url) ? url : defaultUrlTransform(url);
 
 export interface StudioMessageReference {
   seq: number;
@@ -145,6 +137,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   studioReferenceAuthors = [],
   studioMentions = [],
   onStudioReference,
+  onLocalArtifactLink,
 }: {
   children: string;
   className?: string;
@@ -152,6 +145,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   studioReferenceAuthors?: string[];
   studioMentions?: StudioRenderedMention[];
   onStudioReference?: (messageId: string) => void;
+  onLocalArtifactLink?: (href: string) => void;
 }) {
   const annotations = useMemo(() => createStudioAnnotationPlugin(studioReferences, studioReferenceAuthors, studioMentions), [studioMentions, studioReferenceAuthors, studioReferences]);
   const components = useMemo<Components>(() => ({
@@ -170,6 +164,12 @@ export const MarkdownContent = memo(function MarkdownContent({
       if (href === '#studio-message-unavailable') {
         return <span className="studio-message-reference is-unavailable" title="原消息不可用">{label}</span>;
       }
+      if (href && onLocalArtifactLink && isLocalArtifactLink(href)) {
+        return <a href="#" className={linkClassName} title="查看此对话交付的文件" onClick={(event) => {
+          event.preventDefault();
+          onLocalArtifactLink(href);
+        }}>{label}</a>;
+      }
       return <a
         href={href}
         className={linkClassName}
@@ -182,13 +182,14 @@ export const MarkdownContent = memo(function MarkdownContent({
         }}
       >{label}</a>;
     },
-  }), [onStudioReference]);
+  }), [onLocalArtifactLink, onStudioReference]);
   return (
     <div className={`markdown-content ${className}`.trim()}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[annotations]}
         components={components}
+        urlTransform={onLocalArtifactLink ? chatLinkUrlTransform : undefined}
       >{children}</ReactMarkdown>
     </div>
   );

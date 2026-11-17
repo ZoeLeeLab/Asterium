@@ -12,7 +12,6 @@ import type {
   ClaudeSessionImport,
   CodexDetectionResult,
   CodexRuntimeInfo,
-  CodexThreadSummary,
   ConversationAttachmentInfo,
   CredentialStatus,
   ExistingThreadConnection,
@@ -25,6 +24,7 @@ import type {
   PartnerProfilesSyncResult,
   PartnerWorkspaceState,
   PendingMessageAttachment,
+  PermissionMode,
   RendererAgentEvent,
   ResolveAuthorizationCommand,
   ResolveUserInputCommand,
@@ -108,6 +108,7 @@ import type { SingleChatConversationSnapshot } from './singleChatMessages';
 import type {
   MemoryArchiveBriefing,
   MemoryArchiveChange,
+  MemoryArchiveBulkPurgeRequest,
   MemoryArchiveCommentRequest,
   MemoryArchiveCreateRequest,
   MemoryArchiveMutationRequest,
@@ -131,9 +132,13 @@ export interface AsteriumAgentsApi {
   detectClaude: () => Promise<ClaudeDetectionResult>;
   detectCodex?: () => Promise<CodexDetectionResult>;
   listCodexModels?: (request: import('./codexModels').CodexModelListRequest) => Promise<import('./codexModels').CodexModelOption[]>;
+  readCodexQuota?: (request: import('./codexQuota').CodexQuotaRequest) => Promise<import('./codexQuota').CodexQuotaResult>;
   searchCodexHistory?: (request: import('./codexHistory').CodexHistorySearchRequest) => Promise<import('./codexHistory').CodexHistorySearchPage>;
   readCodexHistory?: (request: import('./codexHistory').CodexHistoryRequest) => Promise<import('./codexHistory').CodexHistoryPage>;
-  listCodexThreads?: (runtimeId: string, workspaceGrantId: string) => Promise<CodexThreadSummary[]>;
+  chooseCodexThreadDirectory?: (request: import('./codexThreadImport').CodexThreadDirectoryRequest) => Promise<import('./codexThreadImport').CodexThreadDirectoryPreview | null>;
+  confirmCodexThreadImport?: (selectionId: string, partnerId: string, permissionMode: PermissionMode) => Promise<import('./codexThreadImport').CodexThreadImportResult>;
+  codexImportedWorkspaceStatus?: (partnerId: string, conversationId: string) => Promise<import('./codexThreadImport').CodexImportedWorkspaceStatus>;
+  chooseCodexImportedDirectory?: (partnerId: string, conversationId: string) => Promise<import('./codexThreadImport').CodexImportedWorkspaceStatus | null>;
   getLocalThreadLifecycles?: (request: LocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult[]>;
   changeLocalThreadLifecycle?: (request: ChangeLocalThreadLifecycleRequest) => Promise<NativeThreadLifecycleResult>;
   importClaudeSession?: () => Promise<ClaudeSessionImport | null>;
@@ -204,7 +209,9 @@ export interface ArtifactReadResult {
 }
 
 export interface AsteriumArtifactsApi {
+  listLatestConversation?: (conversationId: string) => Promise<ArtifactInfo[]>;
   inspect: (artifactId: string) => Promise<ArtifactInfo | null>;
+  resolveConversationLink: (conversationId: string, href: string) => Promise<{ artifact: ArtifactInfo; action: 'preview' | 'reveal' } | null>;
   read: (artifactId: string) => Promise<ArtifactReadResult>;
   open: (artifactId: string) => Promise<void>;
   openInBrowser?: (artifactId: string) => Promise<void>;
@@ -219,7 +226,7 @@ export interface AsteriumArtifactsApi {
   clearCache: () => Promise<{ sizeBytes: number; itemCount: number; limitBytes: number }>;
 }
 
-export interface AsteriumAttachmentsApi {
+export interface AsteriumAttachmentsApi extends Partial<SnapshotCleanupApi> {
   stageClipboardImage?: (bytes: Uint8Array) => Promise<PendingMessageAttachment>;
   stageFiles?: (files: File[], remaining: number, allowLocalReferences?: boolean) => Promise<PendingMessageAttachment[]>;
   pasteFiles?: (remaining: number, allowLocalReferences?: boolean) => Promise<PendingMessageAttachment[]>;
@@ -331,6 +338,7 @@ export interface AsteriumProjectNotebooksApi {
 
 export interface AsteriumMemoryApi {
   importText?: import('./memoryImport').MemoryImportApi;
+  backup?: import('./memoryBackup').MemoryBackupApi;
   query: (request: MemoryArchiveQuery) => Promise<MemoryArchiveQueryResult>;
   briefing: (partnerId: string) => Promise<MemoryArchiveBriefing>;
   create: (request: MemoryArchiveCreateRequest) => Promise<MemoryRecord>;
@@ -339,6 +347,7 @@ export interface AsteriumMemoryApi {
   softDelete: (request: MemoryArchiveMutationRequest) => Promise<MemoryRecord>;
   restore: (request: MemoryArchiveMutationRequest) => Promise<MemoryRecord>;
   purge: (request: MemoryArchiveMutationRequest) => Promise<MemoryRecord>;
+  purgeArchived?: (request: MemoryArchiveBulkPurgeRequest) => Promise<number>;
   readSource: (request: MemoryArchiveSourceReadRequest) => Promise<Array<{ index: number; result: MemorySourceReadResult }>>;
   onChanged: (listener: (change: MemoryArchiveChange) => void) => () => void;
 }
@@ -347,7 +356,7 @@ export interface AsteriumNativeBindingsApi {
   syncSingle: (bindings: Array<{ partnerId: string; source: 'local_cli' | 'api_partner'; conversationId: string; nativeThreadId: string }>) => Promise<void>;
 }
 
-export interface AsteriumConversationsApi {
+export interface AsteriumConversationsApi extends Partial<SnapshotCleanupApi> {
   openHistory?: (recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot | undefined>;
   migrateHistory?: (source: import('./singleChatHistory').SingleChatHistoryImport, recent?: boolean) => Promise<import('./singleChatHistory').SingleChatHistorySnapshot>;
   readHistoryPage?: (request: import('./singleChatHistory').SingleChatPageRequest) => Promise<import('./singleChatHistory').SingleChatHistoryPage | undefined>;
@@ -383,3 +392,4 @@ export interface DesktopBridge {
   asteriumNativeBindings?: AsteriumNativeBindingsApi;
   asteriumConversations?: AsteriumConversationsApi;
 }
+import type { SnapshotCleanupApi } from './snapshotCleanup';

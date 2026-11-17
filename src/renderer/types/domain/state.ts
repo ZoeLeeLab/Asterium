@@ -1,4 +1,5 @@
 import type { AutomationRun } from '../../../shared/automations';
+import type { ArtifactInfo } from '../../../shared/desktopBridge';
 import type { PartnerEvent } from '../../../shared/agentProtocol';
 import type {
   NativeThreadLifecycleState,
@@ -77,10 +78,11 @@ export type PrototypeAction =
   | { type: 'restoreGroupChat'; groupChatId: string }
   | { type: 'removeGroupChat'; groupChatId: string }
   | { type: 'toggleGroupMember'; groupChatId: string; partnerId: string }
-  | { type: 'sendChatMessage'; conversationId: string; message: Message; historySaved?: boolean }
+  | { type: 'sendChatMessage'; conversationId: string; message: Message; historySaved?: boolean; retryOfClientMessageId?: string }
   | { type: 'sendChatGuidance'; conversationId: string; runId: RunId; message: Message; waitForApplication?: boolean }
   | { type: 'rejectChatGuidance'; conversationId: string; clientMessageId: string }
-  | { type: 'addConversationArtifact'; conversationId: string; artifact: ConversationArtifact }
+  | { type: 'refreshConversationArtifacts'; conversationId: string; inspections: ReadonlyMap<string, ArtifactInfo | null> }
+  | { type: 'replaceConversationArtifacts'; conversationId: string; previous?: ConversationArtifact[]; latest: ArtifactInfo[] }
   | { type: 'removeConversationArtifact'; conversationId: string; artifactId: string }
   | { type: 'replaceLastTurn'; conversationId: string; messages: Message[]; sessionId?: SessionId; restoreOnFailure?: boolean }
   | { type: 'sendStudioMessage'; groupChatId: string; message: Message }

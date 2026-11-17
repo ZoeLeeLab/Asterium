@@ -2,7 +2,7 @@
 import { app, BrowserWindow, session } from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { activateRuntimeEnvironment } from '../../src/main/settings/runtimeEnvironment';
+import { activateRuntimeEnvironment, inspectDailyDataDirectory, saveDailyDataDirectory } from '../../src/main/settings/runtimeEnvironment';
 import { GeneralSettingsStore } from '../../src/main/settings/GeneralSettingsStore';
 import { BETA_APP_NAME } from '../../src/shared/appRelease';
 
@@ -20,6 +20,10 @@ try {
       if (process.platform === 'win32') app.setAppUserModelId(environment.appUserModelId);
       const store = new GeneralSettingsStore(path.join(environment.userDataDirectory, 'general-settings.v1.json'));
       if (config.shortcut) await store.update({ sendShortcut: config.shortcut });
+      if (config.selectDailyDirectory) {
+        const selection = inspectDailyDataDirectory(config.options.appData, config.selectDailyDirectory);
+        saveDailyDataDirectory(config.options.appData, selection);
+      }
       const window = new BrowserWindow({ show: false, title: environment.label, webPreferences: { sandbox: true } });
       await window.loadURL('data:text/html,<title>Isolation fixture</title>');
       report({ status: 'ready', environment, settings: (await store.get()).settings,
