@@ -144,10 +144,7 @@ import {
   type PartnerWorkspaceState,
   type PartnerEvent,
   type ResolveAuthorizationCommand,
-  type ResolveUserInputCommand,
   type ResumeSessionCommand,
-  type SendGuidanceCommand,
-  type SendGuidanceResult,
   type SendMessageCommand,
   type SendMessageReceipt,
   type ExistingThreadConnection,
@@ -189,6 +186,7 @@ import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelLis
 import { registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackSettingsIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
 import { registerSessionMaintenanceIpc } from './ipc/sessionMaintenanceIpc';
+import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc } from './ipc/memoryBackupExportIpc';
 import { registerMemoryBackupImportIpc } from './ipc/memoryBackupImportIpc';
@@ -2629,12 +2627,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await runCoordinator.cancel(value as CancelRunCommand);
   });
 
-  ipcMain.handle(AGENT_IPC.sendGuidance, async (event, value: unknown): Promise<SendGuidanceResult> => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'guidance.send') throw new Error('INVALID_GUIDANCE_COMMAND');
-    return runCoordinator.sendGuidance(value as SendGuidanceCommand);
-  });
+  registerRunGuidanceIpc(ipcMain, runCoordinator, requireSender);
 
   ipcMain.handle(AGENT_IPC.resolveAuthorization, async (event, value: unknown) => {
     requireSender(event);
@@ -2643,12 +2636,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await runCoordinator.resolveAuthorization(value as ResolveAuthorizationCommand);
   });
 
-  ipcMain.handle(AGENT_IPC.resolveUserInput, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'user_input.resolve') throw new Error('INVALID_USER_INPUT_COMMAND');
-    await runCoordinator.resolveUserInput(value as ResolveUserInputCommand);
-  });
+  registerRunUserInputIpc(ipcMain, runCoordinator, requireSender);
 
   ipcMain.handle(AGENT_IPC.resumeSession, async (event, value: unknown) => {
     requireSender(event);
