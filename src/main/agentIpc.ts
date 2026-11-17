@@ -20,7 +20,6 @@ import { ProjectBrowserService } from './project/ProjectBrowserService';
 import { SessionProfileReloadService, profileReloadPrompt } from './runtime/SessionProfileReloadService';
 import { confirmProfileReload } from './api/confirmProfileReload';
 import { SessionCommandService } from './runtime/SessionCommandService';
-import { assertSessionCommandTarget } from '../shared/sessionCommands';
 import { createHash, randomUUID } from 'node:crypto';
 import { PartnerDelegation, delegationInput, delegationWaitInput, type DelegationBatch, type DelegationTask } from './runtime/PartnerDelegation';
 import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from './runtime/ExistingPartnerReview';
@@ -130,7 +129,6 @@ import { codexThreadInUseFailure } from '../shared/codexThreadInUse';
 import { WriterLeaseCoordinator } from './runtime/WriterLeaseCoordinator';
 import { SessionCompactionService } from './runtime/SessionCompactionService';
 import { compactApiSession } from './api/ApiSessionCompactor';
-import { assertSessionCompactRequest } from '../shared/sessionCompaction';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
 import { confirmNativeProfileReload, NativeProfileReloadError } from './runtime/NativeProfileReload';
 import { StudioOrchestrator } from './studio/StudioOrchestrator';
@@ -190,6 +188,7 @@ import { registerUserProfileIpc } from './ipc/userProfileIpc';
 import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
 import { registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackSettingsIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
+import { registerSessionMaintenanceIpc } from './ipc/sessionMaintenanceIpc';
 import { assertMemoryArchiveMutation, assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc } from './ipc/memoryBackupExportIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
@@ -2546,15 +2545,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
 
   registerSessionStatusIpc(ipcMain, sessionCommands, requireSender);
-  ipcMain.handle(AGENT_IPC.executeSessionCommand, async (event, value: unknown) => {
-    requireSender(event); assertSessionCommandTarget(value, true);
-    return sessionCommands.execute(value);
-  });
-
-  ipcMain.handle(AGENT_IPC.compactSession, async (event, value: unknown) => {
-    requireSender(event); assertSessionCompactRequest(value);
-    return sessionCompactions.compact(value);
-  });
+  registerSessionMaintenanceIpc(ipcMain, { sessionCommands, sessionCompactions }, requireSender);
 
   ipcMain.handle(AGENT_IPC.sendApiMessage, async (event, value: unknown) => {
     requireSender(event);
