@@ -4,7 +4,7 @@
 >
 > 保留关系与记忆，也让 Codex、Claude Code 和不同模型一起把想法做出来。
 
-[下载 Beta.5](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.5) · [查看全部版本](https://github.com/ZoeLeeLab/Asterium/releases) · [使用文档](#文档)
+[下载 Beta.7](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.7) · [查看全部版本](https://github.com/ZoeLeeLab/Asterium/releases) · [使用文档](#文档)
 
 星丛是一款面向长期 AI 伙伴与多 Agent 协作的 Windows 桌面应用。
 
@@ -82,7 +82,7 @@
 
 ### 1. 下载并安装
 
-前往 [Beta.5 发行页](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.5)，下载 Windows x64 安装包。已安装 Beta.4 的用户可在「关于」中检查更新。发行页也提供对应源码包和 SHA-256 校验文件。
+前往 [Beta.7 发行页](https://github.com/ZoeLeeLab/Asterium/releases/tag/v0.1.0-beta.7)，下载 Windows x64 安装包。已安装 Beta.6 的用户可在「关于」中开启「接收测试版更新」，再点击「检查更新」。发行页也提供对应源码包和 SHA-256 校验文件。
 
 当前安装包尚未进行代码签名，Windows 或浏览器可能提示“未知发布者”或“下载不常见”。请从本仓库的 Releases 下载，并核对发行页提供的哈希。
 
@@ -117,7 +117,7 @@ Beta 数据默认使用 `%APPDATA%/Asterium-Beta`，与旧版默认资料分开�
 
 星丛仍处于早期 Beta，很多地方还在慢慢长出来。
 
-Beta.5 重构了单聊历史存储，升级后会自动迁移旧版单聊记录，长聊天可向上滚动加载较早消息。伙伴交付的文件和图片支持另存、打开所在文件夹、用默认浏览器打开或保存到项目。
+Beta.7 改善了长 Codex 单聊中打字、删除和发送消息的响应。单聊右侧可查看本机 Codex 的剩余额度和重置时间，也可以点击聊天中的本机文件链接，查看当前对话已经交付的文件。这版还修复了 Windows 较长路径下的 SQLite 记忆库兼容问题。
 
 如果你也有一个陪了你很久的 AI 伙伴，又想和它一起做点什么，希望星丛能给你们放下一张办公桌。若它刚好帮到了你，欢迎点一颗 ⭐，让我们知道这间小工作室值得继续长大。
 
