@@ -108,7 +108,7 @@ import { SessionBootstrapService } from './runtime/SessionBootstrapService';
 import { MemorySourceService } from './memory/MemorySourceService';
 import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
 import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
-import { MEMORY_STATUSES, MEMORY_TYPES, type MemoryArchiveCommentRequest, type MemoryArchiveCreateRequest, type MemoryArchiveMutationRequest, type MemoryArchiveQuery, type MemoryArchiveSourceReadRequest, type MemoryArchiveUpdateRequest, type MemorySourceAnchor } from '../shared/memoryArchive';
+import { MEMORY_STATUSES, MEMORY_TYPES, type MemoryArchiveCommentRequest, type MemoryArchiveCreateRequest, type MemoryArchiveMutationRequest, type MemoryArchiveUpdateRequest, type MemorySourceAnchor } from '../shared/memoryArchive';
 import { NativeThreadBindingStore } from './studio/NativeThreadBindingStore';
 import { StudioRoomStore } from './studio/StudioRoomStore';
 import { StudioNoteStore } from './studio/StudioNoteStore';
@@ -189,6 +189,7 @@ import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerUserProfileIpc } from './ipc/userProfileIpc';
 import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
+import { assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2568,10 +2569,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (memoryBackupDraft && memoryBackupDraft.id === id && memoryBackupDraft.partnerId === value) memoryBackupDraft = undefined;
   });
 
-  ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.query(assertMemoryArchiveQuery(value));
-  });
+  registerMemoryArchiveIpc(ipcMain, partnerMemoryManagement, requireSender);
 
   ipcMain.handle(AGENT_IPC.memoryArchiveBriefing, async (event, partnerId: unknown) => {
     requireSender(event);
@@ -2618,11 +2616,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       return { memoryId, expectedUpdatedAt };
     });
     return partnerMemories.purgeArchived({ partnerId, records });
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveReadSource, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.readSource(assertMemoryArchiveSourceRead(value));
   });
 
   ipcMain.handle(AGENT_IPC.deleteApiSession, async (event, value: unknown) => {
@@ -3355,26 +3348,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   };
 }
 
-function assertMemoryPartnerId(value: unknown) {
-  if (typeof value !== 'string' || !value.trim()) throw new Error('INVALID_MEMORY_PARTNER_ID');
-  return value;
-}
-
-function assertMemoryArchiveQuery(value: unknown): MemoryArchiveQuery {
-  if (!isRecord(value)) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  const partnerId = assertMemoryPartnerId(value.partnerId);
-  if (value.includeDeleted !== undefined && typeof value.includeDeleted !== 'boolean') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.archivedOnly !== undefined && typeof value.archivedOnly !== 'boolean') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.text !== undefined && typeof value.text !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.tags !== undefined && (!Array.isArray(value.tags) || !value.tags.every((item) => typeof item === 'string'))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.types !== undefined && (!Array.isArray(value.types) || !value.types.every((item) => MEMORY_TYPES.includes(item as never)))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.statuses !== undefined && (!Array.isArray(value.statuses) || !value.statuses.every((item) => MEMORY_STATUSES.includes(item as never)))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.from !== undefined && typeof value.from !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.to !== undefined && typeof value.to !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.limit !== undefined && !Number.isSafeInteger(value.limit)) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  return { ...value, partnerId } as MemoryArchiveQuery;
-}
-
 function assertMemoryArchiveCreate(value: unknown): MemoryArchiveCreateRequest {
   if (!isRecord(value) || !MEMORY_TYPES.includes(value.type as never) || typeof value.body !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_CREATE');
   return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCreateRequest;
@@ -3396,16 +3369,6 @@ function assertMemoryArchiveComment(value: unknown): MemoryArchiveCommentRequest
 function assertMemoryArchiveMutation(value: unknown): MemoryArchiveMutationRequest {
   if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim() || typeof value.expectedUpdatedAt !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
   return { partnerId: assertMemoryPartnerId(value.partnerId), memoryId: value.memoryId, expectedUpdatedAt: value.expectedUpdatedAt };
-}
-
-function assertMemoryArchiveSourceRead(value: unknown): MemoryArchiveSourceReadRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim()
-    || (value.sourceIndex !== undefined && (!Number.isSafeInteger(value.sourceIndex) || Number(value.sourceIndex) < 0))) throw new Error('INVALID_MEMORY_ARCHIVE_SOURCE_READ');
-  return {
-    partnerId: assertMemoryPartnerId(value.partnerId),
-    memoryId: value.memoryId,
-    ...(value.sourceIndex !== undefined ? { sourceIndex: Number(value.sourceIndex) } : {}),
-  };
 }
 
 function isApiSendRequest(value: unknown): value is ApiSendRequest {
