@@ -9,7 +9,7 @@ import { SingleChatMessageStore } from '../../src/main/conversation/SingleChatMe
 import { PartnerMemoryService } from '../../src/main/memory/PartnerMemoryService';
 import { PartnerProfileStore } from '../../src/main/partner/PartnerProfileStore';
 import type { PartnerProfileSeed } from '../../src/shared/agentProtocol';
-import type { MemoryRecord } from '../../src/shared/memoryArchive';
+import type { MemoryArchiveBriefing, MemoryRecord } from '../../src/shared/memoryArchive';
 import { testRm } from '../helpers/autoTest.mjs';
 
 const electron = vi.hoisted(() => ({ root: '' }));
@@ -31,6 +31,7 @@ const { partnerId } = seed;
 const timestamp = '2026-01-18T10:00:00.000Z';
 const query = 'asterium:memory-archive:query';
 const readSource = 'asterium:memory-archive:read-source';
+const briefing = 'asterium:memory-archive:briefing';
 const changed = 'asterium:memory-archive:changed';
 const record: MemoryRecord = {
   schemaVersion: 1, partnerId, memoryId: 'fixture-memory', type: 'stable_fact', status: 'active',
@@ -119,5 +120,42 @@ it('queries saved records with existing filters and limits and reads sources wit
       { index: 1, result: { state: 'unavailable', messages: [], reason: 'source_access_denied' } },
     ]);
     expect(changes()).toEqual([]);
+  });
+});
+
+it('caches a briefing per archive version and date without publishing an archive change', async () => {
+  await withArchive(async ({ invoke, store, changes }) => {
+    await store.create(partnerId, record);
+    const cached = vi.spyOn(PartnerMemoryService.prototype, 'cacheBriefing');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 0, 18, 12));
+    try {
+      await expect(invoke(briefing, partnerId, {})).rejects.toThrow('INVALID_IPC_SENDER');
+      await expect(invoke(briefing, ' ')).rejects.toThrow('INVALID_MEMORY_PARTNER_ID');
+      expect(cached).not.toHaveBeenCalled();
+
+      const first = await invoke<MemoryArchiveBriefing>(briefing, partnerId);
+      expect(first).toMatchObject({ partnerId, logicalDate: '2026-01-18', content: expect.stringContaining(record.body) });
+      await expect(store.cachedBriefing(partnerId)).resolves.toEqual(first);
+      await expect(invoke(briefing, partnerId)).resolves.toEqual(first);
+      expect(cached).toHaveBeenCalledExactlyOnceWith(partnerId, first);
+
+      const additional = { ...record, memoryId: 'fixture-extra-memory', body: '后来增加的合成正文' };
+      await store.create(partnerId, additional);
+      const updated = await invoke<MemoryArchiveBriefing>(briefing, partnerId);
+      expect(updated.archiveVersion).not.toBe(first.archiveVersion);
+      expect(updated.content).toContain(additional.body);
+      expect(cached).toHaveBeenCalledTimes(2);
+
+      vi.setSystemTime(new Date(2026, 0, 19, 12));
+      const nextDay = await invoke<MemoryArchiveBriefing>(briefing, partnerId);
+      expect(nextDay).toMatchObject({ archiveVersion: updated.archiveVersion, logicalDate: '2026-01-19' });
+      expect(cached).toHaveBeenLastCalledWith(partnerId, nextDay);
+      expect(cached).toHaveBeenCalledTimes(3);
+      expect(changes()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+      cached.mockRestore();
+    }
   });
 });

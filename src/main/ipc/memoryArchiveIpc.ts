@@ -5,12 +5,17 @@ import type { PartnerMemoryManagementService } from '../memory/PartnerMemoryMana
 
 export function registerMemoryArchiveIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  partnerMemoryManagement: Pick<PartnerMemoryManagementService, 'query' | 'readSource'>,
+  partnerMemoryManagement: Pick<PartnerMemoryManagementService, 'query' | 'briefing' | 'readSource'>,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
   ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.query(assertMemoryArchiveQuery(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveBriefing, async (event, partnerId: unknown) => {
+    requireSender(event);
+    return partnerMemoryManagement.briefing(assertMemoryPartnerId(partnerId));
   });
 
   ipcMain.handle(AGENT_IPC.memoryArchiveReadSource, async (event, value: unknown) => {

@@ -2565,11 +2565,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerMemoryArchiveIpc(ipcMain, partnerMemoryManagement, requireSender);
 
-  ipcMain.handle(AGENT_IPC.memoryArchiveBriefing, async (event, partnerId: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.briefing(assertMemoryPartnerId(partnerId));
-  });
-
   ipcMain.handle(AGENT_IPC.memoryArchiveCreate, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.create(assertMemoryArchiveCreate(value));
