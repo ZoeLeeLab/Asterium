@@ -182,6 +182,7 @@ import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc
 import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
 import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
 import { registerUserProfileIpc } from './ipc/userProfileIpc';
+import { registerPartnerProfileRefreshIpc } from './ipc/partnerProfileRefreshIpc';
 import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
 import { registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackSettingsIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
@@ -2365,9 +2366,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerExtensionsIpc(ipcMain, apiExtensions, mcpConnections, requireSender);
 
-  ipcMain.handle(AGENT_IPC.refreshPartnerProfiles, async (event) => {
-    requireSender(event); return partnerProfiles.refresh();
-  });
+  registerPartnerProfileRefreshIpc(ipcMain, partnerProfiles, requireSender);
 
   ipcMain.handle(AGENT_IPC.syncPartnerProfiles, async (event, value: unknown) => {
     requireSender(event);
