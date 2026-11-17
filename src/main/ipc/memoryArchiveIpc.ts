@@ -6,11 +6,17 @@ import {
   type MemoryArchiveSourceReadRequest, type MemoryArchiveUpdateRequest,
 } from '../../shared/memoryArchive';
 import type { PartnerMemoryManagementService } from '../memory/PartnerMemoryManagementService';
+import type { PartnerMemoryService } from '../memory/PartnerMemoryService';
+
+interface MemoryArchiveIpcDependencies {
+  partnerMemoryManagement: Pick<PartnerMemoryManagementService,
+    'query' | 'briefing' | 'create' | 'update' | 'comment' | 'softDelete' | 'restore' | 'readSource' | 'purge'>;
+  partnerMemories: Pick<PartnerMemoryService, 'purgeArchived'>;
+}
 
 export function registerMemoryArchiveIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  partnerMemoryManagement: Pick<PartnerMemoryManagementService,
-    'query' | 'briefing' | 'create' | 'update' | 'comment' | 'softDelete' | 'restore' | 'readSource'>,
+  { partnerMemoryManagement, partnerMemories }: MemoryArchiveIpcDependencies,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
   ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
@@ -51,6 +57,23 @@ export function registerMemoryArchiveIpc(
   ipcMain.handle(AGENT_IPC.memoryArchiveReadSource, async (event, value: unknown) => {
     requireSender(event);
     return partnerMemoryManagement.readSource(assertMemoryArchiveSourceRead(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchivePurge, async (event, value: unknown) => {
+    requireSender(event);
+    return partnerMemoryManagement.purge(assertMemoryArchiveMutation(value));
+  });
+
+  ipcMain.handle(AGENT_IPC.memoryArchiveBulkPurge, (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || !Array.isArray(value.records) || !value.records.length) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
+    const partnerId = assertMemoryPartnerId(value.partnerId);
+    const records = value.records.map(record => {
+      if (!isRecord(record)) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
+      const { memoryId, expectedUpdatedAt } = assertMemoryArchiveMutation({ ...record, partnerId });
+      return { memoryId, expectedUpdatedAt };
+    });
+    return partnerMemories.purgeArchived({ partnerId, records });
   });
 }
 

@@ -187,7 +187,7 @@ import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelLis
 import { registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackSettingsIpc';
 import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
 import { registerSessionMaintenanceIpc } from './ipc/sessionMaintenanceIpc';
-import { assertMemoryArchiveMutation, assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
+import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc } from './ipc/memoryBackupExportIpc';
 import { registerMemoryBackupImportIpc } from './ipc/memoryBackupImportIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
@@ -2486,24 +2486,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerMemoryBackupExportIpc(ipcMain, { partnerProfiles, partnerMemories, protectedRoots, memoryBackupFilters }, requireSender);
   const disposeMemoryBackupImport = registerMemoryBackupImportIpc(ipcMain, { partnerMemories, memoryBackupFilters }, requireSender);
 
-  registerMemoryArchiveIpc(ipcMain, partnerMemoryManagement, requireSender);
-
-  ipcMain.handle(AGENT_IPC.memoryArchivePurge, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.purge(assertMemoryArchiveMutation(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveBulkPurge, (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || !Array.isArray(value.records) || !value.records.length) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
-    const partnerId = assertMemoryPartnerId(value.partnerId);
-    const records = value.records.map(record => {
-      if (!isRecord(record)) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
-      const { memoryId, expectedUpdatedAt } = assertMemoryArchiveMutation({ ...record, partnerId });
-      return { memoryId, expectedUpdatedAt };
-    });
-    return partnerMemories.purgeArchived({ partnerId, records });
-  });
+  registerMemoryArchiveIpc(ipcMain, { partnerMemoryManagement, partnerMemories }, requireSender);
 
   ipcMain.handle(AGENT_IPC.deleteApiSession, async (event, value: unknown) => {
     requireSender(event);

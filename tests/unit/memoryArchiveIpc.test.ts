@@ -37,6 +37,8 @@ const update = 'asterium:memory-archive:update';
 const comment = 'asterium:memory-archive:comment';
 const softDelete = 'asterium:memory-archive:soft-delete';
 const restore = 'asterium:memory-archive:restore';
+const purge = 'asterium:memory-archive:purge';
+const bulkPurge = 'asterium:memory-archive:bulk-purge';
 const changed = 'asterium:memory-archive:changed';
 const record: MemoryRecord = {
   schemaVersion: 1, partnerId, memoryId: 'fixture-memory', type: 'stable_fact', status: 'active',
@@ -220,5 +222,57 @@ it('archives and restores a record with version checks, preserving its content a
     await expect(invoke(query, { partnerId })).resolves.toMatchObject({ records: [restored] });
     await expect(invoke(query, { partnerId, archivedOnly: true })).resolves.toMatchObject({ records: [] });
     expect(changes()).toEqual([[changed, { partnerId }], [changed, { partnerId }]]);
+  });
+});
+
+it('permanently removes only the requested archived record and returns it with one change notification', async () => {
+  await withArchive(async ({ invoke, store, changes }) => {
+    const active = record;
+    const archived = { ...record, memoryId: 'fixture-archived', deletedAt: timestamp };
+    await store.importBackup(partnerId, { format: 'asterium.partner-memory', version: 1, partnerId, records: [active, archived], fallbackMemoryIds: [] });
+    const request = { partnerId, memoryId: archived.memoryId, expectedUpdatedAt: archived.updatedAt };
+    const before = await store.snapshot(partnerId, { includeDeleted: true });
+
+    await expect(invoke(purge, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(purge, { ...request, expectedUpdatedAt: null })).rejects.toThrow('INVALID_MEMORY_ARCHIVE_MUTATION');
+    await expect(invoke(purge, { ...request, expectedUpdatedAt: 'stale' })).rejects.toThrow('MEMORY_RECORD_STALE');
+    await expect(invoke(purge, { ...request, memoryId: active.memoryId })).rejects.toThrow('MEMORY_PURGE_REQUIRES_SOFT_DELETE');
+    await expect(store.snapshot(partnerId, { includeDeleted: true })).resolves.toEqual(before);
+    expect(changes()).toEqual([]);
+
+    await expect(invoke(purge, request)).resolves.toEqual(archived);
+    await expect(store.get(partnerId, archived.memoryId, { includeDeleted: true })).resolves.toBeUndefined();
+    await expect(invoke(query, { partnerId, includeDeleted: true })).resolves.toMatchObject({ records: [active] });
+    expect(changes()).toEqual([[changed, { partnerId }]]);
+  });
+});
+
+it('rejects the entire bulk purge on any conflict and returns the count after an atomic removal', async () => {
+  await withArchive(async ({ invoke, store, changes }) => {
+    const active = record;
+    const replacement = { ...record, memoryId: 'fixture-replacement', deletedAt: timestamp };
+    const older: MemoryRecord = { ...replacement, memoryId: 'fixture-older', status: 'superseded', supersededByMemoryId: replacement.memoryId };
+    await store.importBackup(partnerId, { format: 'asterium.partner-memory', version: 1, partnerId, records: [active, older, replacement], fallbackMemoryIds: [] });
+    const first = { memoryId: replacement.memoryId, expectedUpdatedAt: replacement.updatedAt };
+    const second = { memoryId: older.memoryId, expectedUpdatedAt: older.updatedAt };
+    const request = { partnerId, records: [first, second] };
+    const before = await store.snapshot(partnerId, { includeDeleted: true });
+
+    await expect(invoke(bulkPurge, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    for (const invalid of [null, { partnerId, records: [] }, { partnerId, records: [first, null] },
+      { partnerId, records: [first, first] }, { partnerId, records: [first, { memoryId: older.memoryId }] }]) {
+      await expect(invoke(bulkPurge, invalid)).rejects.toThrow('INVALID_MEMORY_ARCHIVE_MUTATION');
+    }
+    await expect(invoke(bulkPurge, { ...request, partnerId: ' ' })).rejects.toThrow('INVALID_MEMORY_PARTNER_ID');
+    await expect(invoke(bulkPurge, { partnerId, records: [first] })).rejects.toThrow('MEMORY_SUPERSESSION_INVALID');
+    await expect(invoke(bulkPurge, { partnerId, records: [first, { ...second, expectedUpdatedAt: 'stale' }] })).rejects.toThrow('MEMORY_RECORD_STALE');
+    await expect(invoke(bulkPurge, { partnerId, records: [...request.records, { memoryId: active.memoryId, expectedUpdatedAt: active.updatedAt }] }))
+      .rejects.toThrow('MEMORY_PURGE_REQUIRES_SOFT_DELETE');
+    await expect(store.snapshot(partnerId, { includeDeleted: true })).resolves.toEqual(before);
+    expect(changes()).toEqual([]);
+
+    await expect(invoke(bulkPurge, request)).resolves.toBe(2);
+    await expect(invoke(query, { partnerId, includeDeleted: true })).resolves.toMatchObject({ records: [active] });
+    expect(changes()).toEqual([[changed, { partnerId }]]);
   });
 });
