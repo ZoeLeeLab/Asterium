@@ -1,11 +1,26 @@
 import { writeFile } from 'node:fs/promises';
 import { BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
+import type { StudioRoomMetadata } from '../../shared/studioRuntime';
+import type { ProjectService } from '../project/ProjectService';
 import type { StudioRoomStore } from '../studio/StudioRoomStore';
+
+export function registerStudioRoomSyncIpc(
+  ipcMain: Pick<IpcMain, 'handle'>,
+  projectService: Pick<ProjectService, 'syncRoom'>,
+  isStudioRoomMetadata: (value: unknown) => value is StudioRoomMetadata,
+  requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
+) {
+  ipcMain.handle(AGENT_IPC.studioSyncRoom, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isStudioRoomMetadata(value)) throw new Error('INVALID_STUDIO_ROOM');
+    return projectService.syncRoom(value);
+  });
+}
 
 export function registerStudioRoomIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  studioRooms: Pick<StudioRoomStore, 'getRoom' | 'setMuted' | 'setSettings' | 'appendSystemMessage'>,
+  studioRooms: Pick<StudioRoomStore, 'getRoom' | 'setMuted' | 'setSettings' | 'appendSystemMessage' | 'resolveDiscussion'>,
   archivedMarkdownFileName: (name: string, suffix: string) => string,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
@@ -58,6 +73,12 @@ export function registerStudioRoomIpc(
     requireSender(event);
     if (!isRecord(value) || typeof value.roomId !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_STUDIO_ANNOUNCEMENT');
     return studioRooms.appendSystemMessage(value.roomId, value.content);
+  });
+
+  ipcMain.handle(AGENT_IPC.studioResolveDiscussion, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.roomId !== 'string' || !['continue', 'end'].includes(String(value.decision))) throw new Error('INVALID_STUDIO_DISCUSSION_DECISION');
+    return studioRooms.resolveDiscussion(value.roomId, value.decision as 'continue' | 'end');
   });
 }
 

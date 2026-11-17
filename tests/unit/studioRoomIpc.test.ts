@@ -1,9 +1,10 @@
 // @vitest-environment node
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { BrowserWindow, IpcMain } from 'electron';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { StudioOrchestrator } from '../../src/main/studio/StudioOrchestrator';
 import { StudioRoomStore } from '../../src/main/studio/StudioRoomStore';
 import type { StudioRoomSnapshot } from '../../src/shared/studioRuntime';
 import { testRm } from '../helpers/autoTest.mjs';
@@ -31,11 +32,13 @@ const sender = { send: vi.fn() };
 const window = { webContents: sender, isDestroyed: () => false } as unknown as BrowserWindow;
 type Handler = (event: { sender: object }, request: unknown) => Promise<unknown>;
 const handlers = new Map<string, Handler>();
+const sync = 'asterium:studio:sync-room';
 const get = 'asterium:studio:get-room';
 const exportMarkdown = 'asterium:studio:export-markdown';
 const setMuted = 'asterium:studio:set-muted';
 const setSettings = 'asterium:studio:set-settings';
 const announce = 'asterium:studio:announce';
+const resolveDiscussion = 'asterium:studio:resolve-discussion';
 const roomChanged = 'asterium:studio:room-changed';
 let dispose: (() => Promise<void>) | undefined;
 let ledgerPath: string;
@@ -81,6 +84,36 @@ afterEach(async () => {
     if (electron.root) await testRm(electron.root, { recursive: true, force: true });
     electron.root = '';
   }
+});
+
+it('syncs room metadata and publishes snapshots without overwriting committed members or changing the project', async () => {
+  const [first, second] = ['fixture-first-partner', 'fixture-second-partner'];
+  const metadata = { roomId: 'fixture-room', projectId: 'fixture-project', name: '合成群聊', memberIds: [first, second] };
+  await expect(invoke(sync, metadata, {})).rejects.toThrow('INVALID_IPC_SENDER');
+  for (const invalid of [null, { ...metadata, roomId: '' }, { ...metadata, projectId: '' }, { ...metadata, name: ' ' },
+    { ...metadata, memberIds: [''] }, { ...metadata, archived: 'true' }]) {
+    await expect(invoke(sync, invalid)).rejects.toThrow('INVALID_STUDIO_ROOM');
+  }
+  expect(sender.send.mock.calls.filter(([channel]) => channel === roomChanged)).toEqual([]);
+
+  const created = await invoke<StudioRoomSnapshot>(sync, metadata);
+  expect(created.metadata).toEqual(metadata);
+  await expect(rooms.getRoom(metadata.roomId)).resolves.toEqual(created);
+  const [committed] = await rooms.applyProjectMemberships(metadata.projectId, [{
+    room: { ...metadata, memberIds: [second] }, announcements: ['合成成员变更记录'],
+  }]);
+  const stale = { ...metadata, name: '  合成群聊改名  ' };
+  const synced = await invoke<StudioRoomSnapshot>(sync, stale);
+  expect(synced.metadata).toEqual({ ...metadata, name: '合成群聊改名', memberIds: [second] });
+  expect(synced.messages).toEqual(committed.messages);
+  await expect(invoke(get, metadata.roomId)).resolves.toEqual(synced);
+
+  const ledger = await readFile(ledgerPath);
+  await expect(invoke(sync, { ...metadata, projectId: 'fixture-other-project' })).rejects.toThrow('PROJECT_ROOM_SCOPE_MISMATCH');
+  await expect(readFile(ledgerPath)).resolves.toEqual(ledger);
+  expect(sender.send.mock.calls.filter(([channel]) => channel === roomChanged)).toEqual([
+    [roomChanged, created], [roomChanged, synced],
+  ]);
 });
 
 it('reads an archived studio room and exports the supplied Markdown unchanged through IPC', async () => {
@@ -184,4 +217,43 @@ it('persists a system announcement and broadcasts its snapshot without starting 
   expect(saved.activeRound).toBeUndefined();
   await expect(rooms.getRoom(roomId)).resolves.toEqual(saved);
   expect(changes()).toEqual([[roomChanged, saved]]);
+});
+
+it('continues or ends a pending discussion, rejects repeats and forwards the saved round snapshot', async () => {
+  const roomId = 'fixture-room';
+  const partnerId = 'fixture-partner';
+  const room = { roomId, projectId: 'fixture-project', name: 'Fixture room', memberIds: [partnerId] };
+  await rooms.syncRoom(room);
+  await rooms.startRound({ room, messageId: 'fixture-discussion', content: '合成讨论', authorId: 'fixture-user', speakerQueue: [partnerId] });
+  const pending = JSON.parse(await readFile(ledgerPath, 'utf8'));
+  pending.rooms[roomId].activeRound.state = 'waiting_discussion_decision';
+  await writeFile(ledgerPath, JSON.stringify(pending), 'utf8');
+
+  const request = { roomId, decision: 'continue' };
+  const changes = () => sender.send.mock.calls.filter(([channel]) => channel === roomChanged);
+  const handleSnapshot = vi.spyOn(StudioOrchestrator.prototype, 'handleSnapshot').mockImplementation(() => undefined);
+  try {
+    await expect(invoke(resolveDiscussion, request, {})).rejects.toThrow('INVALID_IPC_SENDER');
+    await expect(invoke(resolveDiscussion, { ...request, decision: 'invalid' })).rejects.toThrow('INVALID_STUDIO_DISCUSSION_DECISION');
+    await expect(invoke(resolveDiscussion, { ...request, roomId: 'fixture-missing-room' })).rejects.toThrow('STUDIO_ROOM_NOT_FOUND');
+    expect(changes()).toEqual([]);
+    expect(handleSnapshot).not.toHaveBeenCalled();
+
+    const continued = await invoke<StudioRoomSnapshot>(resolveDiscussion, request);
+    expect(continued.activeRound).toMatchObject({ state: 'queued', discussionPauseCount: 1, members: [{ partnerId, state: 'queued' }] });
+    await expect(invoke(get, roomId)).resolves.toEqual(continued);
+    await expect(invoke(resolveDiscussion, request)).rejects.toThrow('STUDIO_DISCUSSION_DECISION_NOT_PENDING');
+    expect(changes()).toEqual([[roomChanged, continued]]);
+    expect(handleSnapshot).toHaveBeenCalledExactlyOnceWith(continued);
+
+    await writeFile(ledgerPath, JSON.stringify(pending), 'utf8');
+    const ended = await invoke<StudioRoomSnapshot>(resolveDiscussion, { roomId, decision: 'end' });
+    expect(ended.activeRound).toMatchObject({ state: 'completed', members: [{ partnerId, state: 'cancelled' }] });
+    await expect(invoke(get, roomId)).resolves.toEqual(ended);
+    await expect(invoke(resolveDiscussion, { roomId, decision: 'end' })).rejects.toThrow('STUDIO_DISCUSSION_DECISION_NOT_PENDING');
+    expect(changes()).toEqual([[roomChanged, continued], [roomChanged, ended]]);
+    expect(handleSnapshot.mock.calls).toEqual([[continued], [ended]]);
+  } finally {
+    handleSnapshot.mockRestore();
+  }
 });

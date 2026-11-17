@@ -1,8 +1,6 @@
 import type { DesktopNotifications } from './settings/DesktopNotifications';
 import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
 import { validateProjectDirectory } from './settings/projectDirectory';
-import { readMemoryBackup, writeMemoryBackup } from './memory/MemoryBackupFile';
-import { MEMORY_BACKUP_EXTENSION, type MemoryBackupData } from '../shared/memoryBackup';
 import { trimChatHistory } from '../shared/chatHistory';
 import { CYBERBOSS_CHAT_IMAGE_EXTENSIONS } from '../shared/cyberBossChatAttachments';
 import { AutomationScheduler } from './automation/AutomationScheduler';
@@ -15,15 +13,11 @@ import { AutomationService } from './automation/AutomationService';
 import { AutomationAgentTools } from './automation/AutomationAgentTools';
 import { AutomationConfirmations } from './automation/AutomationConfirmations';
 import type { AutomationTargetOption } from '../shared/automations';
-import { apiEndpoint, apiModelsEndpoint } from '../shared/apiEndpoints';
-import { apiHeaders } from './api/ApiRequestConfiguration';
-import { listApiSiteModels } from './api/listApiSiteModels';
 import { ProjectRunChangeRecorder } from './project/ProjectRunChangeRecorder';
 import { ProjectBrowserService } from './project/ProjectBrowserService';
 import { SessionProfileReloadService, profileReloadPrompt } from './runtime/SessionProfileReloadService';
 import { confirmProfileReload } from './api/confirmProfileReload';
 import { SessionCommandService } from './runtime/SessionCommandService';
-import { assertSessionCommandTarget } from '../shared/sessionCommands';
 import { createHash, randomUUID } from 'node:crypto';
 import { PartnerDelegation, delegationInput, delegationWaitInput, type DelegationBatch, type DelegationTask } from './runtime/PartnerDelegation';
 import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from './runtime/ExistingPartnerReview';
@@ -37,11 +31,10 @@ import { app, clipboard, dialog, safeStorage, shell, type BrowserWindow, type Ip
 import { createAttachmentThumbnail } from './security/attachmentThumbnail';
 import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
-import { readClaudeSessionFile } from './adapters/claudeSessionFile';
 import { codexSessionDirectoryDate, readCodexSessionDirectory, readCodexSessionHeader, sameCodexPath, sameCodexSessionRecord } from './adapters/codexSessionFile';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type CodexThreadDirectoryPreview, type CodexThreadImportPreview, type CodexThreadImportResult, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
 import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, listCodexModels, readCodexQuota, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
+import { changeCodexThreadLifecycle, detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, getCodexThreadLifecyclesSafely, getImportedCodexThreadLifecycle, locateCodexHistoryTurn, readCodexThreadMetadata, readCodexThreadsMetadata, readCodexThreadHistory, searchCodexThreadHistory, type CodexInstallation } from './adapters/CodexCliAdapter';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -111,7 +104,7 @@ import { SessionBootstrapService } from './runtime/SessionBootstrapService';
 import { MemorySourceService } from './memory/MemorySourceService';
 import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
 import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
-import { MEMORY_STATUSES, MEMORY_TYPES, type MemoryArchiveCommentRequest, type MemoryArchiveCreateRequest, type MemoryArchiveMutationRequest, type MemoryArchiveQuery, type MemoryArchiveSourceReadRequest, type MemoryArchiveUpdateRequest, type MemorySourceAnchor } from '../shared/memoryArchive';
+import type { MemorySourceAnchor } from '../shared/memoryArchive';
 import { NativeThreadBindingStore } from './studio/NativeThreadBindingStore';
 import { StudioRoomStore } from './studio/StudioRoomStore';
 import { StudioNoteStore } from './studio/StudioNoteStore';
@@ -121,7 +114,6 @@ import { createAsteriumRuntimeTools, memoryToolAccess, projectNotebookToolAccess
 import { localRuntimeAdapterKey, PartnerRuntimeFactory } from './runtime/PartnerRuntimeFactory';
 import { PartnerRuntimePort } from './runtime/PartnerRuntimePort';
 import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
-import { isStudioMcpCredentialToken } from '../shared/studioMcp';
 import { StudioMcpAccessStore } from './studio/StudioMcpAccessStore';
 import { StudioMcpService } from './studio/StudioMcpService';
 import { StudioMcpHost } from './studio/StudioMcpHost';
@@ -133,7 +125,6 @@ import { codexThreadInUseFailure } from '../shared/codexThreadInUse';
 import { WriterLeaseCoordinator } from './runtime/WriterLeaseCoordinator';
 import { SessionCompactionService } from './runtime/SessionCompactionService';
 import { compactApiSession } from './api/ApiSessionCompactor';
-import { assertSessionCompactRequest } from '../shared/sessionCompaction';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
 import { confirmNativeProfileReload, NativeProfileReloadError } from './runtime/NativeProfileReload';
 import { StudioOrchestrator } from './studio/StudioOrchestrator';
@@ -151,10 +142,7 @@ import {
   type PartnerWorkspaceState,
   type PartnerEvent,
   type ResolveAuthorizationCommand,
-  type ResolveUserInputCommand,
   type ResumeSessionCommand,
-  type SendGuidanceCommand,
-  type SendGuidanceResult,
   type SendMessageCommand,
   type SendMessageReceipt,
   type ExistingThreadConnection,
@@ -164,6 +152,8 @@ import {
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import { registerApiConnectionsIpc } from './ipc/apiConnectionsIpc';
+import { registerApiConnectionProbeIpc } from './ipc/apiConnectionProbeIpc';
+import { registerApiModelListIpc } from './ipc/apiModelListIpc';
 import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
@@ -180,19 +170,37 @@ import { registerProjectFileQueryIpc } from './ipc/projectFileQueryIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
-import { registerStudioRoomIpc } from './ipc/studioRoomIpc';
+import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRoomIpc';
+import { registerStudioMcpHostIpc } from './ipc/studioMcpHostIpc';
+import { registerStudioMcpCredentialIpc } from './ipc/studioMcpCredentialIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
+import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowQueryIpc } from './ipc/projectWorkflowQueryIpc';
 import { registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowTemplateIpc';
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
+import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
+import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
+import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
+import { registerProfileDirectoryIpc } from './ipc/profileDirectoryIpc';
+import { registerUserProfileIpc } from './ipc/userProfileIpc';
+import { registerPartnerProfileRefreshIpc } from './ipc/partnerProfileRefreshIpc';
+import { registerMemoryFallbackModelListIpc } from './ipc/memoryFallbackModelListIpc';
+import { registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackSettingsIpc';
+import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
+import { registerSessionMaintenanceIpc } from './ipc/sessionMaintenanceIpc';
+import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
+import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
+import { registerMemoryBackupExportIpc } from './ipc/memoryBackupExportIpc';
+import { registerMemoryBackupImportIpc } from './ipc/memoryBackupImportIpc';
+import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
+import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
-import type { CodexQuotaResult } from '../shared/codexQuota';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 import { isProjectPermissionMode } from '../shared/projectExecutionPolicy';
-import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectTaskCreateRequest, ProjectTaskRemoveRequest, ProjectTaskUpdateRequest, ProjectUpdateRequest } from '../shared/projectDomain';
+import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectUpdateRequest } from '../shared/projectDomain';
 import type {
   ProjectWorkflowActivateRequest,
   ProjectWorkflowCreateRequest,
@@ -272,7 +280,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const host = new AdapterHost();
   const credentials = new CredentialStore(() => path.join(app.getPath('userData'), 'secure-credentials.v1.json'), safeStorage);
   const apiConnections = new ApiConnectionStore(() => path.join(app.getPath('userData'), 'api-connections.v1.json'));
-  const apiProbes = new Map<string, AbortController>();
   const bridgeCursors = new BridgeCursorStore(() => path.join(app.getPath('userData'), 'bridge-cursors.v1.json'));
   const workspaceGrants = new WorkspaceGrantStore(() => path.join(app.getPath('userData'), 'workspace-grants.v1.json'));
   const profileDataRoot = path.join(app.getPath('userData'), 'AsteriumData');
@@ -1086,21 +1093,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (!isRecord(value) || typeof value.projectId !== 'string') throw new Error('INVALID_PROJECT_UPDATE_REQUEST');
     return projectService.updateProject(value as unknown as ProjectUpdateRequest);
   });
-  ipcMain.handle(AGENT_IPC.projectTaskCreate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.title !== 'string') throw new Error('INVALID_PROJECT_TASK_CREATE');
-    return projectService.createTask(value as unknown as ProjectTaskCreateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.taskId !== 'string') throw new Error('INVALID_PROJECT_TASK_UPDATE');
-    return projectService.updateTask(value as unknown as ProjectTaskUpdateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskRemove, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.taskId !== 'string') throw new Error('INVALID_PROJECT_TASK_REMOVE');
-    await projectService.removeTask(value as unknown as ProjectTaskRemoveRequest);
-  });
+  registerProjectTaskIpc(ipcMain, projectService, requireSender);
   registerProjectRoleIpc(ipcMain, projectService, requireSender);
   registerProjectWorkflowQueryIpc(ipcMain, projectService, requireSender);
   ipcMain.handle(AGENT_IPC.projectWorkflowCreate, async (event, value: unknown) => {
@@ -1264,11 +1257,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await projectChanges.removeProject(value.projectId).catch((error) => console.error('Project change cleanup failed', error));
   });
 
-  ipcMain.handle(AGENT_IPC.studioSyncRoom, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isStudioRoomMetadata(value)) throw new Error('INVALID_STUDIO_ROOM');
-    return projectService.syncRoom(value);
-  });
+  registerStudioRoomSyncIpc(ipcMain, projectService, isStudioRoomMetadata, requireSender);
 
   registerStudioNoteIpc(ipcMain, studioNotes, requireSender);
 
@@ -1294,12 +1283,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await memoryFallbackInventory.refresh();
   });
 
-  ipcMain.handle(AGENT_IPC.studioResolveDiscussion, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roomId !== 'string' || !['continue', 'end'].includes(String(value.decision))) throw new Error('INVALID_STUDIO_DISCUSSION_DECISION');
-    return studioRooms.resolveDiscussion(value.roomId, value.decision as 'continue' | 'end');
-  });
-
   ipcMain.handle(AGENT_IPC.studioCancelRound, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.roomId !== 'string' || !value.roomId) throw new Error('INVALID_STUDIO_CANCEL_REQUEST');
@@ -1319,37 +1302,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return studioWakeControl.control(value.partnerId, value.action as import('../shared/studioWakeControl').StudioWakeAction, value.triggerId as string | undefined);
   });
 
-  ipcMain.handle(AGENT_IPC.studioMcpStatus, async (event) => {
-    requireSender(event);
-    await studioMcpStartup;
-    return studioMcpHost.status();
-  });
-  ipcMain.handle(AGENT_IPC.studioMcpConfigure, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value)) throw new Error('STUDIO_MCP_CONFIGURATION_INVALID');
-    const status = await studioMcpHost.configure(value as unknown as import('../shared/studioMcp').StudioMcpConfiguration);
-    wakeReadinessChanged(); return status;
-  });
-  ipcMain.handle(AGENT_IPC.studioMcpIssueCredential, async (event, partnerId: unknown) => {
-    requireSender(event);
-    if (typeof partnerId !== 'string') throw new Error('STUDIO_MCP_PARTNER_REQUIRED');
-    const issued = await projectCoordinator.run(async () => {
-      if (studioRuntimeCatalog.partner(partnerId)?.sourceMode !== 'existing_thread') throw new Error('STUDIO_MCP_PARTNER_REQUIRED');
-      return studioMcpAccess.issue(partnerId);
-    });
-    wakeReadinessChanged(); return issued;
-  });
-  ipcMain.handle(AGENT_IPC.studioMcpCopyCredential, (event, token: unknown) => {
-    requireSender(event);
-    if (!isStudioMcpCredentialToken(token)) throw new Error('STUDIO_MCP_CREDENTIAL_INVALID');
-    return clipboard.writeText(token);
-  });
-  ipcMain.handle(AGENT_IPC.studioMcpRevokeCredential, async (event, credentialId: unknown) => {
-    requireSender(event);
-    if (typeof credentialId !== 'string') throw new Error('STUDIO_MCP_CREDENTIAL_NOT_FOUND');
-    await projectCoordinator.run(() => studioMcpAccess.revoke(credentialId));
-    return studioMcpHost.status();
-  });
+  registerStudioMcpHostIpc(ipcMain, { studioMcpHost, studioMcpStartup, wakeReadinessChanged }, requireSender);
+  registerStudioMcpCredentialIpc(ipcMain, { projectCoordinator, studioRuntimeCatalog, studioMcpAccess, studioMcpHost, wakeReadinessChanged }, requireSender);
 
   ipcMain.handle(AGENT_IPC.studioStartRound, async (event, value: unknown) => {
     requireSender(event);
@@ -2034,17 +1988,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     ...(session.workspaceRoot ? { workspaceRoot: session.workspaceRoot } : {}),
     capabilities: { streamingText: true, cancellation: false, toolEvents: false, fileEvents: false, reconnect: true },
   });
-  ipcMain.handle(AGENT_IPC.detectClaude, async (event) => {
-    requireSender(event);
-    claudeInstallation = await detectClaudeCode();
-    return publicClaudeInstallation(claudeInstallation);
-  });
-
-  ipcMain.handle(AGENT_IPC.detectCodex, async (event) => {
-    requireSender(event);
-    codexInstallation = await detectCodexCli();
-    return codexInstallation;
-  });
+  registerLocalRuntimeDetectionIpc(
+    ipcMain,
+    async () => {
+      claudeInstallation = await detectClaudeCode();
+      return claudeInstallation;
+    },
+    async () => {
+      codexInstallation = await detectCodexCli();
+      return codexInstallation;
+    },
+    requireSender,
+  );
 
   type CodexImportSelection = {
     file: string;
@@ -2319,68 +2274,19 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     }
   });
 
-  ipcMain.handle(AGENT_IPC.listCodexModels, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || (value.partnerRootGrantId !== undefined && typeof value.partnerRootGrantId !== 'string')
-      || (value.conversationId !== undefined && typeof value.conversationId !== 'string')
-      || (value.partnerId !== undefined && typeof value.partnerId !== 'string')
-      || (value.codexRuntimeId !== undefined && typeof value.codexRuntimeId !== 'string')
-      || (value.codexRuntimeEnvironment !== undefined && !['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))) {
-      throw new Error('INVALID_CODEX_MODEL_LIST_REQUEST');
-    }
-    if (typeof value.conversationId === 'string' && typeof value.partnerId === 'string') {
-      const imported = await importedCodexBinding(value.partnerId, value.conversationId);
-      if (imported) {
-        const runtime = await resolveImportedCodexRuntime(imported.workspace);
-        const directory = await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
-        if (!directory) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
-        return listCodexModels(runtime.executablePath, directory);
-      }
-    }
-    const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime(value as import('../shared/codexModels').CodexModelListRequest);
-    return listCodexModels(runtime.executablePath, workingDirectory);
-  });
-
-  const codexQuotaRequests = new Map<string, Promise<CodexQuotaResult>>();
-  ipcMain.handle(AGENT_IPC.readCodexQuota, async (event, value: unknown): Promise<CodexQuotaResult> => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId.trim() || value.partnerId.length > 512
-      || (value.importedConversationId !== undefined && (typeof value.importedConversationId !== 'string'
-        || !value.importedConversationId.trim() || value.importedConversationId.length > 512))) {
-      throw new Error('INVALID_CODEX_QUOTA_REQUEST');
-    }
-    const partner = studioRuntimeCatalog.partner(value.partnerId);
-    if (!partner?.available || partner.runtime.kind !== 'local' || partner.runtime.adapterType !== 'codex_cli') {
-      return { status: 'runtime_unavailable' };
-    }
-    const imported = value.importedConversationId
-      ? await importedCodexBinding(partner.partnerId, value.importedConversationId)
-      : undefined;
-    if (value.importedConversationId && !imported) return { status: 'runtime_unavailable' };
-
-    const runtimeId = imported ? imported.workspace.runtimeId : partner.runtime.codexRuntimeId;
-    const environment = imported ? imported.workspace.runtimeEnvironment : partner.runtime.codexRuntimeEnvironment;
-    if (!runtimeId && !environment) return { status: 'runtime_unavailable' };
-    const select = ({ runtimes }: CodexInstallation) => resolveCodexRuntime(runtimes, runtimeId, environment);
-    const hadCachedRuntimes = Boolean(codexInstallation?.runtimes.length);
-    let runtime = select(await ensureCodexInstallation());
-    const stillInstalled = runtime && await access(runtime.executablePath).then(() => true, () => false);
-    if (!stillInstalled && hadCachedRuntimes) {
+  registerCodexRuntimeQueryIpc(ipcMain, {
+    studioRuntimeCatalog,
+    importedCodexBinding,
+    resolveImportedCodexRuntime,
+    availableImportedDirectory,
+    resolveCodexLifecycleRuntime,
+    currentCodexInstallation: () => codexInstallation,
+    ensureCodexInstallation,
+    refreshCodexInstallation: async () => {
       codexInstallation = await detectCodexCli();
-      runtime = select(codexInstallation);
-    }
-    if (!runtime || (imported && !sameCodexPath(runtime.codexHome, imported.workspace.codexHome))) {
-      return { status: 'runtime_unavailable' };
-    }
-
-    const key = runtime.runtimeId;
-    const existing = codexQuotaRequests.get(key);
-    if (existing) return existing;
-    // Quota is account-scoped. The request does not need a project or a native thread.
-    const request = readCodexQuota(runtime.executablePath, os.homedir()).finally(() => codexQuotaRequests.delete(key));
-    codexQuotaRequests.set(key, request);
-    return request;
-  });
+      return codexInstallation;
+    },
+  }, requireSender);
 
   ipcMain.handle(AGENT_IPC.getLocalThreadLifecycles, async (event, value: unknown): Promise<NativeThreadLifecycleResult[]> => {
     requireSender(event);
@@ -2415,101 +2321,24 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return changeCodexThreadLifecycle(runtime.executablePath, workingDirectory, value.threadId, value.action);
   });
 
-  ipcMain.handle(AGENT_IPC.selectWorkspace, async (event, purpose: unknown) => {
-    const window = requireSender(event);
-    if (purpose !== undefined && purpose !== 'partner_root' && purpose !== 'workspace' && purpose !== 'mcp_workspace') throw new Error('INVALID_DIRECTORY_SELECTION_PURPOSE');
-    const result = await dialog.showOpenDialog(window, {
-      title: purpose === 'partner_root' ? '选择伙伴配置来源（原 CLI 项目根目录）' : purpose === 'mcp_workspace' ? '授权此 MCP 的测试工作区' : '授权伙伴额外工作区',
-      buttonLabel: '授权此目录',
-      properties: ['openDirectory', 'createDirectory'],
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    const displayPath = result.filePaths[0];
-    await assertCanonicalPathOutsideProtectedRoots(displayPath, purpose === 'mcp_workspace' ? [...protectedRoots, app.getPath('userData')] : protectedRoots);
-    const grant = await workspaceGrants.add(displayPath);
-    grants.set(grant.grantId, displayPath);
-    return grant;
-  });
+  registerWorkspaceGrantSelectionIpc(ipcMain, { workspaceGrants, grants, protectedRoots }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.importClaudeSession, async (event) => {
-    const window = requireSender(event);
-    const result = await dialog.showOpenDialog(window, {
-      title: '选择要导入的 Claude Code 会话文件',
-      buttonLabel: '导入此会话',
-      defaultPath: path.join(os.homedir(), '.claude', 'projects'),
-      properties: ['openFile'],
-      filters: [{ name: 'Claude Code session', extensions: ['jsonl'] }],
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    const imported = await readClaudeSessionFile(result.filePaths[0]);
-    if (await nativeBindings.isBoundNativeThread(imported.sessionId)) throw new Error('NATIVE_THREAD_ALREADY_BOUND');
-    const workspaceGrant = await workspaceGrants.add(imported.workingDirectory);
-    grants.set(workspaceGrant.grantId, workspaceGrant.displayPath);
-    return { sessionId: imported.sessionId, sessionFilePath: imported.sessionFilePath, workspaceGrant };
-  });
+  registerClaudeSessionImportIpc(ipcMain, { nativeBindings, workspaceGrants, grants }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.revokeWorkspaceGrants, async (event, value: unknown) => {
-    requireSender(event);
-    if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) throw new Error('INVALID_WORKSPACE_GRANT_REVOKE');
-    const paths = (await Promise.all(value.map(grantId => workspaceGrants.get(grantId)))).filter((folder): folder is string => Boolean(folder));
-    const revokedPaths = [...paths, ...(await Promise.all(paths.map(folder => realpath(folder).catch(() => folder))))];
-    for (const grantId of value) grants.delete(grantId);
-    await workspaceGrants.deleteMany(value);
-    await Promise.all([extensionLaunchBackend.invalidateWorkspaceRoots(revokedPaths), mcpConnections.invalidateWorkspaceRoots(revokedPaths)]);
-    await mcpConnections.revalidateManagementWorkspaces();
-  });
+  registerWorkspaceGrantRevocationIpc(ipcMain, { workspaceGrants, grants, extensionLaunchBackend, mcpConnections }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.syncPartnerWorkspace, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId
-      || (value.cwdGrantId !== undefined && typeof value.cwdGrantId !== 'string')
-      || !Array.isArray(value.workspaceGrantIds)
-      || !value.workspaceGrantIds.every((item) => typeof item === 'string')
-      || (value.expectedVersion !== undefined && !Number.isSafeInteger(value.expectedVersion))) throw new Error('INVALID_PARTNER_WORKSPACE_SYNC');
-    return partnerWorkspaces.sync(value.partnerId, value.cwdGrantId as string | undefined, value.workspaceGrantIds as string[], value.expectedVersion as number | undefined);
-  });
-
-  ipcMain.handle(AGENT_IPC.getPartnerWorkspace, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string' || !value) throw new Error('INVALID_PARTNER_ID');
-    return partnerWorkspaces.configuredState(value);
-  });
+  registerPartnerWorkspaceIpc(ipcMain, partnerWorkspaces, requireSender);
 
   registerApiCredentialIpc(ipcMain, credentials, apiConnections, requireSender);
 
   registerApiConnectionsIpc(ipcMain, apiConnections, credentials, requireSender);
-  ipcMain.handle(AGENT_IPC.apiConnectionsProbe, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.modelId !== 'string' || (value.tools !== undefined && typeof value.tools !== 'boolean')) throw new Error('INVALID_API_PROBE');
-    if (value.cancel === true) { apiProbes.get(value.modelId)?.abort(); return; }
-    if (apiProbes.has(value.modelId)) throw new Error('API_PROBE_BUSY');
-    const probeController = new AbortController(); apiProbes.set(value.modelId, probeController);
-    let probeTimer: ReturnType<typeof setTimeout> | undefined;
-    try {
-    const data = await apiConnections.snapshot(); const model = data.models.find(m => m.id === value.modelId); const service = data.services.find(s => s.id === model?.serviceId);
-    if (!model || !service) throw new Error('API_MODEL_NOT_FOUND');
-    const provider = service.legacyDeepSeek ? 'deepseek' : ({ chat_completions: 'openai', responses: 'responses', anthropic_messages: 'anthropic', gemini: 'gemini' } as const)[service.protocol];
-    const apiOptions = await configuredApiOptions({ provider, endpoint: service.endpoint, model: model.model, credentialRef: service.credentialRef, requestSettings: service.settings, modelSettings: model.settings });
-    if (service.settings?.roundTimeoutMs) probeTimer = setTimeout(() => probeController.abort(), service.settings.roundTimeoutMs);
-    let text = '', toolCall = false;
-    try {
-      const adapter = apiProviders.require(provider).createAdapter({ ...apiOptions, endpoint: service.endpoint, model: model.model });
-      for await (const item of adapter.stream({ messages: [{ role: 'user', content: value.tools ? 'Call asterium_connection_probe once with value "ok". Do not call any other tool.' : 'This is a connection test. Reply briefly: OK.' }], tools: value.tools ? [{ name: 'asterium_connection_probe', description: 'Harmless synthetic connection probe; no operations are executed.', parameters: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } }] : [], signal: probeController.signal })) {
-        if (item.type === 'text.delta') text = (text + item.text).slice(0, 2000);
-        if (item.type === 'tool.delta' && item.name === 'asterium_connection_probe') toolCall = true;
-      }
-      return { text, toolCall };
-    } catch { throw new Error('API_PROBE_FAILED'); }
-    } finally { if (probeTimer) clearTimeout(probeTimer); apiProbes.delete(value.modelId); }
-  });
+  const disposeApiConnectionProbe = registerApiConnectionProbeIpc(ipcMain, { apiConnections, apiProviders, configuredApiOptions }, requireSender);
 
   registerWebSearchCredentialIpc(ipcMain, credentials, BRAVE_SEARCH_CREDENTIAL_REF, requireSender);
 
   registerExtensionsIpc(ipcMain, apiExtensions, mcpConnections, requireSender);
 
-  ipcMain.handle(AGENT_IPC.refreshPartnerProfiles, async (event) => {
-    requireSender(event); return partnerProfiles.refresh();
-  });
+  registerPartnerProfileRefreshIpc(ipcMain, partnerProfiles, requireSender);
 
   ipcMain.handle(AGENT_IPC.syncPartnerProfiles, async (event, value: unknown) => {
     requireSender(event);
@@ -2556,169 +2385,23 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return partnerProfiles.trashPartnerDirectory(value.partnerId, (directory) => shell.trashItem(directory));
   });
 
-  ipcMain.handle(AGENT_IPC.saveUserProfile, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isUserProfileSeed(value)) throw new Error('INVALID_USER_PROFILE');
-    const saved = await partnerProfiles.saveUser(value);
-    studioRuntimeCatalog.updateUser(saved);
-    return saved;
-  });
+  registerUserProfileIpc(ipcMain, { partnerProfiles, studioRuntimeCatalog, isUserProfileSeed }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.openProfileDirectory, async (event) => {
-    requireSender(event);
-    await mkdir(profileDataRoot, { recursive: true });
-    const error = await shell.openPath(profileDataRoot);
-    if (error) throw new Error(error);
-  });
+  registerProfileDirectoryIpc(ipcMain, profileDataRoot, requireSender);
 
-  ipcMain.handle(AGENT_IPC.memoryFallbackGet, async (event) => {
-    requireSender(event);
-    await prepareMemoryStorage();
-    return memoryFallbackScheduler.snapshot();
-  });
-  ipcMain.handle(AGENT_IPC.diaryGet, async (event) => {
-    requireSender(event);
-    const configs = await diarySettings.list(); const notices: Record<string, string> = {};
-    for (const config of configs) {
-      const source = await singleChatMessages.getConversation(config.conversationId); const owner = diaryCatalog.identity(config.partnerId);
-      if (!owner?.available) notices[config.partnerId] = '伙伴已移除或运行时不可用，日记不会自动执行。';
-      else if (!source || config.disabledReason === 'source_deleted') notices[config.partnerId] = '来源会话已永久删除，日记已停用，请重新选择来源后保存。';
-      else if (config.upstreamThreadId && (owner.threadId !== config.upstreamThreadId || source.sessionId !== config.upstreamThreadId)) notices[config.partnerId] = '上游线程已变化，日记将跳过，请重新选择来源并确认后保存。';
-    }
-    return { configs, entries: await diaries.list(), notices };
-  });
-  ipcMain.handle(AGENT_IPC.diaryConfigure, async (event, value: unknown) => {
-    requireSender(event); const config = await diarySettings.configure(value); await diaryScheduler.changed(); return config;
-  });
-  registerPartnerDiaryIpc(ipcMain, diaries, requireSender);
-  ipcMain.handle(AGENT_IPC.memoryFallbackListModels, async (event, value: unknown) => {
-    requireSender(event);
-    return memoryFallbackSettings.listModels(value, (provider, endpoint, apiKey) => apiProviders.listModels(provider, endpoint, apiKey));
-  });
-  ipcMain.handle(AGENT_IPC.memoryFallbackConfigure, async (event, value: unknown) => {
-    requireSender(event);
-    await prepareMemoryStorage();
-    await memoryFallbackSettings.configure(value);
-    memoryFallbackScheduler.cancelCurrent();
-    await memoryFallbackScheduler.reconfigure();
-    return memoryFallbackScheduler.snapshot();
-  });
-  ipcMain.handle(AGENT_IPC.memoryFallbackSetPartner, async (event, value: unknown) => {
-    requireSender(event);
-    await prepareMemoryStorage();
-    await memoryFallbackSettings.setPartner(value);
-    memoryFallbackScheduler.cancelCurrent();
-    await memoryFallbackInventory.refresh();
-    return memoryFallbackScheduler.snapshot();
-  });
+  registerPartnerDiaryIpc(ipcMain, { diaries, diarySettings, diaryCatalog, diaryScheduler, singleChatMessages }, requireSender);
+  registerMemoryFallbackModelListIpc(ipcMain, memoryFallbackSettings, apiProviders, requireSender);
+  registerMemoryFallbackSettingsIpc(ipcMain, {
+    prepareMemoryStorage, memoryFallbackSettings, memoryFallbackScheduler, memoryFallbackInventory,
+  }, requireSender);
 
   registerMemoryImportIpc(ipcMain, memoryImport, requireSender);
 
   const memoryBackupFilters = [{ name: '星丛伙伴记忆备份', extensions: ['gz'] }];
-  let memoryBackupDraft: { id: string; partnerId: string; backup: MemoryBackupData } | undefined;
-  let choosingMemoryBackup = false;
-  ipcMain.handle(AGENT_IPC.memoryBackupExport, async (event, value: unknown) => {
-    const window = requireSender(event);
-    const partnerId = assertMemoryPartnerId(value);
-    const profile = await partnerProfiles.runtimeProfile(partnerId);
-    if (profile?.management.memoryMode !== 'asterium') throw new Error('PARTNER_MEMORY_NOT_MANAGED');
-    const filename = profile.publicIdentity.displayName.replace(/[<>:"/\\|?*]/g, '_').slice(0, 80);
-    const result = await dialog.showSaveDialog(window, {
-      title: '导出伙伴记忆', defaultPath: `星丛记忆-${filename}-${new Date().toISOString().slice(0, 10)}.${MEMORY_BACKUP_EXTENSION}`, filters: memoryBackupFilters,
-    });
-    if (result.canceled || !result.filePath) return null;
-    const target = result.filePath;
-    await assertCanonicalPathOutsideProtectedRoots(target, [...protectedRoots, app.getPath('userData')]);
-    const backup = await partnerMemories.exportBackup(partnerId);
-    await writeMemoryBackup(target, backup);
-    return backup.records.length;
-  });
-  ipcMain.handle(AGENT_IPC.memoryBackupChoose, async (event, value: unknown) => {
-    const window = requireSender(event);
-    const partnerId = assertMemoryPartnerId(value);
-    if (choosingMemoryBackup) throw new Error('MEMORY_BACKUP_BUSY');
-    choosingMemoryBackup = true;
-    memoryBackupDraft = undefined;
-    try {
-      const result = await dialog.showOpenDialog(window, { title: '选择伙伴记忆备份', filters: memoryBackupFilters, properties: ['openFile'] });
-      if (result.canceled || !result.filePaths[0]) return null;
-      const filePath = result.filePaths[0];
-      const backup = await readMemoryBackup(filePath);
-      const id = randomUUID();
-      memoryBackupDraft = { id, partnerId, backup };
-      return { id, fileName: path.basename(filePath), total: backup.records.length, archived: backup.records.filter(record => record.deletedAt).length };
-    } finally { choosingMemoryBackup = false; }
-  });
-  ipcMain.handle(AGENT_IPC.memoryBackupImport, async (event, value: unknown, id: unknown) => {
-    requireSender(event);
-    const partnerId = assertMemoryPartnerId(value);
-    const draft = memoryBackupDraft;
-    if (!draft || draft.id !== id || draft.partnerId !== partnerId) throw new Error('MEMORY_BACKUP_PREVIEW_EXPIRED');
-    const receipt = await partnerMemories.importBackup(partnerId, draft.backup);
-    if (memoryBackupDraft === draft) memoryBackupDraft = undefined;
-    return receipt;
-  });
-  ipcMain.handle(AGENT_IPC.memoryBackupCancel, (event, value: unknown, id: unknown) => {
-    requireSender(event);
-    if (memoryBackupDraft && memoryBackupDraft.id === id && memoryBackupDraft.partnerId === value) memoryBackupDraft = undefined;
-  });
+  registerMemoryBackupExportIpc(ipcMain, { partnerProfiles, partnerMemories, protectedRoots, memoryBackupFilters }, requireSender);
+  const disposeMemoryBackupImport = registerMemoryBackupImportIpc(ipcMain, { partnerMemories, memoryBackupFilters }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.memoryArchiveQuery, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.query(assertMemoryArchiveQuery(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveBriefing, async (event, partnerId: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.briefing(assertMemoryPartnerId(partnerId));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveCreate, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.create(assertMemoryArchiveCreate(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.update(assertMemoryArchiveUpdate(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveComment, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.comment(assertMemoryArchiveComment(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveSoftDelete, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.softDelete(assertMemoryArchiveMutation(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveRestore, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.restore(assertMemoryArchiveMutation(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchivePurge, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.purge(assertMemoryArchiveMutation(value));
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveBulkPurge, (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || !Array.isArray(value.records) || !value.records.length) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
-    const partnerId = assertMemoryPartnerId(value.partnerId);
-    const records = value.records.map(record => {
-      if (!isRecord(record)) throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
-      const { memoryId, expectedUpdatedAt } = assertMemoryArchiveMutation({ ...record, partnerId });
-      return { memoryId, expectedUpdatedAt };
-    });
-    return partnerMemories.purgeArchived({ partnerId, records });
-  });
-
-  ipcMain.handle(AGENT_IPC.memoryArchiveReadSource, async (event, value: unknown) => {
-    requireSender(event);
-    return partnerMemoryManagement.readSource(assertMemoryArchiveSourceRead(value));
-  });
+  registerMemoryArchiveIpc(ipcMain, { partnerMemoryManagement, partnerMemories }, requireSender);
 
   ipcMain.handle(AGENT_IPC.deleteApiSession, async (event, value: unknown) => {
     requireSender(event);
@@ -2728,19 +2411,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     else await apiSessions.deletePartner(value.partnerId);
   });
 
-  ipcMain.handle(AGENT_IPC.getSessionStatus, async (event, value: unknown) => {
-    requireSender(event); assertSessionCommandTarget(value);
-    return sessionCommands.inspect(value);
-  });
-  ipcMain.handle(AGENT_IPC.executeSessionCommand, async (event, value: unknown) => {
-    requireSender(event); assertSessionCommandTarget(value, true);
-    return sessionCommands.execute(value);
-  });
-
-  ipcMain.handle(AGENT_IPC.compactSession, async (event, value: unknown) => {
-    requireSender(event); assertSessionCompactRequest(value);
-    return sessionCompactions.compact(value);
-  });
+  registerSessionStatusIpc(ipcMain, sessionCommands, requireSender);
+  registerSessionMaintenanceIpc(ipcMain, { sessionCommands, sessionCompactions }, requireSender);
 
   ipcMain.handle(AGENT_IPC.sendApiMessage, async (event, value: unknown) => {
     requireSender(event);
@@ -2755,25 +2427,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return withDelegationChatPriority(request.command.conversationId, () => startApiRuntime(request));
   });
 
-  ipcMain.handle(AGENT_IPC.listApiModels, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || !apiProviders.has(value.provider) || typeof value.endpoint !== 'string'
-      || (value.credentialRef !== undefined && typeof value.credentialRef !== 'string')
-      || (value.secret !== undefined && typeof value.secret !== 'string')) throw new Error('INVALID_API_MODEL_LIST_REQUEST');
-    if (typeof value.serviceId === 'string') {
-      const service = (await apiConnections.snapshot()).services.find(s => s.id === value.serviceId);
-      if (!service) throw new Error('API_SERVICE_NOT_FOUND');
-      const options = await configuredApiOptions({ provider: value.provider, endpoint: service.endpoint, model: '', credentialRef: service.credentialRef, requestSettings: service.settings }, typeof value.secret === 'string' ? value.secret : undefined);
-      const url = service.settings?.modelsPath ? apiEndpoint(service.endpoint, service.protocol, service.settings.modelsPath) : apiModelsEndpoint(service.endpoint, service.protocol);
-      return listApiSiteModels(url, service.protocol, apiHeaders({ ...options, apiKey: typeof value.secret === 'string' && value.secret ? value.secret : options.apiKey, endpoint: service.endpoint, model: '' }, service.protocol), service.settings?.headerTimeoutMs);
-    }
-    const endpoint = apiProviders.require(value.provider).normalizeEndpoint(value.endpoint);
-    const apiKey = typeof value.secret === 'string' && value.secret ? value.secret
-      : typeof value.credentialRef === 'string' ? await credentials.get(value.credentialRef) : undefined;
-    if (!apiKey) throw new Error('API_CREDENTIAL_REQUIRED');
-    const protocol = value.provider === 'responses' ? 'responses' : value.provider === 'anthropic' ? 'anthropic_messages' : value.provider === 'gemini' ? 'gemini' : 'chat_completions';
-    return listApiSiteModels(apiModelsEndpoint(endpoint, protocol), protocol, apiHeaders({ endpoint, model: '', apiKey }, protocol));
-  });
+  registerApiModelListIpc(ipcMain, { apiProviders, apiConnections, credentials, configuredApiOptions }, requireSender);
 
   ipcMain.handle(AGENT_IPC.saveBridgeCredential, async (event, value: unknown) => {
     requireSender(event);
@@ -2929,12 +2583,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await runCoordinator.cancel(value as CancelRunCommand);
   });
 
-  ipcMain.handle(AGENT_IPC.sendGuidance, async (event, value: unknown): Promise<SendGuidanceResult> => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'guidance.send') throw new Error('INVALID_GUIDANCE_COMMAND');
-    return runCoordinator.sendGuidance(value as SendGuidanceCommand);
-  });
+  registerRunGuidanceIpc(ipcMain, runCoordinator, requireSender);
 
   ipcMain.handle(AGENT_IPC.resolveAuthorization, async (event, value: unknown) => {
     requireSender(event);
@@ -2943,12 +2592,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await runCoordinator.resolveAuthorization(value as ResolveAuthorizationCommand);
   });
 
-  ipcMain.handle(AGENT_IPC.resolveUserInput, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'user_input.resolve') throw new Error('INVALID_USER_INPUT_COMMAND');
-    await runCoordinator.resolveUserInput(value as ResolveUserInputCommand);
-  });
+  registerRunUserInputIpc(ipcMain, runCoordinator, requireSender);
 
   ipcMain.handle(AGENT_IPC.resumeSession, async (event, value: unknown) => {
     requireSender(event);
@@ -3424,7 +3068,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerAutomationIpc(ipcMain, automationService, automationConfirmations, requireSender);
 
   return async () => {
-    memoryBackupDraft = undefined;
+    disposeMemoryBackupImport();
     unsubscribeUpdates?.(); options.updates?.dispose();
     notifications?.dispose();
     unsubscribeGeneralSettings();
@@ -3433,7 +3077,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await automationHandles.scheduler?.dispose();
     unsubscribeAutomationWriters();
     unsubscribeAutomations();
-    for (const controller of apiProbes.values()) controller.abort(); apiProbes.clear();
+    disposeApiConnectionProbe();
     await studioWakeControl.dispose();
     await studioMcpStartup;
     await studioMcpHost.dispose();
@@ -3468,59 +3112,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await messageAttachments.dispose();
     await singleChatHistory.flush();
     grants.clear();
-  };
-}
-
-function assertMemoryPartnerId(value: unknown) {
-  if (typeof value !== 'string' || !value.trim()) throw new Error('INVALID_MEMORY_PARTNER_ID');
-  return value;
-}
-
-function assertMemoryArchiveQuery(value: unknown): MemoryArchiveQuery {
-  if (!isRecord(value)) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  const partnerId = assertMemoryPartnerId(value.partnerId);
-  if (value.includeDeleted !== undefined && typeof value.includeDeleted !== 'boolean') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.archivedOnly !== undefined && typeof value.archivedOnly !== 'boolean') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.text !== undefined && typeof value.text !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.tags !== undefined && (!Array.isArray(value.tags) || !value.tags.every((item) => typeof item === 'string'))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.types !== undefined && (!Array.isArray(value.types) || !value.types.every((item) => MEMORY_TYPES.includes(item as never)))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.statuses !== undefined && (!Array.isArray(value.statuses) || !value.statuses.every((item) => MEMORY_STATUSES.includes(item as never)))) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.from !== undefined && typeof value.from !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.to !== undefined && typeof value.to !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  if (value.limit !== undefined && !Number.isSafeInteger(value.limit)) throw new Error('INVALID_MEMORY_ARCHIVE_QUERY');
-  return { ...value, partnerId } as MemoryArchiveQuery;
-}
-
-function assertMemoryArchiveCreate(value: unknown): MemoryArchiveCreateRequest {
-  if (!isRecord(value) || !MEMORY_TYPES.includes(value.type as never) || typeof value.body !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_CREATE');
-  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCreateRequest;
-}
-
-function assertMemoryArchiveUpdate(value: unknown): MemoryArchiveUpdateRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim() || typeof value.expectedUpdatedAt !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
-  if (value.type !== undefined && !MEMORY_TYPES.includes(value.type as never)) throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
-  if (value.status !== undefined && !MEMORY_STATUSES.includes(value.status as never)) throw new Error('INVALID_MEMORY_ARCHIVE_UPDATE');
-  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveUpdateRequest;
-}
-
-function assertMemoryArchiveComment(value: unknown): MemoryArchiveCommentRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim()
-    || typeof value.expectedUpdatedAt !== 'string' || typeof value.content !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_COMMENT');
-  return { ...value, partnerId: assertMemoryPartnerId(value.partnerId) } as unknown as MemoryArchiveCommentRequest;
-}
-
-function assertMemoryArchiveMutation(value: unknown): MemoryArchiveMutationRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim() || typeof value.expectedUpdatedAt !== 'string') throw new Error('INVALID_MEMORY_ARCHIVE_MUTATION');
-  return { partnerId: assertMemoryPartnerId(value.partnerId), memoryId: value.memoryId, expectedUpdatedAt: value.expectedUpdatedAt };
-}
-
-function assertMemoryArchiveSourceRead(value: unknown): MemoryArchiveSourceReadRequest {
-  if (!isRecord(value) || typeof value.memoryId !== 'string' || !value.memoryId.trim()
-    || (value.sourceIndex !== undefined && (!Number.isSafeInteger(value.sourceIndex) || Number(value.sourceIndex) < 0))) throw new Error('INVALID_MEMORY_ARCHIVE_SOURCE_READ');
-  return {
-    partnerId: assertMemoryPartnerId(value.partnerId),
-    memoryId: value.memoryId,
-    ...(value.sourceIndex !== undefined ? { sourceIndex: Number(value.sourceIndex) } : {}),
   };
 }
 
@@ -3739,15 +3330,4 @@ function isChangeLocalThreadLifecycleRequest(value: unknown): value is ChangeLoc
     && typeof value.threadId === 'string'
     && value.threadId.length > 0
     && ['archive', 'restore', 'delete'].includes(String(value.action));
-}
-
-function publicClaudeInstallation(installation: ClaudeInstallation) {
-  return {
-    installed: installation.installed,
-    loggedIn: installation.loggedIn,
-    version: installation.version,
-    authMethod: installation.authMethod,
-    executableLabel: installation.executableLabel,
-    error: installation.error,
-  };
 }

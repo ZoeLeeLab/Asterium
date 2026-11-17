@@ -1,17 +1,18 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SingleChatHistoryStore } from '../../src/main/conversation/SingleChatHistoryStore';
 import { SingleChatMessageStore } from '../../src/main/conversation/SingleChatMessageStore';
 import { mergeLegacySingleChats } from '../../src/main/conversation/singleChatHistoryProjection';
-import { PrototypeProvider } from '../../src/renderer/app/PrototypeProvider';
+import { PrototypeProvider, usePrototype } from '../../src/renderer/app/PrototypeProvider';
 import { ChatPage } from '../../src/renderer/pages/ChatPage';
 import { STATE_KEY } from '../../src/renderer/app/persistence';
 import type { CodexHistoryRequest, CodexHistorySearchRequest } from '../../src/shared/codexHistory';
 import type { ApiPartner } from '../../src/renderer/types/domain';
 import { AGENT_PROTOCOL_VERSION, type RendererAgentEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
 import { CODEX_THREAD_IN_USE } from '../../src/shared/codexThreadInUse';
+import { SINGLE_CHAT_PAGE_SIZE } from '../../src/shared/singleChatHistory';
 import { autoTestOutput } from '../helpers/autoTest.mjs';
 import { createTestState } from '../fixtures/applicationState';
 
@@ -34,9 +35,17 @@ function seed() {
   localStorage.setItem(STATE_KEY, JSON.stringify(state));
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
 function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
   const history = new SingleChatHistoryStore(profile);
   const legacy = new SingleChatMessageStore(path.join(profile, 'single-chat-messages.v1.json'), history);
+  const userSaved = deferred();
+  const sent = deferred();
   const migrate = vi.fn(async (input, recent?: boolean) => {
     await history.initialize(async () => ({
       profile: input.profile,
@@ -46,8 +55,10 @@ function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
     return (await (recent ? history.openRecent() : history.open()))!;
   });
   const write = vi.fn<NonNullable<NonNullable<typeof window.asteriumConversations>['writeHistory']>>(async input => {
-    if (input.changes.some(change => change.upsert.some(message => message.status === 'sending'))) await stopNextUserWrite?.();
+    const userWrite = input.changes.some(change => change.upsert.some(message => message.status === 'sending'));
+    if (userWrite) await stopNextUserWrite?.();
     await history.write(input);
+    if (userWrite) userSaved.resolve();
   });
   window.asteriumConversations = {
     delete: vi.fn(), listDeleted: vi.fn(async () => []),
@@ -59,6 +70,7 @@ function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
   const send = vi.fn(async (_connection, command: SendMessageCommand) => {
     const saved = await history.readConversation(conversationId);
     expect(saved?.conversation.messages.some(message => message.id === command.messageId)).toBe(true);
+    sent.resolve();
     return { runId: 'fixture-run', sessionId: 'fixture-session' };
   });
   window.asteriumAgents = {
@@ -73,17 +85,30 @@ function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
       runId: 'fixture-run', sessionId: 'fixture-session', occurredAt: now, sequence, type, ...values,
     } as RendererAgentEvent));
   };
-  return { history, legacy, migrate, send, emit };
+  return { history, legacy, migrate, send, emit, userSaved: userSaved.promise, sent: sent.promise };
+}
+
+function RecentHistoryReady() {
+  const { chatHistoryLoading } = usePrototype();
+  return chatHistoryLoading ? null : <span hidden data-testid="recent-history-ready" />;
 }
 
 function mount() {
-  return render(<MemoryRouter initialEntries={['/chat']}><PrototypeProvider><ChatPage /></PrototypeProvider></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={['/chat']}><PrototypeProvider><RecentHistoryReady /><ChatPage /></PrototypeProvider></MemoryRouter>);
 }
 
-async function sendPrompt(text: string) {
-  const input = await screen.findByRole('textbox', { name: /给 测试伙伴 C 发送消息/ });
-  fireEvent.change(input, { target: { value: text } });
-  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+async function sendPrompt(text: string, label = /给 测试伙伴 C 发送消息/) {
+  await screen.findByTestId('recent-history-ready');
+  const input = await screen.findByLabelText<HTMLTextAreaElement>(label);
+  const form = input.form!;
+  await act(async () => { fireEvent.change(input, { target: { value: text } }); });
+  const send = await waitFor(() => {
+    expect(input).toHaveValue(text);
+    const button = within(form).getByRole('button', { name: '发送' });
+    expect(button).toBeEnabled();
+    return button;
+  }, { container: form });
+  fireEvent.click(send);
   return input;
 }
 
@@ -91,14 +116,25 @@ it('cuts over once, preserves the old snapshot, and saves a plain reply at its e
   seed();
   const profile = path.join(autoTestOutput(), 'plain');
   const original = localStorage.getItem(STATE_KEY);
-  let release!: () => void;
-  const waiting = new Promise<void>(resolve => { release = resolve; });
-  const fixture = connect(profile, () => waiting);
+  const writeStarted = deferred();
+  const allowWrite = deferred();
+  const fixture = connect(profile, () => {
+    writeStarted.resolve();
+    return allowWrite.promise;
+  });
   const view = mount();
-  await sendPrompt('纯文字问题');
-  expect(fixture.send).not.toHaveBeenCalled();
-  await act(async () => release());
-  await waitFor(() => expect(fixture.send).toHaveBeenCalledOnce());
+  try {
+    await sendPrompt('纯文字问题');
+    await writeStarted.promise;
+    expect(fixture.send).not.toHaveBeenCalled();
+  } finally {
+    allowWrite.resolve();
+  }
+  await act(async () => {
+    await fixture.userSaved;
+    await fixture.sent;
+  });
+  expect(fixture.send).toHaveBeenCalledOnce();
   fixture.emit('session.bound', 1, { isNew: true });
   fixture.emit('text.delta', 2, { text: '纯文字回复完成' });
   await screen.findByText('纯文字回复完成');
@@ -123,7 +159,8 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
   const fixture = connect(profile);
   const view = mount();
   await sendPrompt('工具测试');
-  await waitFor(() => expect(fixture.send).toHaveBeenCalledOnce());
+  await act(async () => { await fixture.sent; });
+  expect(fixture.send).toHaveBeenCalledOnce();
   fixture.emit('session.bound', 1, { isNew: true });
   fixture.emit('text.delta', 2, { text: '工具前已保存的文字' });
   const detail = '合成工具输出开始' + 'x'.repeat(70_000) + '合成工具输出结尾';
@@ -162,24 +199,29 @@ it('leaves a draft in place if the pre-send disk write fails', async () => {
 it('keeps the latest model context when the reader is viewing a search hit in an older page', async () => {
   seed();
   const source = JSON.parse(localStorage.getItem(STATE_KEY)!);
-  source.conversations[0].messages = Array.from({ length: 170 }, (_, index) => ({
+  const count = SINGLE_CHAT_PAGE_SIZE + 3;
+  const latest = `历史回复 ${count - 1}`;
+  source.conversations[0].messages = Array.from({ length: count }, (_, index) => ({
     id: 'fixture-old-' + index, authorId: partnerId, createdAt: '00:00',
     content: index === 2 ? '远古索引唯一消息' : '历史回复 ' + index,
   }));
   localStorage.setItem(STATE_KEY, JSON.stringify(source));
   const fixture = connect(path.join(autoTestOutput(), 'search-context'));
-  mount();
-  expect(await screen.findByText('历史回复 169')).toBeInTheDocument();
-  expect(screen.queryByText('远古索引唯一消息')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '搜索当前对话' }));
-  fireEvent.change(screen.getByRole('searchbox', { name: '搜索当前对话正文' }), { target: { value: '远古索引' } });
-  expect(await screen.findByText('远古索引唯一消息', {}, { timeout: 5000 })).toBeInTheDocument();
-  expect(screen.queryByText('历史回复 169')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '关闭当前对话搜索' }));
+  const { container } = mount();
+  await screen.findByTestId('recent-history-ready');
+  const messages = within(container.querySelector<HTMLElement>('.message-list')!);
+  expect(await messages.findByText(latest)).toBeInTheDocument();
+  expect(messages.queryByText('远古索引唯一消息')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('搜索当前对话'));
+  fireEvent.change(screen.getByLabelText('搜索当前对话正文'), { target: { value: '远古索引' } });
+  expect(await messages.findByText('远古索引唯一消息', {}, { timeout: 5000 })).toBeInTheDocument();
+  expect(messages.queryByText(latest)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('关闭当前对话搜索'));
   await sendPrompt('继续最后的任务');
-  await waitFor(() => expect(fixture.send).toHaveBeenCalledOnce());
+  await act(async () => { await fixture.sent; });
+  expect(fixture.send).toHaveBeenCalledOnce();
   const history = fixture.send.mock.calls[0][1].apiContext?.history;
-  expect(history?.at(-1)?.content).toBe('历史回复 169');
+  expect(history?.at(-1)?.content).toBe(latest);
   expect(history?.some(message => message.content.includes('远古索引'))).toBe(false);
 });
 
@@ -255,9 +297,7 @@ it('reopens a refused Codex send and retries the same saved message on the origi
   });
   window.asteriumAgents!.sendLocalCliMessage = send;
   const view = mount();
-  const input = await screen.findByRole('textbox', { name: /发送消息/ });
-  fireEvent.change(input, { target: { value: '保留这条发送记录' } });
-  fireEvent.click(screen.getByRole('button', { name: '发送' }));
+  await sendPrompt('保留这条发送记录', /发送消息/);
   const initialRetry = await screen.findByRole('button', { name: '重试' });
   await waitFor(() => expect(initialRetry).toBeEnabled());
   expect((await history.readConversation(id))?.conversation.messages[0]).toMatchObject({
