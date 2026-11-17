@@ -1,8 +1,6 @@
 import type { DesktopNotifications } from './settings/DesktopNotifications';
 import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
 import { validateProjectDirectory } from './settings/projectDirectory';
-import { readMemoryBackup } from './memory/MemoryBackupFile';
-import type { MemoryBackupData } from '../shared/memoryBackup';
 import { trimChatHistory } from '../shared/chatHistory';
 import { CYBERBOSS_CHAT_IMAGE_EXTENSIONS } from '../shared/cyberBossChatAttachments';
 import { AutomationScheduler } from './automation/AutomationScheduler';
@@ -191,6 +189,7 @@ import { registerSessionStatusIpc } from './ipc/sessionStatusIpc';
 import { registerSessionMaintenanceIpc } from './ipc/sessionMaintenanceIpc';
 import { assertMemoryArchiveMutation, assertMemoryPartnerId, registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc } from './ipc/memoryBackupExportIpc';
+import { registerMemoryBackupImportIpc } from './ipc/memoryBackupImportIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
@@ -2484,38 +2483,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerMemoryImportIpc(ipcMain, memoryImport, requireSender);
 
   const memoryBackupFilters = [{ name: '星丛伙伴记忆备份', extensions: ['gz'] }];
-  let memoryBackupDraft: { id: string; partnerId: string; backup: MemoryBackupData } | undefined;
-  let choosingMemoryBackup = false;
   registerMemoryBackupExportIpc(ipcMain, { partnerProfiles, partnerMemories, protectedRoots, memoryBackupFilters }, requireSender);
-  ipcMain.handle(AGENT_IPC.memoryBackupChoose, async (event, value: unknown) => {
-    const window = requireSender(event);
-    const partnerId = assertMemoryPartnerId(value);
-    if (choosingMemoryBackup) throw new Error('MEMORY_BACKUP_BUSY');
-    choosingMemoryBackup = true;
-    memoryBackupDraft = undefined;
-    try {
-      const result = await dialog.showOpenDialog(window, { title: '选择伙伴记忆备份', filters: memoryBackupFilters, properties: ['openFile'] });
-      if (result.canceled || !result.filePaths[0]) return null;
-      const filePath = result.filePaths[0];
-      const backup = await readMemoryBackup(filePath);
-      const id = randomUUID();
-      memoryBackupDraft = { id, partnerId, backup };
-      return { id, fileName: path.basename(filePath), total: backup.records.length, archived: backup.records.filter(record => record.deletedAt).length };
-    } finally { choosingMemoryBackup = false; }
-  });
-  ipcMain.handle(AGENT_IPC.memoryBackupImport, async (event, value: unknown, id: unknown) => {
-    requireSender(event);
-    const partnerId = assertMemoryPartnerId(value);
-    const draft = memoryBackupDraft;
-    if (!draft || draft.id !== id || draft.partnerId !== partnerId) throw new Error('MEMORY_BACKUP_PREVIEW_EXPIRED');
-    const receipt = await partnerMemories.importBackup(partnerId, draft.backup);
-    if (memoryBackupDraft === draft) memoryBackupDraft = undefined;
-    return receipt;
-  });
-  ipcMain.handle(AGENT_IPC.memoryBackupCancel, (event, value: unknown, id: unknown) => {
-    requireSender(event);
-    if (memoryBackupDraft && memoryBackupDraft.id === id && memoryBackupDraft.partnerId === value) memoryBackupDraft = undefined;
-  });
+  const disposeMemoryBackupImport = registerMemoryBackupImportIpc(ipcMain, { partnerMemories, memoryBackupFilters }, requireSender);
 
   registerMemoryArchiveIpc(ipcMain, partnerMemoryManagement, requireSender);
 
@@ -3211,7 +3180,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerAutomationIpc(ipcMain, automationService, automationConfirmations, requireSender);
 
   return async () => {
-    memoryBackupDraft = undefined;
+    disposeMemoryBackupImport();
     unsubscribeUpdates?.(); options.updates?.dispose();
     notifications?.dispose();
     unsubscribeGeneralSettings();
