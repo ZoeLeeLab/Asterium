@@ -181,8 +181,7 @@ import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc }
 import { registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/sessionIpc';
 import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
-import { registerMemoryBackupExportIpc } from './ipc/memoryBackupExportIpc';
-import { registerMemoryBackupImportIpc } from './ipc/memoryBackupImportIpc';
+import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
 import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
