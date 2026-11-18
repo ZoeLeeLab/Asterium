@@ -232,7 +232,7 @@ describe('API packaged skill execution and approval', () => {
     } finally { process.env.PATH = original; }
   });
   it.runIf(process.platform === 'win32')('executes PowerShell with literal script arguments and the existing execution policy', async () => {
-    const s = await setup(); await writeFile(path.join(s.folder, 'scripts/powershell.ps1'), 'param([string]$Value)\n[Console]::WriteLine("PS-SAFE:$Value")\n');
+    const s = await setup('pending', code, new NativeExtensionLaunchBackend(), 10_000); await writeFile(path.join(s.folder, 'scripts/powershell.ps1'), 'param([string]$Value)\n[Console]::WriteLine("PS-SAFE:$Value")\n');
     const result = await s.runner.run(await s.loader.read(s.folder), 'scripts/powershell.ps1', ['hello;$(Write-Output injected)'], s.cwd, new AbortController().signal, (start) => start());
     const response = JSON.parse(result.content);
     // Restricted enterprise execution policy can reject unsigned scripts; never bypass that policy.
