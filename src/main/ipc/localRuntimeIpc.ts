@@ -7,9 +7,38 @@ import type { CodexQuotaResult } from '../../shared/codexQuota';
 import { resolveCodexRuntime } from '../../shared/codexRuntimeSelection';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type ImportedCodexWorkspace } from '../../shared/codexThreadImport';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
+import type { ClaudeInstallation } from '../adapters/ClaudeCodeAdapter';
 import { listCodexModels, readCodexQuota, type CodexInstallation } from '../adapters/CodexCliAdapter';
 import { sameCodexPath } from '../adapters/codexSessionFile';
 import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+
+export function registerLocalRuntimeDetectionIpc(
+  ipcMain: Pick<IpcMain, 'handle'>,
+  refreshClaude: () => Promise<ClaudeInstallation>,
+  refreshCodex: () => Promise<CodexInstallation>,
+  requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
+) {
+  ipcMain.handle(AGENT_IPC.detectClaude, async (event) => {
+    requireSender(event);
+    return publicClaudeInstallation(await refreshClaude());
+  });
+
+  ipcMain.handle(AGENT_IPC.detectCodex, async (event) => {
+    requireSender(event);
+    return refreshCodex();
+  });
+}
+
+function publicClaudeInstallation(installation: ClaudeInstallation) {
+  return {
+    installed: installation.installed,
+    loggedIn: installation.loggedIn,
+    version: installation.version,
+    authMethod: installation.authMethod,
+    executableLabel: installation.executableLabel,
+    error: installation.error,
+  };
+}
 
 interface CodexRuntimeQueryDependencies {
   studioRuntimeCatalog: Pick<StudioRuntimeCatalog, 'partner'>;

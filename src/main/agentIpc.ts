@@ -182,8 +182,7 @@ import { registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/s
 import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
-import { registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeDetectionIpc';
-import { registerCodexRuntimeQueryIpc } from './ipc/codexRuntimeQueryIpc';
+import { registerLocalRuntimeDetectionIpc, registerCodexRuntimeQueryIpc } from './ipc/localRuntimeIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
