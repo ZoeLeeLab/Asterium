@@ -172,6 +172,7 @@ import { registerStudioMcpHostIpc, registerStudioMcpCredentialIpc } from './ipc/
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowQueryIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
+import { registerProjectWorkflowGenerationIpc } from './ipc/projectWorkflowGenerationIpc';
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
@@ -197,7 +198,6 @@ import type {
   ProjectWorkflowUpdateRequest,
 } from '../shared/projectWorkflows';
 import type { TaskGateResolutionRequest } from '../shared/projectTaskExecution';
-import type { ProjectWorkflowGenerationCancelRequest, ProjectWorkflowGenerationRetryRequest, ProjectWorkflowGenerationStartRequest } from '../shared/projectWorkflowGeneration';
 
 export { AGENT_IPC };
 
@@ -1108,30 +1108,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return result;
   });
   registerProjectWorkflowTemplateIpc(ipcMain, projectService, requireSender);
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationList, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_QUERY');
-    return projectWorkflowGenerations.listProject(value);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationStart, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.requestId !== 'string' || typeof value.projectId !== 'string' || typeof value.roomId !== 'string'
-      || typeof value.plannerPartnerId !== 'string' || !Array.isArray(value.messageIds)) throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_START');
-    if (!workflowGenerationRuntimeRef.current) throw new Error('PROJECT_WORKFLOW_GENERATION_RUNTIME_NOT_READY');
-    return workflowGenerationRuntimeRef.current.start(value as unknown as ProjectWorkflowGenerationStartRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationCancel, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.generationId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_CANCEL');
-    if (!workflowGenerationRuntimeRef.current) throw new Error('PROJECT_WORKFLOW_GENERATION_RUNTIME_NOT_READY');
-    return workflowGenerationRuntimeRef.current.cancel(value as unknown as ProjectWorkflowGenerationCancelRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationRetry, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.generationId !== 'string' || typeof value.requestId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_RETRY');
-    if (!workflowGenerationRuntimeRef.current) throw new Error('PROJECT_WORKFLOW_GENERATION_RUNTIME_NOT_READY');
-    return workflowGenerationRuntimeRef.current.retry(value as unknown as ProjectWorkflowGenerationRetryRequest);
-  });
+  registerProjectWorkflowGenerationIpc(ipcMain, { projectWorkflowGenerations, workflowGenerationRuntimeRef }, requireSender);
   ipcMain.handle(AGENT_IPC.projectTaskExecutionGet, async (event, value: unknown) => {
     requireSender(event);
     if (value !== undefined && typeof value !== 'string') throw new Error('INVALID_PROJECT_TASK_EXECUTION_QUERY');
