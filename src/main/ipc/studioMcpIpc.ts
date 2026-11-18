@@ -1,10 +1,34 @@
 import { clipboard, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
-import { isStudioMcpCredentialToken } from '../../shared/studioMcp';
+import { isStudioMcpCredentialToken, type StudioMcpConfiguration } from '../../shared/studioMcp';
 import type { ProjectMutationCoordinator } from '../project/ProjectMutationCoordinator';
 import type { StudioMcpAccessStore } from '../studio/StudioMcpAccessStore';
 import type { StudioMcpHost } from '../studio/StudioMcpHost';
 import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+
+interface StudioMcpHostIpcDependencies {
+  studioMcpHost: Pick<StudioMcpHost, 'status' | 'configure'>;
+  studioMcpStartup: Promise<void>;
+  wakeReadinessChanged: () => void;
+}
+
+export function registerStudioMcpHostIpc(
+  ipcMain: Pick<IpcMain, 'handle'>,
+  { studioMcpHost, studioMcpStartup, wakeReadinessChanged }: StudioMcpHostIpcDependencies,
+  requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
+) {
+  ipcMain.handle(AGENT_IPC.studioMcpStatus, async (event) => {
+    requireSender(event);
+    await studioMcpStartup;
+    return studioMcpHost.status();
+  });
+  ipcMain.handle(AGENT_IPC.studioMcpConfigure, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value)) throw new Error('STUDIO_MCP_CONFIGURATION_INVALID');
+    const status = await studioMcpHost.configure(value as unknown as StudioMcpConfiguration);
+    wakeReadinessChanged(); return status;
+  });
+}
 
 interface StudioMcpCredentialIpcDependencies {
   projectCoordinator: Pick<ProjectMutationCoordinator, 'run'>;
@@ -39,4 +63,8 @@ export function registerStudioMcpCredentialIpc(
     await projectCoordinator.run(() => studioMcpAccess.revoke(credentialId));
     return studioMcpHost.status();
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
