@@ -171,7 +171,7 @@ import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRo
 import { registerStudioMcpHostIpc, registerStudioMcpCredentialIpc } from './ipc/studioMcpIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
-import { registerProjectWorkflowQueryIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
+import { registerProjectWorkflowQueryIpc, registerProjectWorkflowMutationIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
 import { registerProjectWorkflowGenerationIpc } from './ipc/projectWorkflowGenerationIpc';
 import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
@@ -191,12 +191,6 @@ import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 import { isProjectPermissionMode } from '../shared/projectExecutionPolicy';
 import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectUpdateRequest } from '../shared/projectDomain';
-import type {
-  ProjectWorkflowActivateRequest,
-  ProjectWorkflowCreateRequest,
-  ProjectWorkflowRemoveRequest,
-  ProjectWorkflowUpdateRequest,
-} from '../shared/projectWorkflows';
 import type { TaskGateResolutionRequest } from '../shared/projectTaskExecution';
 
 export { AGENT_IPC };
@@ -1085,28 +1079,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerProjectTaskIpc(ipcMain, projectService, requireSender);
   registerProjectRoleIpc(ipcMain, projectService, requireSender);
   registerProjectWorkflowQueryIpc(ipcMain, projectService, requireSender);
-  ipcMain.handle(AGENT_IPC.projectWorkflowCreate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.templateId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_CREATE');
-    return projectService.createWorkflow(value as unknown as ProjectWorkflowCreateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.workflowId !== 'string' || !Array.isArray(value.nodes)) throw new Error('INVALID_PROJECT_WORKFLOW_UPDATE');
-    return projectService.updateWorkflow(value as unknown as ProjectWorkflowUpdateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowRemove, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.workflowId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_REMOVE');
-    await projectService.removeWorkflow(value as unknown as ProjectWorkflowRemoveRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowActivate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.workflowId !== 'string' || typeof value.activationId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_ACTIVATE');
-    const result = await projectService.activateWorkflow(value as unknown as ProjectWorkflowActivateRequest);
-    await projectTaskOrchestrator.activate(partnerRuntimePort);
-    return result;
-  });
+  registerProjectWorkflowMutationIpc(ipcMain, { projectService, projectTaskOrchestrator, getPartnerRuntimePort: () => partnerRuntimePort }, requireSender);
   registerProjectWorkflowTemplateIpc(ipcMain, projectService, requireSender);
   registerProjectWorkflowGenerationIpc(ipcMain, { projectWorkflowGenerations, workflowGenerationRuntimeRef }, requireSender);
   ipcMain.handle(AGENT_IPC.projectTaskExecutionGet, async (event, value: unknown) => {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { BrowserWindow, IpcMain } from 'electron';
 import { expect, it, vi, type MockInstance } from 'vitest';
 import { registerAgentIpc } from '../../src/main/agentIpc';
+import { registerProjectWorkflowMutationIpc } from '../../src/main/ipc/projectWorkflowIpc';
 import { ProjectDomainStore } from '../../src/main/project/ProjectDomainStore';
 import { ProjectService } from '../../src/main/project/ProjectService';
 import { ProjectTaskExecutionStore } from '../../src/main/project/ProjectTaskExecutionStore';
@@ -153,4 +154,38 @@ it('commits workflow activation before starting the orchestrator and returns sta
     expect(await workflows.get(projectId, assigned.id)).toEqual(result.workflow);
     await expect(invoke(activate, request)).resolves.toEqual(result);
   });
+});
+
+it('does not resolve the late runtime while registering, before saving, or after a failed save', async () => {
+  const handlers = new Map<string, (event: unknown, value: unknown) => Promise<unknown>>();
+  const ipcMain = { handle: (channel: string, handler: (event: unknown, value: unknown) => Promise<unknown>) => handlers.set(channel, handler) } as unknown as IpcMain;
+  const window = {} as BrowserWindow;
+  let finishSave!: (value: ProjectWorkflowActivationResult) => void;
+  const saving = new Promise<ProjectWorkflowActivationResult>(resolve => { finishSave = resolve; });
+  const activateWorkflow = vi.fn(() => saving);
+  const activateTasks = vi.fn(async (runtime: PartnerRuntimePort) => { void runtime; });
+  const runtimeRef: { current?: PartnerRuntimePort } = {};
+  const getPartnerRuntimePort = vi.fn(() => {
+    if (!runtimeRef.current) throw new Error('SYNTHETIC_RUNTIME_NOT_READY');
+    return runtimeRef.current;
+  });
+  registerProjectWorkflowMutationIpc(ipcMain, {
+    projectService: { createWorkflow: vi.fn(), updateWorkflow: vi.fn(), removeWorkflow: vi.fn(), activateWorkflow },
+    projectTaskOrchestrator: { activate: activateTasks }, getPartnerRuntimePort,
+  }, () => window);
+  expect(getPartnerRuntimePort).not.toHaveBeenCalled();
+  const request = { projectId, workflowId: 'fixture-workflow', activationId: 'fixture-late-runtime' };
+  const pending = handlers.get(activate)!({}, request);
+  expect(activateWorkflow).toHaveBeenCalledExactlyOnceWith(request);
+  expect(getPartnerRuntimePort).not.toHaveBeenCalled(); expect(activateTasks).not.toHaveBeenCalled();
+  const result = { workflow: { id: request.workflowId } as ProjectWorkflow, taskIds: [], attemptIds: [] };
+  runtimeRef.current = {} as PartnerRuntimePort;
+  finishSave(result);
+  await expect(pending).resolves.toBe(result);
+  expect(getPartnerRuntimePort).toHaveBeenCalledTimes(1);
+  expect(activateTasks).toHaveBeenCalledExactlyOnceWith(runtimeRef.current);
+  const error = new Error('SYNTHETIC_SAVE_FAILURE');
+  activateWorkflow.mockRejectedValueOnce(error);
+  await expect(handlers.get(activate)!({}, request)).rejects.toBe(error);
+  expect(getPartnerRuntimePort).toHaveBeenCalledTimes(1); expect(activateTasks).toHaveBeenCalledTimes(1);
 });
