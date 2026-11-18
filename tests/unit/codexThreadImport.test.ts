@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, realpath, rename, unlink, writeFile } from 'n
 import os from 'node:os';
 import { zstdCompressSync } from 'node:zlib';
 import path from 'node:path';
-import type { BrowserWindow, IpcMain } from 'electron';
+import { dialog, type BrowserWindow, type IpcMain } from 'electron';
+import { registerAgentIpc } from '../../src/main/agentIpc';
 import { expect, it, vi } from 'vitest';
 import { testRm } from '../helpers/autoTest.mjs';
 import { DESKTOP_IPC as AGENT_IPC } from '../../src/shared/desktopIpc';
@@ -151,8 +152,6 @@ it('imports a different working directory, recovers it after a rename, and keeps
     writeHeader(path.join(anotherYear, 'other-year.jsonl'), '00000000-0000-7000-8000-000000000004'),
   ]);
 
-  const { registerAgentIpc } = await import('../../src/main/agentIpc');
-  const { dialog } = await import('electron');
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const sendEvent = vi.fn();
   const sender = Object.assign(new EventEmitter(), { send: sendEvent });
