@@ -151,10 +151,8 @@ import {
   type ExistingThreadConnectionStatus,
 } from '../shared/agentProtocol';
 import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
-import { registerApiConnectionsIpc } from './ipc/apiConnectionsIpc';
+import { registerApiConnectionsIpc, registerApiCredentialIpc, registerApiModelListIpc } from './ipc/apiConnectionsIpc';
 import { registerApiConnectionProbeIpc } from './ipc/apiConnectionProbeIpc';
-import { registerApiModelListIpc } from './ipc/apiModelListIpc';
-import { registerApiCredentialIpc } from './ipc/apiCredentialIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
 import { registerAutomationIpc } from './ipc/automationIpc';
