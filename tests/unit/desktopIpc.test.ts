@@ -22,9 +22,24 @@ describe('desktop IPC contract', () => {
     expect(DESKTOP_IPC.event).toBe('asterium:agent:event');
   });
 
+  it('assigns every deferred handler to one final business module with its unchanged channel string', async () => {
+    const [source, plan] = await Promise.all([
+      readFile(path.join(process.cwd(), 'src/main/agentIpc.ts'), 'utf8'),
+      readFile(path.join(process.cwd(), 'docs/ipc-domain-consolidation.md'), 'utf8'),
+    ]);
+    const rows = [...plan.matchAll(/^\| `(\w+)` \| `([^`]+)` \| `(\w+Ipc\.ts)` \|$/gm)];
+    const handledKeys = [...source.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)].map(match => match[1]);
+    expect(rows).toHaveLength(97);
+    expect(new Set(rows.map(row => row[1])).size).toBe(97);
+    expect(rows.map(row => row[1])).toEqual(handledKeys);
+    for (const [, key, channel] of rows) {
+      expect(channel).toBe(DESKTOP_IPC[key as keyof typeof DESKTOP_IPC]);
+    }
+  });
+
   it('classifies every main-process handler for shared disposer cleanup', async () => {
     const mainDirectory = path.join(process.cwd(), 'src', 'main');
-    const [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, projectTaskSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource, projectFileOpenSource, apiConnectionsSource, automationSource, studioRoomSource, studioMcpHostSource, studioMcpCredentialSource, partnerDiarySource, delegationSource, memoryImportSource, partnerWorkspaceSource, workspaceGrantSource, claudeSessionImportSource, localRuntimeDetectionSource, codexRuntimeQuerySource, apiModelListSource, apiConnectionProbeSource, profileDirectorySource, userProfileSource, partnerProfileRefreshSource, memoryFallbackModelListSource, memoryFallbackSettingsSource, sessionStatusSource, sessionMaintenanceSource, runInteractionSource, memoryArchiveSource, memoryBackupExportSource, memoryBackupImportSource] = await Promise.all([
+    const [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, projectTaskSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource, projectFileOpenSource, apiConnectionsSource, automationSource, studioRoomSource, studioMcpHostSource, studioMcpCredentialSource, partnerDiarySource, delegationSource, memoryImportSource, partnerWorkspaceSource, workspaceGrantSource, claudeSessionImportSource, localRuntimeDetectionSource, codexRuntimeQuerySource, apiModelListSource, apiConnectionProbeSource, profileDirectorySource, userProfileSource, partnerProfileRefreshSource, memoryFallbackModelListSource, memoryFallbackSettingsSource, sessionStatusSource, runInteractionSource, memoryArchiveSource, memoryBackupExportSource, memoryBackupImportSource] = await Promise.all([
       readFile(path.join(mainDirectory, 'agentIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'projectNotebookIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'artifactIpc.ts'), 'utf8'),
@@ -63,14 +78,13 @@ describe('desktop IPC contract', () => {
       readFile(path.join(mainDirectory, 'ipc', 'partnerProfileRefreshIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'memoryFallbackModelListIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'memoryFallbackSettingsIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'sessionStatusIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'sessionMaintenanceIpc.ts'), 'utf8'),
+      readFile(path.join(mainDirectory, 'ipc', 'sessionIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'runInteractionIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'memoryArchiveIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'memoryBackupExportIpc.ts'), 'utf8'),
       readFile(path.join(mainDirectory, 'ipc', 'memoryBackupImportIpc.ts'), 'utf8'),
     ]);
-    const handledKeys = [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, projectTaskSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource, projectFileOpenSource, apiConnectionsSource, automationSource, studioRoomSource, studioMcpHostSource, studioMcpCredentialSource, partnerDiarySource, delegationSource, memoryImportSource, partnerWorkspaceSource, workspaceGrantSource, claudeSessionImportSource, localRuntimeDetectionSource, codexRuntimeQuerySource, apiModelListSource, apiConnectionProbeSource, profileDirectorySource, userProfileSource, partnerProfileRefreshSource, memoryFallbackModelListSource, memoryFallbackSettingsSource, sessionStatusSource, sessionMaintenanceSource, runInteractionSource, memoryArchiveSource, memoryBackupExportSource, memoryBackupImportSource].flatMap((moduleSource) =>
+    const handledKeys = [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, projectTaskSource, extensionsSource, projectRunChangesSource, projectFileQuerySource, desktopNavigationSource, appUpdateSource, projectWorkflowTemplateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, apiCredentialSource, projectFileOpenSource, apiConnectionsSource, automationSource, studioRoomSource, studioMcpHostSource, studioMcpCredentialSource, partnerDiarySource, delegationSource, memoryImportSource, partnerWorkspaceSource, workspaceGrantSource, claudeSessionImportSource, localRuntimeDetectionSource, codexRuntimeQuerySource, apiModelListSource, apiConnectionProbeSource, profileDirectorySource, userProfileSource, partnerProfileRefreshSource, memoryFallbackModelListSource, memoryFallbackSettingsSource, sessionStatusSource, runInteractionSource, memoryArchiveSource, memoryBackupExportSource, memoryBackupImportSource].flatMap((moduleSource) =>
       [...moduleSource.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)].map((match) => match[1] as keyof typeof DESKTOP_IPC));
     const handledChannels = handledKeys.map((key) => DESKTOP_IPC[key]);
 
