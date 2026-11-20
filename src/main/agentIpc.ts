@@ -180,7 +180,7 @@ import { registerProjectLifecycleIpc, registerProjectManagementIpc } from './ipc
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
 import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
-import { registerPartnerProfileRefreshIpc, registerUserProfileIpc, registerProfileDirectoryIpc } from './ipc/profileIpc';
+import { registerPartnerProfileRefreshIpc, registerPartnerProfileIpc, registerUserProfileIpc, registerProfileDirectoryIpc } from './ipc/profileIpc';
 import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
 import { registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/sessionIpc';
 import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
@@ -2128,23 +2128,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
   registerPartnerProfileRefreshIpc(ipcMain, partnerProfiles, requireSender);
 
-  ipcMain.handle(AGENT_IPC.syncPartnerProfiles, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || !isUserProfileSeed(value.user) || !Array.isArray(value.partners) || !value.partners.every(isPartnerProfileSeed)) throw new Error('INVALID_PARTNER_PROFILE_SYNC');
-    return partnerProfileService.sync(value as unknown as Parameters<PartnerProfileService['sync']>[0]);
-  });
-
-  ipcMain.handle(AGENT_IPC.savePartnerProfile, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isPartnerProfileSeed(value)) throw new Error('INVALID_PARTNER_PROFILE');
-    return partnerProfileService.save(value);
-  });
-
-  ipcMain.handle(AGENT_IPC.trashPartnerProfile, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId) throw new Error('INVALID_PARTNER_PROFILE_TRASH');
-    return partnerProfileService.trash(value.partnerId);
-  });
+  registerPartnerProfileIpc(ipcMain, { partnerProfileService, isUserProfileSeed, isPartnerProfileSeed }, requireSender);
 
   registerUserProfileIpc(ipcMain, { partnerProfiles, studioRuntimeCatalog, isUserProfileSeed }, requireSender);
 

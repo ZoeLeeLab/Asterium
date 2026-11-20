@@ -18,13 +18,13 @@
 
 ## 剩余 97 个频道：最终模块边界
 
-第一阶段五组与第二阶段四组已经完成并合入主分支。后续按以下修正版分阶段推进；第三阶段已完成工作流生成、工作流草稿与激活两组；第四阶段按表推进，其余阶段尚未开始。新模块必须具备完整领域边界；不再按迁移批次另造临时文件。
+第一阶段五组与第二阶段四组已经完成并合入主分支。后续按以下修正版分阶段推进；第三阶段已完成工作流生成、工作流草稿与激活两组；第四阶段已完成并验收合并；第五阶段按表推进，其余阶段尚未开始。新模块必须具备完整领域边界；不再按迁移批次另造临时文件。
 
 | 阶段 | 实施顺序 | 入口数 | 阶段结束后主文件剩余 | 当前状态 |
 | --- | --- | ---: | ---: | --- |
 | 三 | 工作流生成 → 工作流草稿与激活 | 8 | 89 | 源码两组已完成；累计 Windows 验收结果独立留档 |
 | 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 源码三组已完成；累计 Windows 验收结果独立留档 |
-| 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 未开始 |
+| 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 伙伴资料 3 个入口已迁移；其余未开始 |
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 未开始 |
 | 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
 | 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 七 A 累计验收通过后再开始 |
@@ -150,9 +150,9 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `searchCodexHistory` | `asterium:agent:search-codex-history` | `nativeSessionIpc.ts` | `agentIpc.ts` |
 | `getLocalThreadLifecycles` | `asterium:agent:get-local-thread-lifecycles` | `nativeSessionIpc.ts` | `agentIpc.ts` |
 | `changeLocalThreadLifecycle` | `asterium:agent:change-local-thread-lifecycle` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `syncPartnerProfiles` | `asterium:agent:sync-partner-profiles` | `profileIpc.ts` | `agentIpc.ts` |
-| `savePartnerProfile` | `asterium:agent:save-partner-profile` | `profileIpc.ts` | `agentIpc.ts` |
-| `trashPartnerProfile` | `asterium:agent:trash-partner-profile` | `profileIpc.ts` | `agentIpc.ts` |
+| `syncPartnerProfiles` | `asterium:agent:sync-partner-profiles` | `profileIpc.ts` | `profileIpc.ts` |
+| `savePartnerProfile` | `asterium:agent:save-partner-profile` | `profileIpc.ts` | `profileIpc.ts` |
+| `trashPartnerProfile` | `asterium:agent:trash-partner-profile` | `profileIpc.ts` | `profileIpc.ts` |
 | `deleteApiSession` | `asterium:agent:delete-api-session` | `sessionIpc.ts` | `agentIpc.ts` |
 | `sendApiMessage` | `asterium:agent:send-api-message` | `runInteractionIpc.ts` | `agentIpc.ts` |
 | `saveBridgeCredential` | `asterium:agent:save-bridge-credential` | `existingThreadIpc.ts` | `agentIpc.ts` |
