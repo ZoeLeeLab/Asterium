@@ -129,7 +129,8 @@ import { compactApiSession } from './api/ApiSessionCompactor';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
 import { confirmNativeProfileReload, NativeProfileReloadError } from './runtime/NativeProfileReload';
 import { StudioOrchestrator } from './studio/StudioOrchestrator';
-import { persistedPartnerProfileSeed, shouldPersistPartnerProfileSeed, StudioRuntimeCatalog } from './studio/StudioRuntimeCatalog';
+import { StudioRuntimeCatalog } from './studio/StudioRuntimeCatalog';
+import { PartnerProfileService } from './partner/PartnerProfileService';
 import {
   AGENT_PROTOCOL_VERSION,
   type ApiPartnerConnection,
@@ -2120,51 +2121,29 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerExtensionsIpc(ipcMain, apiExtensions, mcpConnections, requireSender);
 
+  const partnerProfileService = new PartnerProfileService({
+    prepareMemoryStorage, studioRuntimeCatalog, apiConnections, mcpConnections, diaryCatalog, wakeReadinessChanged,
+    partnerProfiles, restoreBackgroundServices, memoryFallbackInventory, memoryFallbackScheduler,
+    diaries, diaryScheduler, projectTaskOrchestrator, partnerRuntimePort, trashItem: directory => shell.trashItem(directory),
+  });
   registerPartnerProfileRefreshIpc(ipcMain, partnerProfiles, requireSender);
 
   ipcMain.handle(AGENT_IPC.syncPartnerProfiles, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || !isUserProfileSeed(value.user) || !Array.isArray(value.partners) || !value.partners.every(isPartnerProfileSeed)) throw new Error('INVALID_PARTNER_PROFILE_SYNC');
-    await prepareMemoryStorage();
-    studioRuntimeCatalog.sync(value.user, value.partners);
-    for (const seed of value.partners) {
-      const runtime = studioRuntimeCatalog.partner(seed.partnerId)?.runtime;
-      if (runtime?.kind === 'api' && runtime.connection.credentialRef && shouldPersistPartnerProfileSeed(seed) && studioRuntimeCatalog.partner(seed.partnerId)?.available) await apiConnections.migrateLegacy(seed.partnerId, runtime.connection);
-    }
-    await mcpConnections.reconcilePartners();
-    diaryCatalog.sync(value.partners);
-    wakeReadinessChanged();
-    const profiles = await partnerProfiles.sync(value.user, value.partners.filter(shouldPersistPartnerProfileSeed).map(persistedPartnerProfileSeed));
-    if (restoreBackgroundServices) {
-      await memoryFallbackInventory.activate();
-      await memoryFallbackScheduler.start();
-      await diaries.recover(); await diaryScheduler.start(); await diaryScheduler.changed();
-      await projectTaskOrchestrator.activate(partnerRuntimePort);
-    }
-    return profiles;
+    return partnerProfileService.sync(value as unknown as Parameters<PartnerProfileService['sync']>[0]);
   });
 
   ipcMain.handle(AGENT_IPC.savePartnerProfile, async (event, value: unknown) => {
     requireSender(event);
     if (!isPartnerProfileSeed(value)) throw new Error('INVALID_PARTNER_PROFILE');
-    await prepareMemoryStorage();
-    const saved = await partnerProfiles.savePartner(persistedPartnerProfileSeed(value));
-    studioRuntimeCatalog.upsert(value);
-    const runtime = studioRuntimeCatalog.partner(value.partnerId)?.runtime;
-    if (runtime?.kind === 'api' && runtime.connection.credentialRef && shouldPersistPartnerProfileSeed(value) && studioRuntimeCatalog.partner(value.partnerId)?.available) await apiConnections.migrateLegacy(value.partnerId, runtime.connection, true);
-    await mcpConnections.reconcilePartners(value.partnerId);
-    diaryCatalog.upsert(value);
-    wakeReadinessChanged();
-    await memoryFallbackInventory.refresh();
-    await diaryScheduler.changed();
-    return saved;
+    return partnerProfileService.save(value);
   });
 
   ipcMain.handle(AGENT_IPC.trashPartnerProfile, async (event, value: unknown) => {
     requireSender(event);
     if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId) throw new Error('INVALID_PARTNER_PROFILE_TRASH');
-    await prepareMemoryStorage();
-    return partnerProfiles.trashPartnerDirectory(value.partnerId, (directory) => shell.trashItem(directory));
+    return partnerProfileService.trash(value.partnerId);
   });
 
   registerUserProfileIpc(ipcMain, { partnerProfiles, studioRuntimeCatalog, isUserProfileSeed }, requireSender);
