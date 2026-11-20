@@ -182,7 +182,7 @@ import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc
 import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
 import { registerPartnerProfileRefreshIpc, registerPartnerProfileIpc, registerUserProfileIpc, registerProfileDirectoryIpc } from './ipc/profileIpc';
 import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
-import { registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/sessionIpc';
+import { registerApiSessionDeletionIpc, registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/sessionIpc';
 import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
@@ -2148,13 +2148,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerMemoryArchiveIpc(ipcMain, { partnerMemoryManagement, partnerMemories }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.deleteApiSession, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId
-      || (value.conversationId !== undefined && typeof value.conversationId !== 'string')) throw new Error('INVALID_API_SESSION_DELETE');
-    if (typeof value.conversationId === 'string' && value.conversationId) await apiSessions.delete(value.partnerId, value.conversationId);
-    else await apiSessions.deletePartner(value.partnerId);
-  });
+  registerApiSessionDeletionIpc(ipcMain, apiSessions, requireSender);
 
   registerSessionStatusIpc(ipcMain, sessionCommands, requireSender);
   registerSessionMaintenanceIpc(ipcMain, { sessionCommands, sessionCompactions }, requireSender);
