@@ -18,12 +18,12 @@
 
 ## 剩余 97 个频道：最终模块边界
 
-第一阶段五组与第二阶段四组已经完成并合入主分支。后续按以下修正版分阶段推进；第三阶段只实施工作流生成、工作流草稿与激活这两组，其他阶段尚未开始。新模块必须具备完整领域边界；不再按迁移批次另造临时文件。
+第一阶段五组与第二阶段四组已经完成并合入主分支。后续按以下修正版分阶段推进；第三阶段已完成工作流生成、工作流草稿与激活两组；第四阶段按表推进，其余阶段尚未开始。新模块必须具备完整领域边界；不再按迁移批次另造临时文件。
 
 | 阶段 | 实施顺序 | 入口数 | 阶段结束后主文件剩余 | 当前状态 |
 | --- | --- | ---: | ---: | --- |
 | 三 | 工作流生成 → 工作流草稿与激活 | 8 | 89 | 源码两组已完成；累计 Windows 验收结果独立留档 |
-| 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 存储位置 5 个入口已迁移；其余未开始 |
+| 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 存储位置 5 个、项目生命周期 10 个入口已迁移；工作区创建未开始 |
 | 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 未开始 |
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 未开始 |
 | 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
@@ -75,11 +75,11 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `storageChooseProjectRoot` | `asterium:storage:choose-project-root` | `storageIpc.ts` | `storageIpc.ts` |
 | `storageResetProjectRoot` | `asterium:storage:reset-project-root` | `storageIpc.ts` | `storageIpc.ts` |
 | `storageOpenProjectRoot` | `asterium:storage:open-project-root` | `storageIpc.ts` | `storageIpc.ts` |
-| `projectChooseLocation` | `asterium:project:choose-location` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectDomainInitialize` | `asterium:project-domain:initialize` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectPreviewCreateLocation` | `asterium:project:preview-create-location` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectCreate` | `asterium:project:create` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectUpdate` | `asterium:project:update` | `projectIpc.ts` | `agentIpc.ts` |
+| `projectChooseLocation` | `asterium:project:choose-location` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectDomainInitialize` | `asterium:project-domain:initialize` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectPreviewCreateLocation` | `asterium:project:preview-create-location` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectCreate` | `asterium:project:create` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectUpdate` | `asterium:project:update` | `projectIpc.ts` | `projectIpc.ts` |
 | `projectWorkflowCreate` | `asterium:project-workflow:create` | `projectWorkflowIpc.ts` | `projectWorkflowIpc.ts` |
 | `projectWorkflowUpdate` | `asterium:project-workflow:update` | `projectWorkflowIpc.ts` | `projectWorkflowIpc.ts` |
 | `projectWorkflowRemove` | `asterium:project-workflow:remove` | `projectWorkflowIpc.ts` | `projectWorkflowIpc.ts` |
@@ -98,11 +98,11 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `projectCreateWorkspace` | `asterium:project:create-workspace` | `projectWorkspaceIpc.ts` | `agentIpc.ts` |
 | `projectInspectFileDeletion` | `asterium:project:inspect-file-deletion` | `projectFilesIpc.ts` | `agentIpc.ts` |
 | `projectDeleteFile` | `asterium:project:delete-file` | `projectFilesIpc.ts` | `agentIpc.ts` |
-| `projectGetExecutionPolicy` | `asterium:project:get-execution-policy` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectSetExecutionPolicy` | `asterium:project:set-execution-policy` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectSyncMembers` | `asterium:project:sync-members` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectChangeMembers` | `asterium:project:change-members` | `projectIpc.ts` | `agentIpc.ts` |
-| `projectRemove` | `asterium:project:remove` | `projectIpc.ts` | `agentIpc.ts` |
+| `projectGetExecutionPolicy` | `asterium:project:get-execution-policy` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectSetExecutionPolicy` | `asterium:project:set-execution-policy` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectSyncMembers` | `asterium:project:sync-members` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectChangeMembers` | `asterium:project:change-members` | `projectIpc.ts` | `projectIpc.ts` |
+| `projectRemove` | `asterium:project:remove` | `projectIpc.ts` | `projectIpc.ts` |
 | `studioRetryProjectUploads` | `asterium:studio:retry-project-uploads` | `studioRoomIpc.ts` | `agentIpc.ts` |
 | `studioRemoveRoom` | `asterium:studio:remove-room` | `studioRoomIpc.ts` | `agentIpc.ts` |
 | `studioCancelRound` | `asterium:studio:cancel-round` | `studioRoundIpc.ts` | `agentIpc.ts` |
