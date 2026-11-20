@@ -23,7 +23,7 @@
 | 阶段 | 实施顺序 | 入口数 | 阶段结束后主文件剩余 | 当前状态 |
 | --- | --- | ---: | ---: | --- |
 | 三 | 工作流生成 → 工作流草稿与激活 | 8 | 89 | 源码两组已完成；累计 Windows 验收结果独立留档 |
-| 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 未开始 |
+| 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 存储位置 5 个入口已迁移；其余未开始 |
 | 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 未开始 |
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 未开始 |
 | 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
@@ -70,11 +70,11 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 
 | 频道标识 | 实际频道 | 最终业务模块 | 当前注册位置 |
 | --- | --- | --- | --- |
-| `storageGet` | `asterium:storage:get` | `storageIpc.ts` | `agentIpc.ts` |
-| `storageChooseUserDataDirectory` | `asterium:storage:choose-user-data-directory` | `storageIpc.ts` | `agentIpc.ts` |
-| `storageChooseProjectRoot` | `asterium:storage:choose-project-root` | `storageIpc.ts` | `agentIpc.ts` |
-| `storageResetProjectRoot` | `asterium:storage:reset-project-root` | `storageIpc.ts` | `agentIpc.ts` |
-| `storageOpenProjectRoot` | `asterium:storage:open-project-root` | `storageIpc.ts` | `agentIpc.ts` |
+| `storageGet` | `asterium:storage:get` | `storageIpc.ts` | `storageIpc.ts` |
+| `storageChooseUserDataDirectory` | `asterium:storage:choose-user-data-directory` | `storageIpc.ts` | `storageIpc.ts` |
+| `storageChooseProjectRoot` | `asterium:storage:choose-project-root` | `storageIpc.ts` | `storageIpc.ts` |
+| `storageResetProjectRoot` | `asterium:storage:reset-project-root` | `storageIpc.ts` | `storageIpc.ts` |
+| `storageOpenProjectRoot` | `asterium:storage:open-project-root` | `storageIpc.ts` | `storageIpc.ts` |
 | `projectChooseLocation` | `asterium:project:choose-location` | `projectIpc.ts` | `agentIpc.ts` |
 | `projectDomainInitialize` | `asterium:project-domain:initialize` | `projectIpc.ts` | `agentIpc.ts` |
 | `projectPreviewCreateLocation` | `asterium:project:preview-create-location` | `projectIpc.ts` | `agentIpc.ts` |
