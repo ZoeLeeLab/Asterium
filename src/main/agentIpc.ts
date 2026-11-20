@@ -58,6 +58,7 @@ import { PartnerProjectNotebookService } from './notebook/PartnerProjectNotebook
 import { ProjectWorkspaceStore } from './project/ProjectWorkspaceStore';
 import { ArtifactDeliveryService } from './project/ArtifactDeliveryService';
 import { ProjectService } from './project/ProjectService';
+import { ProjectLifecycleService } from './project/ProjectLifecycleService';
 import { ProjectTransactionStore } from './project/ProjectTransactionStore';
 import { ProjectMutationCoordinator } from './project/ProjectMutationCoordinator';
 import { ProjectDeletionStore } from './project/ProjectDeletionStore';
@@ -160,7 +161,7 @@ import { registerDelegationIpc } from './ipc/delegationIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
-import { inspectDailyDataDirectory, saveDailyDataDirectory } from './settings/runtimeEnvironment';
+import { registerStorageIpc } from './ipc/storageIpc';
 import { registerMemoryImportIpc } from './ipc/memoryImportIpc';
 import { registerPartnerDiaryIpc } from './ipc/partnerDiaryIpc';
 import { registerProjectFileOpenIpc, registerProjectFileQueryIpc } from './ipc/projectFilesIpc';
@@ -171,8 +172,10 @@ import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRo
 import { registerStudioMcpHostIpc, registerStudioMcpCredentialIpc } from './ipc/studioMcpIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
-import { registerProjectWorkflowQueryIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
-import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
+import { registerProjectWorkflowQueryIpc, registerProjectWorkflowMutationIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
+import { registerProjectWorkflowGenerationIpc } from './ipc/projectWorkflowGenerationIpc';
+import { registerProjectWorkspaceCreationIpc, registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
+import { registerProjectLifecycleIpc, registerProjectManagementIpc } from './ipc/projectIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
 import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
@@ -188,16 +191,7 @@ import type { ConversationDeleteRequest } from '../shared/conversationLifecycle'
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
-import { isProjectPermissionMode } from '../shared/projectExecutionPolicy';
-import type { ProjectCreateRequest, ProjectDomainInitializeRequest, ProjectUpdateRequest } from '../shared/projectDomain';
-import type {
-  ProjectWorkflowActivateRequest,
-  ProjectWorkflowCreateRequest,
-  ProjectWorkflowRemoveRequest,
-  ProjectWorkflowUpdateRequest,
-} from '../shared/projectWorkflows';
 import type { TaskGateResolutionRequest } from '../shared/projectTaskExecution';
-import type { ProjectWorkflowGenerationCancelRequest, ProjectWorkflowGenerationRetryRequest, ProjectWorkflowGenerationStartRequest } from '../shared/projectWorkflowGeneration';
 
 export { AGENT_IPC };
 
@@ -370,6 +364,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     coordinator: projectCoordinator,
     workflowActivationGuard: (operation) => projectTaskOrchestrator.withDispatchPaused(operation),
   });
+  const projectLifecycle = new ProjectLifecycleService({ selections: projectLocationSelections, projectService, projectWorkspaces, generalSettings, artifactDelivery, projectWorkflowGenerations, projectChanges });
   const projectFileDelivery = new ProjectFileDeliveryCoordinator({
     delivery: artifactDelivery,
     artifacts,
@@ -872,45 +867,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   };
   registerDelegationIpc(ipcMain, delegation, requireSender);
   registerDesktopNavigationIpc(ipcMain, notifications, options, requireSender);
-  const storageLocations = async (): Promise<import('../shared/generalSettings').StorageLocations> => {
-    const custom = (await generalSettings.get()).settings.defaultProjectRoot;
-    return { userDataDirectory: app.getPath('userData'), canChooseUserDataDirectory: options.environment?.profile === 'daily',
-      defaultProjectRoot: custom ?? options.environment?.projectsDirectory ?? path.join(app.getPath('documents'), 'Asterium Projects'), customized: Boolean(custom) };
-  };
-  ipcMain.handle(AGENT_IPC.storageGet, event => { requireSender(event); return storageLocations(); });
-  ipcMain.handle(AGENT_IPC.storageChooseUserDataDirectory, async event => {
-    const window = requireSender(event);
-    if (options.environment?.profile !== 'daily') throw new Error('仅日常版可更改应用资料目录。');
-    const choice = await dialog.showOpenDialog(window, {
-      title: '选择应用资料目录', defaultPath: app.getPath('userData'), properties: ['openDirectory', 'createDirectory'],
-    });
-    if (choice.canceled || !choice.filePaths[0]) return null;
-    const appData = app.getPath('appData');
-    const selected = inspectDailyDataDirectory(appData, choice.filePaths[0]);
-    const confirmation = await dialog.showMessageBox(window, {
-      type: 'question',
-      message: selected.existing ? '重启后使用此目录中的已有资料？' : '重启后在空目录中创建一套新资料？',
-      detail: `${selected.directory}\n当前目录中的资料会保留。星丛不会搬移或合并资料。`,
-      buttons: ['取消', '使用此目录'], cancelId: 0, defaultId: 0, noLink: true,
-    });
-    if (confirmation.response !== 1) return null;
-    saveDailyDataDirectory(appData, selected);
-    return selected.directory;
-  });
-  ipcMain.handle(AGENT_IPC.storageChooseProjectRoot, async event => {
-    const window = requireSender(event);
-    const choice = await dialog.showOpenDialog(window, { title: '选择默认项目保存位置', properties: ['openDirectory', 'createDirectory'] });
-    if (choice.canceled || !choice.filePaths[0]) return null;
-    await assertCanonicalPathOutsideProtectedRoots(choice.filePaths[0], protectedRoots);
-    await generalSettings.update({ defaultProjectRoot: choice.filePaths[0] });
-    return storageLocations();
-  });
-  ipcMain.handle(AGENT_IPC.storageResetProjectRoot, async event => { requireSender(event); await generalSettings.update({ defaultProjectRoot: null }); return storageLocations(); });
-  ipcMain.handle(AGENT_IPC.storageOpenProjectRoot, async event => {
-    requireSender(event);
-    const directory = await validateProjectDirectory((await storageLocations()).defaultProjectRoot);
-    const error = await shell.openPath(directory); if (error) throw new Error(error);
-  });
+  registerStorageIpc(ipcMain, generalSettings, options, protectedRoots, requireSender);
   registerAppUpdateIpc(ipcMain, options, requireSender);
   const unsubscribeUpdates = options.updates?.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.updatesChanged, snapshot); });
   registerGeneralSettingsIpc(ipcMain, generalSettings, requireSender);
@@ -1019,119 +976,13 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return projectFileDelivery.deliver({ artifactId, projectId, source });
   };
 
-  ipcMain.handle(AGENT_IPC.projectChooseLocation, async (event) => {
-    const window = requireSender(event);
-    const result = await dialog.showOpenDialog(window, {
-      title: '选择项目文件夹',
-      buttonLabel: '使用这个文件夹',
-      properties: ['openDirectory', 'createDirectory'],
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    const selectionId = randomUUID();
-    const selectedPath = path.resolve(result.filePaths[0]);
-    projectLocationSelections.set(selectionId, selectedPath);
-    return { selectionId, path: selectedPath };
-  });
-  ipcMain.handle(AGENT_IPC.projectDomainInitialize, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || !Array.isArray(value.legacyProjects)) throw new Error('INVALID_PROJECT_DOMAIN_MIGRATION');
-    const snapshot = await projectService.initializeDomain((value as unknown as ProjectDomainInitializeRequest).legacyProjects);
-    for (const project of snapshot.projects) {
-      if (await projectWorkspaces.get(project.id)) await artifactDelivery.initializeProject(project.id);
-    }
-    return snapshot;
-  });
-  async function resolveProjectCreateLocation(value: unknown) {
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.name !== 'string') throw new Error('INVALID_PROJECT_CREATE_REQUEST');
-    let selectedRoot: string | undefined;
-    if (value.locationSelectionId !== undefined) {
-      if (typeof value.locationSelectionId !== 'string') throw new Error('INVALID_PROJECT_LOCATION_SELECTION');
-      selectedRoot = projectLocationSelections.get(value.locationSelectionId);
-      if (!selectedRoot) throw new Error('PROJECT_LOCATION_SELECTION_EXPIRED');
-    }
-    const request = value as unknown as ProjectCreateRequest;
-    const finalRoot = (await projectWorkspaces.get(request.projectId))?.rootPath ?? await projectWorkspaces.preview({ projectId: request.projectId, name: request.name, selectedRoot });
-    return { request, selectedRoot, finalRoot };
-  }
-  ipcMain.handle(AGENT_IPC.projectPreviewCreateLocation, async (event, value: unknown) => {
-    requireSender(event);
-    return (await resolveProjectCreateLocation(value)).finalRoot;
-  });
-  ipcMain.handle(AGENT_IPC.projectCreate, async (event, value: unknown) => {
-    requireSender(event);
-    const { request, selectedRoot, finalRoot } = await resolveProjectCreateLocation(value);
-    if (request.confirmedRoot !== finalRoot) throw new Error('PROJECT_CREATE_LOCATION_CHANGED');
-    if (!selectedRoot) {
-      const custom = (await generalSettings.get()).settings.defaultProjectRoot;
-      if (custom) await validateProjectDirectory(custom);
-    }
-    const result = await projectService.createProject({
-      projectId: request.projectId,
-      name: request.name,
-      ...(request.description !== undefined ? { description: request.description } : {}),
-      ...(request.avatarDataUrl !== undefined ? { avatarDataUrl: request.avatarDataUrl } : {}),
-      ...(request.tags !== undefined ? { tags: request.tags } : {}),
-      ...(request.memberIds !== undefined ? { memberIds: request.memberIds } : {}),
-      selectedRoot: finalRoot,
-    });
-    if (request.locationSelectionId) projectLocationSelections.delete(request.locationSelectionId);
-    return result;
-  });
-  ipcMain.handle(AGENT_IPC.projectUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string') throw new Error('INVALID_PROJECT_UPDATE_REQUEST');
-    return projectService.updateProject(value as unknown as ProjectUpdateRequest);
-  });
+  registerProjectLifecycleIpc(ipcMain, projectLifecycle, projectService, requireSender);
   registerProjectTaskIpc(ipcMain, projectService, requireSender);
   registerProjectRoleIpc(ipcMain, projectService, requireSender);
   registerProjectWorkflowQueryIpc(ipcMain, projectService, requireSender);
-  ipcMain.handle(AGENT_IPC.projectWorkflowCreate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.templateId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_CREATE');
-    return projectService.createWorkflow(value as unknown as ProjectWorkflowCreateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowUpdate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.workflowId !== 'string' || !Array.isArray(value.nodes)) throw new Error('INVALID_PROJECT_WORKFLOW_UPDATE');
-    return projectService.updateWorkflow(value as unknown as ProjectWorkflowUpdateRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowRemove, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.workflowId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_REMOVE');
-    await projectService.removeWorkflow(value as unknown as ProjectWorkflowRemoveRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowActivate, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.workflowId !== 'string' || typeof value.activationId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_ACTIVATE');
-    const result = await projectService.activateWorkflow(value as unknown as ProjectWorkflowActivateRequest);
-    await projectTaskOrchestrator.activate(partnerRuntimePort);
-    return result;
-  });
+  registerProjectWorkflowMutationIpc(ipcMain, { projectService, projectTaskOrchestrator, getPartnerRuntimePort: () => partnerRuntimePort }, requireSender);
   registerProjectWorkflowTemplateIpc(ipcMain, projectService, requireSender);
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationList, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_QUERY');
-    return projectWorkflowGenerations.listProject(value);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationStart, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.requestId !== 'string' || typeof value.projectId !== 'string' || typeof value.roomId !== 'string'
-      || typeof value.plannerPartnerId !== 'string' || !Array.isArray(value.messageIds)) throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_START');
-    if (!workflowGenerationRuntimeRef.current) throw new Error('PROJECT_WORKFLOW_GENERATION_RUNTIME_NOT_READY');
-    return workflowGenerationRuntimeRef.current.start(value as unknown as ProjectWorkflowGenerationStartRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationCancel, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.generationId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_CANCEL');
-    if (!workflowGenerationRuntimeRef.current) throw new Error('PROJECT_WORKFLOW_GENERATION_RUNTIME_NOT_READY');
-    return workflowGenerationRuntimeRef.current.cancel(value as unknown as ProjectWorkflowGenerationCancelRequest);
-  });
-  ipcMain.handle(AGENT_IPC.projectWorkflowGenerationRetry, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.generationId !== 'string' || typeof value.requestId !== 'string') throw new Error('INVALID_PROJECT_WORKFLOW_GENERATION_RETRY');
-    if (!workflowGenerationRuntimeRef.current) throw new Error('PROJECT_WORKFLOW_GENERATION_RUNTIME_NOT_READY');
-    return workflowGenerationRuntimeRef.current.retry(value as unknown as ProjectWorkflowGenerationRetryRequest);
-  });
+  registerProjectWorkflowGenerationIpc(ipcMain, { projectWorkflowGenerations, workflowGenerationRuntimeRef }, requireSender);
   ipcMain.handle(AGENT_IPC.projectTaskExecutionGet, async (event, value: unknown) => {
     requireSender(event);
     if (value !== undefined && typeof value !== 'string') throw new Error('INVALID_PROJECT_TASK_EXECUTION_QUERY');
@@ -1167,24 +1018,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event);
     return projectTaskOrchestrator.resolveGate(assertTaskGateResolutionRequest(value));
   });
-  ipcMain.handle(AGENT_IPC.projectCreateWorkspace, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.name !== 'string') throw new Error('INVALID_PROJECT_WORKSPACE_REQUEST');
-    let selectedRoot: string | undefined;
-    if (value.locationSelectionId !== undefined) {
-      if (typeof value.locationSelectionId !== 'string') throw new Error('INVALID_PROJECT_LOCATION_SELECTION');
-      selectedRoot = projectLocationSelections.get(value.locationSelectionId);
-      projectLocationSelections.delete(value.locationSelectionId);
-      if (!selectedRoot) throw new Error('PROJECT_LOCATION_SELECTION_EXPIRED');
-    }
-    const workspace = await projectService.createWorkspace({
-      projectId: value.projectId,
-      name: value.name,
-      ...(typeof value.description === 'string' ? { description: value.description } : {}),
-      ...(selectedRoot ? { selectedRoot } : {}),
-    });
-    return workspace;
-  });
+  registerProjectWorkspaceCreationIpc(ipcMain, projectLifecycle, requireSender);
   registerProjectWorkspaceIpc(ipcMain, projectService, projectWorkspaces, requireSender);
   registerProjectFileOpenIpc(ipcMain, projectFiles, requireSender);
 
@@ -1203,48 +1037,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     return result;
   });
 
-  ipcMain.handle(AGENT_IPC.projectGetExecutionPolicy, async (event, projectId: unknown) => {
-    requireSender(event);
-    if (typeof projectId !== 'string') throw new Error('INVALID_PROJECT_ID');
-    return projectService.getExecutionPolicy(projectId);
-  });
-
-  ipcMain.handle(AGENT_IPC.projectSetExecutionPolicy, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || !isProjectPermissionMode(value.permissionMode)) throw new Error('INVALID_PROJECT_EXECUTION_POLICY');
-    return projectService.setExecutionPolicy(value.projectId, value.permissionMode);
-  });
-
-  ipcMain.handle(AGENT_IPC.projectSyncMembers, async (event, value: unknown) => {
-    requireSender(event);
-    if (!Array.isArray(value) || !value.every((item) => isRecord(item) && typeof item.projectId === 'string'
-      && Array.isArray(item.partnerIds) && item.partnerIds.every((id) => typeof id === 'string'))) throw new Error('INVALID_PROJECT_MEMBER_SYNC');
-    const assignments = [];
-    for (const item of value as Array<{ projectId: string; partnerIds: string[] }>) {
-      const workspace = await projectWorkspaces.get(item.projectId);
-      if (!workspace) continue;
-      const folder = await stat(workspace.rootPath).catch(() => undefined);
-      if (!folder?.isDirectory()) continue;
-      assignments.push({ projectId: item.projectId, rootPath: workspace.rootPath, partnerIds: item.partnerIds });
-    }
-    return projectService.syncWorkspaceMemberships(assignments);
-  });
-
-  ipcMain.handle(AGENT_IPC.projectChangeMembers, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value)) throw new Error('INVALID_PROJECT_MEMBER_CHANGE');
-    return projectService.changeMembers(value as unknown as import('../shared/projectWorkspace').ProjectMembershipChangeRequest);
-  });
-
-  ipcMain.handle(AGENT_IPC.projectRemove, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || !Array.isArray(value.roomIds)
-      || !value.roomIds.every((roomId) => typeof roomId === 'string' && roomId)) throw new Error('INVALID_PROJECT_REMOVE_REQUEST');
-    if ((await projectWorkflowGenerations.listProject(value.projectId)).some((generation) => generation.status === 'running')) throw new Error('PROJECT_HAS_ACTIVE_WORKFLOW_GENERATION');
-    await projectService.removeProject(value.projectId, value.roomIds as string[]);
-    await projectWorkflowGenerations.removeProject(value.projectId);
-    await projectChanges.removeProject(value.projectId).catch((error) => console.error('Project change cleanup failed', error));
-  });
+  registerProjectManagementIpc(ipcMain, projectLifecycle, projectService, requireSender);
 
   registerStudioRoomSyncIpc(ipcMain, projectService, isStudioRoomMetadata, requireSender);
 

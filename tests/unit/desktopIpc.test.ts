@@ -1,7 +1,19 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC, DESKTOP_PUSH_CHANNELS, DESKTOP_SEND_CHANNELS } from '../../src/shared/desktopIpc';
+
+async function handlerSources() {
+  const directory = path.join(process.cwd(), 'src/main');
+  const modules = (await readdir(path.join(directory, 'ipc'))).filter(name => name.endsWith('Ipc.ts')).sort();
+  return await Promise.all(['agentIpc.ts', ...modules.map(name => 'ipc/' + name)].map(async file => ({
+    file: path.basename(file),
+    source: await readFile(path.join(directory, file), 'utf8'),
+  })));
+}
+
+const handledKeys = (source: string) => [...source.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)]
+  .map(match => match[1] as keyof typeof DESKTOP_IPC);
 
 describe('desktop IPC contract', () => {
   it('keeps every channel value unique and assigned to exactly one transport direction', () => {
@@ -22,64 +34,28 @@ describe('desktop IPC contract', () => {
     expect(DESKTOP_IPC.event).toBe('asterium:agent:event');
   });
 
-  it('assigns every deferred handler to one final business module with its unchanged channel string', async () => {
-    const [source, plan] = await Promise.all([
-      readFile(path.join(process.cwd(), 'src/main/agentIpc.ts'), 'utf8'),
-      readFile(path.join(process.cwd(), 'docs/ipc-domain-consolidation.md'), 'utf8'),
+  it('preserves all 97 planned ownership rows and verifies each current registration location', async () => {
+    const [sources, plan] = await Promise.all([
+      handlerSources(), readFile(path.join(process.cwd(), 'docs/ipc-domain-consolidation.md'), 'utf8'),
     ]);
-    const rows = [...plan.matchAll(/^\| `(\w+)` \| `([^`]+)` \| `(\w+Ipc\.ts)` \|$/gm)];
-    const handledKeys = [...source.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)].map(match => match[1]);
+    const rows = [...plan.matchAll(/^\| `(\w+)` \| `([^`]+)` \| `(\w+Ipc\.ts)` \| `(\w+Ipc\.ts)` \|$/gm)];
     expect(rows).toHaveLength(97);
     expect(new Set(rows.map(row => row[1])).size).toBe(97);
-    expect(rows.map(row => row[1])).toEqual(handledKeys);
-    for (const [, key, channel] of rows) {
+    for (const [, key, channel, finalModule, currentModule] of rows) {
       expect(channel).toBe(DESKTOP_IPC[key as keyof typeof DESKTOP_IPC]);
+      expect(['agentIpc.ts', finalModule]).toContain(currentModule);
+      expect(sources.flatMap(({ file, source }) => handledKeys(source).filter(item => item === key).map(() => file)))
+        .toEqual([currentModule]);
     }
+    expect(handledKeys(sources[0].source)).toEqual(rows.filter(row => row[4] === 'agentIpc.ts').map(row => row[1]));
   });
 
   it('classifies every main-process handler for shared disposer cleanup', async () => {
-    const mainDirectory = path.join(process.cwd(), 'src', 'main');
-    const [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, projectTaskSource, extensionsSource, projectRunChangesSource, desktopNavigationSource, appUpdateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, projectFileOpenSource, apiConnectionsSource, automationSource, studioRoomSource, studioMcpSource, partnerDiarySource, delegationSource, memoryImportSource, partnerWorkspaceSource, workspaceGrantSource, claudeSessionImportSource, localRuntimeSource, apiConnectionProbeSource, partnerProfileRefreshSource, memoryFallbackModelListSource, sessionStatusSource, runInteractionSource, memoryArchiveSource, memoryBackupSource] = await Promise.all([
-      readFile(path.join(mainDirectory, 'agentIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'projectNotebookIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'artifactIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'studioNoteIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'projectRoleIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'projectTaskIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'extensionsIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'projectRunChangesIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'desktopNavigationIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'appUpdateIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'generalSettingsIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'projectWorkflowIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'webSearchCredentialIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'projectWorkspaceIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'projectFilesIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'apiConnectionsIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'automationIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'studioRoomIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'studioMcpIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'partnerDiaryIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'delegationIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'memoryImportIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'partnerWorkspaceIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'workspaceGrantIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'claudeSessionImportIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'localRuntimeIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'apiConnectionProbeIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'profileIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'memoryFallbackIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'sessionIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'runInteractionIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'memoryArchiveIpc.ts'), 'utf8'),
-      readFile(path.join(mainDirectory, 'ipc', 'memoryBackupIpc.ts'), 'utf8'),
-    ]);
-    const handledKeys = [source, notebookSource, artifactSource, studioNoteSource, projectRoleSource, projectTaskSource, extensionsSource, projectRunChangesSource, desktopNavigationSource, appUpdateSource, generalSettingsSource, projectWorkflowQuerySource, webSearchCredentialSource, projectWorkspaceSource, projectFileOpenSource, apiConnectionsSource, automationSource, studioRoomSource, studioMcpSource, partnerDiarySource, delegationSource, memoryImportSource, partnerWorkspaceSource, workspaceGrantSource, claudeSessionImportSource, localRuntimeSource, apiConnectionProbeSource, partnerProfileRefreshSource, memoryFallbackModelListSource, sessionStatusSource, runInteractionSource, memoryArchiveSource, memoryBackupSource].flatMap((moduleSource) =>
-      [...moduleSource.matchAll(/ipcMain\.handle\(AGENT_IPC\.(\w+)/g)].map((match) => match[1] as keyof typeof DESKTOP_IPC));
-    const handledChannels = handledKeys.map((key) => DESKTOP_IPC[key]);
-
-    expect(new Set(handledChannels).size).toBe(handledChannels.length);
-    expect([...handledChannels].sort()).toEqual([...DESKTOP_INVOKE_CHANNELS].sort());
-    expect(source).toContain('for (const channel of DESKTOP_INVOKE_CHANNELS) ipcMain.removeHandler(channel);');
+    const sources = await handlerSources();
+    const channels = sources.flatMap(({ source }) => handledKeys(source).map(key => DESKTOP_IPC[key]));
+    expect(channels).toHaveLength(230);
+    expect(new Set(channels).size).toBe(channels.length);
+    expect([...channels].sort()).toEqual([...DESKTOP_INVOKE_CHANNELS].sort());
+    expect(sources[0].source).toContain('for (const channel of DESKTOP_INVOKE_CHANNELS) ipcMain.removeHandler(channel);');
   });
 });
