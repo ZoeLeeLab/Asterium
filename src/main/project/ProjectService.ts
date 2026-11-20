@@ -414,6 +414,18 @@ export class ProjectService {
     });
   }
 
+  async syncExistingWorkspaceMemberships(value: Array<{ projectId: string; partnerIds: string[] }>) {
+    const assignments = [];
+    for (const item of value) {
+      const workspace = await this.options.workspaces.get(item.projectId);
+      if (!workspace) continue;
+      const folder = await stat(workspace.rootPath).catch(() => undefined);
+      if (!folder?.isDirectory()) continue;
+      assignments.push({ projectId: item.projectId, rootPath: workspace.rootPath, partnerIds: item.partnerIds });
+    }
+    return this.syncWorkspaceMemberships(assignments);
+  }
+
   syncWorkspaceMemberships(assignments: ProjectWorkspaceAssignment[]) {
     return this.run(() => this.options.partnerWorkspaces.reconcileProjects(assignments));
   }
