@@ -321,7 +321,7 @@ describe('navigation shell interactions', () => {
       fireEvent.change(input, { target: { value: 'alpha' } });
       await waitFor(() => expect(count).toHaveTextContent('1 / 2'));
       const current = () => [...(registry.get('asterium-conversation-search-current') ?? [])].map(range => range.toString());
-      expect(current()).toEqual(['Alpha', 'alpha']);
+      await waitFor(() => expect(current()).toEqual(['Alpha', 'alpha']));
       fireEvent.click(within(bar).getByRole('button', { name: '下一条匹配' }));
       expect(count).toHaveTextContent('2 / 2');
       expect(current()).toEqual(['ALPHA']);
@@ -330,7 +330,7 @@ describe('navigation shell interactions', () => {
 
       fireEvent.change(input, { target: { value: '仅工具标记' } });
       await waitFor(() => expect(count).toHaveTextContent('无匹配'));
-      expect(registry.size).toBe(0);
+      await waitFor(() => expect(registry.size).toBe(0));
       fireEvent.change(input, { target: { value: 'alpha' } });
       await waitFor(() => expect(count).toHaveTextContent('1 / 2'));
       fireEvent.click(screen.getByRole('button', { name: '视觉细节' }));
