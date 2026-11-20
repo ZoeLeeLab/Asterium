@@ -174,7 +174,7 @@ import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowQueryIpc, registerProjectWorkflowMutationIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
 import { registerProjectWorkflowGenerationIpc } from './ipc/projectWorkflowGenerationIpc';
-import { registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
+import { registerProjectWorkspaceCreationIpc, registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
 import { registerProjectLifecycleIpc, registerProjectManagementIpc } from './ipc/projectIpc';
 import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
 import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
@@ -1018,12 +1018,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     requireSender(event);
     return projectTaskOrchestrator.resolveGate(assertTaskGateResolutionRequest(value));
   });
-  ipcMain.handle(AGENT_IPC.projectCreateWorkspace, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.name !== 'string') throw new Error('INVALID_PROJECT_WORKSPACE_REQUEST');
-    if (value.locationSelectionId !== undefined && typeof value.locationSelectionId !== 'string') throw new Error('INVALID_PROJECT_LOCATION_SELECTION');
-    return projectLifecycle.createWorkspace(value as { projectId: string; name: string; description?: unknown; locationSelectionId?: string });
-  });
+  registerProjectWorkspaceCreationIpc(ipcMain, projectLifecycle, requireSender);
   registerProjectWorkspaceIpc(ipcMain, projectService, projectWorkspaces, requireSender);
   registerProjectFileOpenIpc(ipcMain, projectFiles, requireSender);
 

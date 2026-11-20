@@ -56,7 +56,7 @@ async function withProject(run: (fixture: {
       return invoke<ProjectCreateResult>(DESKTOP_IPC.projectCreate, { ...request, confirmedRoot });
     } });
   } finally {
-    try { await dispose?.(); expect(handlers.size).toBe(0); for (const channel of [DESKTOP_IPC.projectChooseLocation, ...invalid.map(([channel]) => channel)]) expect(removed.filter(name => name === channel)).toHaveLength(1); }
+    try { await dispose?.(); expect(handlers.size).toBe(0); for (const channel of [DESKTOP_IPC.projectChooseLocation, DESKTOP_IPC.projectCreateWorkspace, ...invalid.map(([channel]) => channel)]) expect(removed.filter(name => name === channel)).toHaveLength(1); }
     finally { vi.restoreAllMocks(); await testRm(root, { recursive: true, force: true }); }
   }
 }
@@ -183,13 +183,18 @@ it('keeps workspace selection consumption before the service call, including fai
   await withProject(async ({ root, invoke }) => {
     const channel = DESKTOP_IPC.projectCreateWorkspace;
     await expect(invoke(channel, null, {})).rejects.toThrow('INVALID_IPC_SENDER');
-    await expect(invoke(channel, null)).rejects.toThrow('INVALID_PROJECT_WORKSPACE_REQUEST');
+    for (const value of [null, [], { projectId: 'fixture' }, { projectId: 3, name: 'Fixture' }]) await expect(invoke(channel, value)).rejects.toThrow('INVALID_PROJECT_WORKSPACE_REQUEST');
     await expect(invoke(channel, { projectId: 'fixture', name: 'Fixture', locationSelectionId: false })).rejects.toThrow('INVALID_PROJECT_LOCATION_SELECTION');
     electron.choose.mockResolvedValue({ canceled: false, filePaths: [path.join(root, 'workspace')] });
     const selected = await invoke<{ selectionId: string }>(DESKTOP_IPC.projectChooseLocation);
     const request = { projectId: 'fixture-legacy', name: 'Fixture legacy', description: 3, locationSelectionId: selected.selectionId };
-    const create = vi.spyOn(ProjectService.prototype, 'createWorkspace').mockRejectedValueOnce(new Error('SYNTHETIC_WORKSPACE_FAILURE'));
-    await expect(invoke(channel, request)).rejects.toThrow('SYNTHETIC_WORKSPACE_FAILURE');
+    let rejectCreate!: (error: Error) => void;
+    const pending = new Promise<never>((_resolve, reject) => { rejectCreate = reject; });
+    const create = vi.spyOn(ProjectService.prototype, 'createWorkspace').mockReturnValueOnce(pending);
+    const failed = expect(invoke(channel, request)).rejects.toThrow('SYNTHETIC_WORKSPACE_FAILURE');
+    await expect(invoke(DESKTOP_IPC.projectPreviewCreateLocation, request)).rejects.toThrow('PROJECT_LOCATION_SELECTION_EXPIRED');
+    rejectCreate(new Error('SYNTHETIC_WORKSPACE_FAILURE'));
+    await failed;
     expect(create).toHaveBeenCalledExactlyOnceWith({ projectId: request.projectId, name: request.name, selectedRoot: path.join(root, 'workspace') });
     await expect(invoke(channel, request)).rejects.toThrow('PROJECT_LOCATION_SELECTION_EXPIRED'); expect(create).toHaveBeenCalledTimes(1);
     await invoke(DESKTOP_IPC.projectDomainInitialize, { legacyProjects: [{ id: request.projectId, name: request.name }] });

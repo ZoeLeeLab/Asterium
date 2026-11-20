@@ -23,7 +23,7 @@
 | 阶段 | 实施顺序 | 入口数 | 阶段结束后主文件剩余 | 当前状态 |
 | --- | --- | ---: | ---: | --- |
 | 三 | 工作流生成 → 工作流草稿与激活 | 8 | 89 | 源码两组已完成；累计 Windows 验收结果独立留档 |
-| 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 存储位置 5 个、项目生命周期 10 个入口已迁移；工作区创建未开始 |
+| 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 未开始 |
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 未开始 |
 | 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
@@ -95,7 +95,7 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `projectTaskExecutionCancel` | `asterium:project-task-execution:cancel` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
 | `projectTaskExecutionRetry` | `asterium:project-task-execution:retry` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
 | `projectTaskExecutionResolve` | `asterium:project-task-execution:resolve` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
-| `projectCreateWorkspace` | `asterium:project:create-workspace` | `projectWorkspaceIpc.ts` | `agentIpc.ts` |
+| `projectCreateWorkspace` | `asterium:project:create-workspace` | `projectWorkspaceIpc.ts` | `projectWorkspaceIpc.ts` |
 | `projectInspectFileDeletion` | `asterium:project:inspect-file-deletion` | `projectFilesIpc.ts` | `agentIpc.ts` |
 | `projectDeleteFile` | `asterium:project:delete-file` | `projectFilesIpc.ts` | `agentIpc.ts` |
 | `projectGetExecutionPolicy` | `asterium:project:get-execution-policy` | `projectIpc.ts` | `projectIpc.ts` |
