@@ -24,7 +24,7 @@
 | --- | --- | ---: | ---: | --- |
 | 三 | 工作流生成 → 工作流草稿与激活 | 8 | 89 | 源码两组已完成；累计 Windows 验收结果独立留档 |
 | 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 源码三组已完成；累计 Windows 验收结果独立留档 |
-| 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 伙伴资料 3 个、API 会话删除 1 个入口已迁移；原生会话未开始 |
+| 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 未开始 |
 | 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
 | 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 七 A 累计验收通过后再开始 |
@@ -112,7 +112,7 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `studioStartRound` | `asterium:studio:start-round` | `studioRoundIpc.ts` | `agentIpc.ts` |
 | `studioPrepareTurn` | `asterium:studio:prepare-turn` | `studioRoundIpc.ts` | `agentIpc.ts` |
 | `studioFailTurn` | `asterium:studio:fail-turn` | `studioRoundIpc.ts` | `agentIpc.ts` |
-| `nativeSyncSingleBindings` | `asterium:native-bindings:sync-single` | `nativeSessionIpc.ts` | `agentIpc.ts` |
+| `nativeSyncSingleBindings` | `asterium:native-bindings:sync-single` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
 | `attachmentChoose` | `asterium:attachment:choose` | `attachmentIpc.ts` | `agentIpc.ts` |
 | `attachmentStageFiles` | `asterium:attachment:stage-files` | `attachmentIpc.ts` | `agentIpc.ts` |
 | `attachmentPasteFiles` | `asterium:attachment:paste-files` | `attachmentIpc.ts` | `agentIpc.ts` |
@@ -142,14 +142,14 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `conversationSearchHistory` | `asterium:conversation:search-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
 | `conversationWriteHistory` | `asterium:conversation:write-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
 | `conversationSyncMessages` | `asterium:conversation:sync-messages` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `chooseCodexThreadDirectory` | `asterium:agent:choose-codex-thread-directory` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `confirmCodexThreadImport` | `asterium:agent:confirm-codex-thread-import` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `codexImportedWorkspaceStatus` | `asterium:agent:codex-imported-workspace-status` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `chooseCodexImportedDirectory` | `asterium:agent:choose-codex-imported-directory` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `readCodexHistory` | `asterium:agent:read-codex-history` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `searchCodexHistory` | `asterium:agent:search-codex-history` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `getLocalThreadLifecycles` | `asterium:agent:get-local-thread-lifecycles` | `nativeSessionIpc.ts` | `agentIpc.ts` |
-| `changeLocalThreadLifecycle` | `asterium:agent:change-local-thread-lifecycle` | `nativeSessionIpc.ts` | `agentIpc.ts` |
+| `chooseCodexThreadDirectory` | `asterium:agent:choose-codex-thread-directory` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
+| `confirmCodexThreadImport` | `asterium:agent:confirm-codex-thread-import` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
+| `codexImportedWorkspaceStatus` | `asterium:agent:codex-imported-workspace-status` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
+| `chooseCodexImportedDirectory` | `asterium:agent:choose-codex-imported-directory` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
+| `readCodexHistory` | `asterium:agent:read-codex-history` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
+| `searchCodexHistory` | `asterium:agent:search-codex-history` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
+| `getLocalThreadLifecycles` | `asterium:agent:get-local-thread-lifecycles` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
+| `changeLocalThreadLifecycle` | `asterium:agent:change-local-thread-lifecycle` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
 | `syncPartnerProfiles` | `asterium:agent:sync-partner-profiles` | `profileIpc.ts` | `profileIpc.ts` |
 | `savePartnerProfile` | `asterium:agent:save-partner-profile` | `profileIpc.ts` | `profileIpc.ts` |
 | `trashPartnerProfile` | `asterium:agent:trash-partner-profile` | `profileIpc.ts` | `profileIpc.ts` |
