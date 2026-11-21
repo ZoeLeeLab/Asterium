@@ -56,7 +56,8 @@
     "src/shared/desktopBridge.ts",
     "src/shared/desktopIpc.ts",
     "src/preload/preload.ts",
-    "tools/acceptance/Start-AsteriumAcceptance.ps1"
+    "tools/acceptance/Start-AsteriumAcceptance.ps1",
+    "src/renderer/components/chat/AssistantMessageMenu.tsx"
   ],
   "tests": [
     "tests/unit/generalSettings.test.ts",
@@ -88,7 +89,10 @@
     "tests/profile-isolation-smoke.mjs",
     "tests/unit/acceptanceLauncher.test.ts",
     "tests/renderer/StorageSettings.test.tsx",
-    "tests/unit/autoTestIsolation.test.mjs"
+    "tests/unit/autoTestIsolation.test.mjs",
+    "tests/renderer/AssistantMessageMenu.test.tsx",
+    "tests/renderer/TurnTimelinePresentation.test.tsx",
+    "tests/chat-sidebar-browser.mjs"
   ],
   "docs": [
     "docs/release-status.md",
@@ -111,11 +115,11 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "109f3881c043a69f184a84e3e6b5c123d2a83ae8"
+  "lastVerifiedCommit": "8bbec45d55d93ce0d1a7adc754f6447fba414fcc"
 }
 ---
 
-当前 Bug 工作分支修复单聊伙伴列表在滚动条显现时的横向位移，以及伙伴资料刷新后覆盖手动折叠的问题。助手正文右键提供复制与引用，选中文字时作用于选中内容。链接右键可复制地址，网页使用已有浏览器打开方式，本机文件复用当前对话交付文件的校验与预览。复制失败会显示反馈。回归覆盖 `AssistantMessageMenu.test.tsx`、`TurnTimelinePresentation.test.tsx`、`NavigationFlows.test.tsx` 和 `chat-sidebar-browser.mjs`。本段描述工作分支变更，核验提交引用沿用已有基线，提交后的核验另行绑定。
+当前 Bug 工作分支修复单聊伙伴列表在滚动条显现时的横向位移，以及伙伴资料刷新后覆盖手动折叠的问题。助手正文右键提供复制与引用，选中文字时作用于选中内容。链接右键可复制地址，网页使用已有浏览器打开方式，本机文件复用当前对话交付文件的校验与预览。复制失败会显示反馈。回归覆盖 `AssistantMessageMenu.test.tsx`、`TurnTimelinePresentation.test.tsx`、`NavigationFlows.test.tsx` 和 `chat-sidebar-browser.mjs`。本次核验引用已存在提交 `8bbec45d55d93ce0d1a7adc754f6447fba414fcc`。116 项针对性回归、类型、lint、隐私与能力检查通过，独立 Chromium 检查通过；安装包与真实模型验收另行执行。
 
 ## 当前源码核验：2026-11-02 S5
 

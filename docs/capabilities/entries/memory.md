@@ -20,7 +20,10 @@
     "src/main/memory/fallback/MemoryFallbackSettingsStore.ts",
     "src/main/memory/fallback/MemoryFallbackScheduler.ts",
     "src/main/memory/fallback/MemoryConsolidation.ts",
-    "src/renderer/components/memory/MemoryFallbackSettings.tsx"
+    "src/renderer/components/memory/MemoryFallbackSettings.tsx",
+    "src/main/memory/MemoryImportService.ts",
+    "src/shared/memoryImport.ts",
+    "src/renderer/components/memory/MemoryImportPanel.tsx"
   ],
   "tests": [
     "tests/unit/partnerMemoryToolService.test.ts",
@@ -32,7 +35,9 @@
     "tests/unit/memoryFallbackSettings.test.ts",
     "tests/unit/memoryFallbackScheduler.test.ts",
     "tests/unit/memoryConsolidation.test.ts",
-    "tests/renderer/MemoryFallbackSettings.test.tsx"
+    "tests/renderer/MemoryFallbackSettings.test.tsx",
+    "tests/unit/memoryImportService.test.ts",
+    "tests/renderer/MemoryImportPanel.test.tsx"
   ],
   "docs": [
     "docs/capabilities/schema.md",
@@ -41,13 +46,13 @@
     "docs/api-connections-guide.md",
     "docs/avatar-memory-fallback-2026-11-02.md"
   ],
-  "lastVerifiedCommit": "10437a8d41a665073d7c091ce2dc31ad805ba0ad"
+  "lastVerifiedCommit": "8bbec45d55d93ce0d1a7adc754f6447fba414fcc"
 }
 ---
 
 伙伴记忆的当前代码入口、测试和权限边界见以上元数据。
 
-当前 Bug 工作分支补齐旧对话导入的主题标签。提炼提示要求模型提供标签，候选预览显示标签，确认后规范化去重并保存。旧候选未带标签时仍可确认。实现位于 `MemoryImportService.ts`、`memoryImport.ts` 和 `MemoryImportPanel.tsx`，回归见 `memoryImportService.test.ts`、`MemoryImportPanel.test.tsx`。本段描述工作分支变更，核验提交引用沿用已有基线，提交后的核验另行绑定。
+当前 Bug 工作分支补齐旧对话导入的主题标签。提炼提示要求模型提供标签，候选预览显示标签，确认后规范化去重并保存。旧候选未带标签时仍可确认。实现位于 `MemoryImportService.ts`、`memoryImport.ts` 和 `MemoryImportPanel.tsx`，回归见 `memoryImportService.test.ts`、`MemoryImportPanel.test.tsx`。本次核验引用已存在提交 `8bbec45d55d93ce0d1a7adc754f6447fba414fcc`。116 项针对性回归、类型、lint、隐私与能力检查通过，独立 Chromium 检查通过；安装包与真实模型验收另行执行。
 
 在「设置 → 记忆」中，内容超出窗口时可在内容区上下滚动，滚动条隐藏。展开的设置、导入区和记忆档案可以一起滚动。
 
