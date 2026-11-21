@@ -25,7 +25,7 @@
 | 三 | 工作流生成 → 工作流草稿与激活 | 8 | 89 | 源码两组已完成；累计 Windows 验收结果独立留档 |
 | 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 源码三组已完成；累计 Windows 验收结果独立留档 |
-| 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 未开始 |
+| 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 任务执行组已迁移；其余两组待实施 |
 | 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
 | 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 七 A 累计验收通过后再开始 |
 | 八 | Wake → CyberBoss | 11 | 0 | 未开始 |
@@ -88,13 +88,13 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `projectWorkflowGenerationStart` | `asterium:project-workflow-generation:start` | `projectWorkflowGenerationIpc.ts` | `projectWorkflowGenerationIpc.ts` |
 | `projectWorkflowGenerationCancel` | `asterium:project-workflow-generation:cancel` | `projectWorkflowGenerationIpc.ts` | `projectWorkflowGenerationIpc.ts` |
 | `projectWorkflowGenerationRetry` | `asterium:project-workflow-generation:retry` | `projectWorkflowGenerationIpc.ts` | `projectWorkflowGenerationIpc.ts` |
-| `projectTaskExecutionGet` | `asterium:project-task-execution:get` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
-| `projectTaskExecutionEnqueue` | `asterium:project-task-execution:enqueue` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
-| `projectTaskExecutionPause` | `asterium:project-task-execution:pause` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
-| `projectTaskExecutionResume` | `asterium:project-task-execution:resume` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
-| `projectTaskExecutionCancel` | `asterium:project-task-execution:cancel` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
-| `projectTaskExecutionRetry` | `asterium:project-task-execution:retry` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
-| `projectTaskExecutionResolve` | `asterium:project-task-execution:resolve` | `projectTaskExecutionIpc.ts` | `agentIpc.ts` |
+| `projectTaskExecutionGet` | `asterium:project-task-execution:get` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
+| `projectTaskExecutionEnqueue` | `asterium:project-task-execution:enqueue` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
+| `projectTaskExecutionPause` | `asterium:project-task-execution:pause` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
+| `projectTaskExecutionResume` | `asterium:project-task-execution:resume` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
+| `projectTaskExecutionCancel` | `asterium:project-task-execution:cancel` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
+| `projectTaskExecutionRetry` | `asterium:project-task-execution:retry` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
+| `projectTaskExecutionResolve` | `asterium:project-task-execution:resolve` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
 | `projectCreateWorkspace` | `asterium:project:create-workspace` | `projectWorkspaceIpc.ts` | `projectWorkspaceIpc.ts` |
 | `projectInspectFileDeletion` | `asterium:project:inspect-file-deletion` | `projectFilesIpc.ts` | `agentIpc.ts` |
 | `projectDeleteFile` | `asterium:project:delete-file` | `projectFilesIpc.ts` | `agentIpc.ts` |
