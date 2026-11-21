@@ -137,14 +137,11 @@ import {
   AGENT_PROTOCOL_VERSION,
   type ApiPartnerConnection,
   type PartnerProfileSeed,
-  type CancelRunCommand,
   type CodexRuntimeInfo,
   type LocalThreadLifecycleRequest,
   type MessageDeliveryEvent,
   type PartnerWorkspaceState,
   type PartnerEvent,
-  type ResolveAuthorizationCommand,
-  type ResumeSessionCommand,
   type SendMessageCommand,
   type SendMessageReceipt,
   type ExistingThreadConnection,
@@ -183,7 +180,7 @@ import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
 import { registerPartnerProfileRefreshIpc, registerPartnerProfileIpc, registerUserProfileIpc, registerProfileDirectoryIpc } from './ipc/profileIpc';
 import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
 import { registerApiSessionDeletionIpc, registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/sessionIpc';
-import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
+import { registerApiMessageIpc, registerLocalMessageIpc, registerRunControlIpc, type ApiSendRequest, type LocalCliSendRequest } from './ipc/runInteractionIpc';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerLocalRuntimeDetectionIpc, registerCodexRuntimeQueryIpc } from './ipc/localRuntimeIpc';
@@ -195,25 +192,12 @@ import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/des
 
 export { AGENT_IPC };
 
-type LocalAdapterType = 'claude_code' | 'codex_cli';
+
 const BRAVE_SEARCH_CREDENTIAL_REF = 'asterium-web-search-brave';
 
-interface LocalCliSendRequest {
-  adapterType: LocalAdapterType;
-  codexRuntimeId?: string;
-  codexRuntimeEnvironment?: CodexRuntimeInfo['environment'];
-  partnerId: string;
-  partnerRootGrantId?: string;
-  workspaceGrantIds: string[];
-  command: SendMessageCommand;
-  projectRootOverride?: string;
-}
 
-interface ApiSendRequest {
-  connection: ApiPartnerConnection;
-  command: SendMessageCommand;
-  projectRootOverride?: string;
-}
+
+
 
 interface ExistingThreadSendRequest {
   connection: ExistingThreadConnection;
@@ -229,9 +213,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isLocalAdapterType(value: unknown): value is LocalAdapterType {
-  return value === 'claude_code' || value === 'codex_cli';
-}
+
 
 
 
@@ -1829,18 +1811,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerSessionStatusIpc(ipcMain, sessionCommands, requireSender);
   registerSessionMaintenanceIpc(ipcMain, { sessionCommands, sessionCompactions }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.sendApiMessage, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isApiSendRequest(value)) throw new Error('INVALID_API_SEND_REQUEST');
-    assertAgentCommand(value.command);
-    const request = value as ApiSendRequest;
-    if (request.command.type !== 'message.send' || request.command.connectionSource !== 'api_partner') throw new Error('INVALID_API_SEND_COMMAND');
-    if (request.command.contextHandoff !== undefined) {
-      if (request.command.route) throw new Error('HANDOFF_SCOPE_UNAVAILABLE');
-      request.command.contextHandoff = await contextHandoff.validate(request.command.contextHandoff, { kind: 'single', id: request.command.conversationId }, request.command.partnerId);
-    }
-    return withDelegationChatPriority(request.command.conversationId, () => startApiRuntime(request));
-  });
+  registerApiMessageIpc(ipcMain, { contextHandoff, withDelegationChatPriority, startApiRuntime, isAttachmentCapabilities }, requireSender);
 
   registerApiModelListIpc(ipcMain, { apiProviders, apiConnections, credentials, configuredApiOptions }, requireSender);
 
@@ -1976,45 +1947,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     });
   });
 
-  ipcMain.handle(AGENT_IPC.sendMessage, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isLocalSendRequest(value)) throw new Error('INVALID_LOCAL_CLI_SEND_REQUEST');
-    assertAgentCommand(value.command);
-    if (value.command.type !== 'message.send') throw new Error('INVALID_LOCAL_CLI_SEND_COMMAND');
-    const request = value as LocalCliSendRequest;
-    if (request.command.connectionSource !== 'local_cli') throw new Error('INVALID_LOCAL_CLI_CONNECTION_SOURCE');
-    if (request.command.contextHandoff !== undefined) {
-      if (request.command.route || request.partnerId !== request.command.partnerId) throw new Error('HANDOFF_SCOPE_UNAVAILABLE');
-      request.command.contextHandoff = await contextHandoff.validate(request.command.contextHandoff, { kind: 'single', id: request.command.conversationId }, request.command.partnerId);
-    }
-    return withDelegationChatPriority(request.command.conversationId, () => startLocalRuntime(request));
-  });
+  registerLocalMessageIpc(ipcMain, { contextHandoff, withDelegationChatPriority, startLocalRuntime }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.cancelRun, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'run.cancel') throw new Error('INVALID_CANCEL_COMMAND');
-    automationConfirmations.cancelOwner(value.clientMessageId);
-    await runCoordinator.cancel(value as CancelRunCommand);
-  });
-
-  registerRunGuidanceIpc(ipcMain, runCoordinator, requireSender);
-
-  ipcMain.handle(AGENT_IPC.resolveAuthorization, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'authorization.resolve') throw new Error('INVALID_AUTHORIZATION_COMMAND');
-    await runCoordinator.resolveAuthorization(value as ResolveAuthorizationCommand);
-  });
-
-  registerRunUserInputIpc(ipcMain, runCoordinator, requireSender);
-
-  ipcMain.handle(AGENT_IPC.resumeSession, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'session.resume') throw new Error('INVALID_RESUME_COMMAND');
-    await runCoordinator.resume(value as ResumeSessionCommand);
-  });
+  registerRunControlIpc(ipcMain, { runCoordinator, automationConfirmations }, requireSender);
 
   function handoffFingerprint(command: SendMessageCommand) {
     return command.contextHandoff ? createHash('sha256').update(JSON.stringify(command.contextHandoff)).digest('hex') : undefined;
@@ -2530,20 +2465,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   };
 }
 
-function isApiSendRequest(value: unknown): value is ApiSendRequest {
-  return isRecord(value)
-    && isRecord(value.connection)
-    && ['deepseek', 'openai', 'responses', 'anthropic', 'gemini', 'custom'].includes(String(value.connection.provider))
-    && typeof value.connection.endpoint === 'string'
-    && typeof value.connection.model === 'string'
-    && typeof value.connection.credentialRef === 'string'
-    && (value.connection.thinkingMode === undefined || ['auto', 'enabled', 'disabled'].includes(String(value.connection.thinkingMode)))
-    && (value.connection.reasoningEffort === undefined || ['low', 'high', 'max'].includes(String(value.connection.reasoningEffort)))
-    && (value.connection.primaryWorkspaceGrantId === undefined || typeof value.connection.primaryWorkspaceGrantId === 'string')
-    && (value.connection.workspaceGrantIds === undefined || (Array.isArray(value.connection.workspaceGrantIds) && value.connection.workspaceGrantIds.every((item) => typeof item === 'string')))
-    && (value.connection.attachmentCapabilities === undefined || isAttachmentCapabilities(value.connection.attachmentCapabilities))
-    && isRecord(value.command);
-}
+
 function isUserProfileSeed(value: unknown): value is { displayName: string; introduction: string; updatedAt: string; revision?: string } {
   return isRecord(value)
     && typeof value.displayName === 'string' && value.displayName.length <= 80
@@ -2677,16 +2599,4 @@ function assertExistingThreadWatchRequest(value: unknown): ExistingThreadWatchRe
 
 function isSafeExistingThreadId(value: string) {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(value.trim());
-}
-
-function isLocalSendRequest(value: unknown): value is LocalCliSendRequest {
-  return isRecord(value)
-    && isLocalAdapterType(value.adapterType)
-    && typeof value.partnerId === 'string'
-    && (value.partnerRootGrantId === undefined || typeof value.partnerRootGrantId === 'string')
-    && Array.isArray(value.workspaceGrantIds)
-    && value.workspaceGrantIds.every((item) => typeof item === 'string')
-    && (value.codexRuntimeId === undefined || typeof value.codexRuntimeId === 'string')
-    && (value.codexRuntimeEnvironment === undefined || ['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))
-    && isRecord(value.command);
 }
