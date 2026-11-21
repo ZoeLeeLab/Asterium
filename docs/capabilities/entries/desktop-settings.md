@@ -114,11 +114,11 @@
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md"
   ],
-  "lastVerifiedCommit": "8bbec45d55d93ce0d1a7adc754f6447fba414fcc"
+  "lastVerifiedCommit": "148fc82fd03f78d298b29fd880363dc76daa5bd5"
 }
 ---
 
-既有 Bug 修复提交 `8bbec45d55d93ce0d1a7adc754f6447fba414fcc` 修复单聊伙伴列表的滚动条横向位移与手动折叠问题，并曾加入正文复制、引用菜单。本轮工作区撤回误加的整段回复菜单，保留原有选中文字引用；正文中的本机交付文件链接右键复用现有交付文件菜单，提供浏览器打开、文件夹定位、交付列表定位、复制路径、另存为与保存到项目。左键仍沿用预览和启动器定位规则。链接由现有对话交付校验接口解析，不新增 IPC；已关闭或已切换对话的异步菜单结果会丢弃。回归入口为 `LocalArtifactLinkMenu.test.tsx`、`TurnTimelinePresentation.test.tsx`、`NavigationFlows.test.tsx` 和 `chat-sidebar-browser.mjs`。本轮修正尚未绑定新的代码提交，不追溯到既有核验提交或此前安装包。
+既有 Bug 修复提交 `8bbec45d55d93ce0d1a7adc754f6447fba414fcc` 修复单聊伙伴列表的滚动条横向位移与手动折叠问题，并曾加入正文复制、引用菜单。本轮工作区撤回误加的整段回复菜单，保留原有选中文字引用；正文中的本机交付文件链接右键复用现有交付文件菜单，提供浏览器打开、文件夹定位、交付列表定位、复制路径、另存为与保存到项目。左键仍沿用预览和启动器定位规则。链接由现有对话交付校验接口解析，不新增 IPC；已关闭或已切换对话的异步菜单结果会丢弃。回归入口为 `LocalArtifactLinkMenu.test.tsx`、`TurnTimelinePresentation.test.tsx`、`NavigationFlows.test.tsx` 和 `chat-sidebar-browser.mjs`。本轮核验绑定已存在的代码提交 `148fc82fd03f78d298b29fd880363dc76daa5bd5`；73 项针对性回归、独立 Chromium 检查、类型、Lint、隐私与能力检查通过，不追溯到此前安装包。
 
 ## 当前源码核验：2026-11-02 S5
 
