@@ -25,7 +25,7 @@
 | 三 | 工作流生成 → 工作流草稿与激活 | 8 | 89 | 源码两组已完成；累计 Windows 验收结果独立留档 |
 | 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 源码三组已完成；累计 Windows 验收结果独立留档 |
-| 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 任务执行组已迁移；其余两组待实施 |
+| 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 任务执行与工作室轮次已迁移；消息运行待实施 |
 | 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
 | 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 七 A 累计验收通过后再开始 |
 | 八 | Wake → CyberBoss | 11 | 0 | 未开始 |
@@ -105,13 +105,13 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `projectRemove` | `asterium:project:remove` | `projectIpc.ts` | `projectIpc.ts` |
 | `studioRetryProjectUploads` | `asterium:studio:retry-project-uploads` | `studioRoomIpc.ts` | `agentIpc.ts` |
 | `studioRemoveRoom` | `asterium:studio:remove-room` | `studioRoomIpc.ts` | `agentIpc.ts` |
-| `studioCancelRound` | `asterium:studio:cancel-round` | `studioRoundIpc.ts` | `agentIpc.ts` |
+| `studioCancelRound` | `asterium:studio:cancel-round` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
 | `studioWakeStatus` | `asterium:studio-wake:status` | `studioWakeIpc.ts` | `agentIpc.ts` |
 | `studioWakeConfigure` | `asterium:studio-wake:configure` | `studioWakeIpc.ts` | `agentIpc.ts` |
 | `studioWakeControl` | `asterium:studio-wake:control` | `studioWakeIpc.ts` | `agentIpc.ts` |
-| `studioStartRound` | `asterium:studio:start-round` | `studioRoundIpc.ts` | `agentIpc.ts` |
-| `studioPrepareTurn` | `asterium:studio:prepare-turn` | `studioRoundIpc.ts` | `agentIpc.ts` |
-| `studioFailTurn` | `asterium:studio:fail-turn` | `studioRoundIpc.ts` | `agentIpc.ts` |
+| `studioStartRound` | `asterium:studio:start-round` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
+| `studioPrepareTurn` | `asterium:studio:prepare-turn` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
+| `studioFailTurn` | `asterium:studio:fail-turn` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
 | `nativeSyncSingleBindings` | `asterium:native-bindings:sync-single` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
 | `attachmentChoose` | `asterium:attachment:choose` | `attachmentIpc.ts` | `agentIpc.ts` |
 | `attachmentStageFiles` | `asterium:attachment:stage-files` | `attachmentIpc.ts` | `agentIpc.ts` |
