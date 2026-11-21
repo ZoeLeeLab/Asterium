@@ -24,6 +24,7 @@ import { friendlyRuntimeErrorMessage } from '../../app/runtimeErrorPresentation'
 import { MarkdownContent } from './MarkdownContent';
 import { toolPresentation, type ToolSemantic } from './toolPresentation';
 import { UserInputRow } from './UserInputCard';
+import type { AssistantTextContext } from './AssistantMessageMenu';
 
 interface DelegationReceipt {
   id: string;
@@ -43,6 +44,7 @@ interface TurnTimelineProps {
   onLocalArtifactLink?: (href: string) => void;
   onArtifactContextMenu?: (artifactId: string, event: ReactMouseEvent<HTMLElement>) => void;
   onQuoteSelection?: (text: string, x: number, y: number) => void;
+  onTextContextMenu?: (context: AssistantTextContext) => void;
 }
 
 type TextItem = Extract<TurnTimelineItem, { kind: 'text' }>;
@@ -62,7 +64,7 @@ type TimelineBlock =
 
 const emptyReceipts: readonly DelegationReceipt[] = [];
 
-export function TurnTimeline({ message, delegationReceipts, partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onLocalArtifactLink, onArtifactContextMenu, onQuoteSelection }: TurnTimelineProps) {
+export function TurnTimeline({ message, delegationReceipts, partnerName, pendingAuthorization, pendingUserInput, onResolveAuthorization, onResolveUserInput, onOpenArtifact, onLocalArtifactLink, onArtifactContextMenu, onQuoteSelection, onTextContextMenu }: TurnTimelineProps) {
   const timeline = message.timeline;
   const receipts = delegationReceipts?.length ? delegationReceipts : emptyReceipts;
   const completed = message.runState === 'completed';
@@ -72,7 +74,7 @@ export function TurnTimeline({ message, delegationReceipts, partnerName, pending
 
   if (!timeline?.length) return <div className="turn-timeline">
     {receipts.map(receipt => <Fragment key={receipt.id}>{receipt.card}</Fragment>)}
-    {visibleAssistantText(message.content) && <QuoteableText onQuoteSelection={onQuoteSelection}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{visibleAssistantText(message.content)}</MarkdownContent></QuoteableText>}
+    {visibleAssistantText(message.content) && <QuoteableText onQuoteSelection={onQuoteSelection} onTextContextMenu={onTextContextMenu}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{visibleAssistantText(message.content)}</MarkdownContent></QuoteableText>}
     {message.toolNote && <details className="timeline-entry state-success"><summary><Check size={15} /><span>{message.toolNote}</span></summary></details>}
     {message.error && <div className="timeline-entry timeline-entry--error state-failure"><CircleAlert size={15} /><span>{friendlyErrorLabel(message.error.message, partnerName)}</span></div>}
   </div>;
@@ -85,7 +87,7 @@ export function TurnTimeline({ message, delegationReceipts, partnerName, pending
     {blocks.map((block) => {
       if (block.kind === 'text') {
         const text = visibleAssistantText(block.text);
-        return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{text}</MarkdownContent></QuoteableText> : null;
+        return text ? <QuoteableText key={block.id} className="turn-text-segment" onQuoteSelection={onQuoteSelection} onTextContextMenu={onTextContextMenu}><MarkdownContent onLocalArtifactLink={onLocalArtifactLink}>{text}</MarkdownContent></QuoteableText> : null;
       }
       if (block.kind === 'reasoning') return <ReasoningRow key={block.id} row={block.row} partnerName={partnerName} />;
       if (block.kind === 'delegation') return <Fragment key={block.receipt.id}>{block.receipt.card}</Fragment>;
@@ -95,17 +97,21 @@ export function TurnTimeline({ message, delegationReceipts, partnerName, pending
   </div>;
 }
 
-function QuoteableText({ children, className = '', onQuoteSelection }: { children: ReactNode; className?: string; onQuoteSelection?: (text: string, x: number, y: number) => void }) {
+function QuoteableText({ children, className = '', onQuoteSelection, onTextContextMenu }: { children: ReactNode; className?: string; onQuoteSelection?: (text: string, x: number, y: number) => void; onTextContextMenu?: (context: AssistantTextContext) => void }) {
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!onQuoteSelection) return;
+    if (event.defaultPrevented || (!onQuoteSelection && !onTextContextMenu)) return;
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) return;
     const container = event.currentTarget;
-    if (!container.contains(selection.anchorNode) || !container.contains(selection.focusNode)) return;
-    const text = selection.toString().trim();
+    const selected = Boolean(selection && !selection.isCollapsed && selection.anchorNode && selection.focusNode);
+    if (selected && (!container.contains(selection!.anchorNode) || !container.contains(selection!.focusNode))) return;
+    const text = selected ? selection!.toString().trim() : (container.innerText ?? container.textContent ?? '').trim();
     if (!text) return;
+    if (!selected && !onTextContextMenu) return;
     event.preventDefault();
-    onQuoteSelection(text, event.clientX, event.clientY);
+    if (onTextContextMenu) {
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a') : null;
+      onTextContextMenu({ text, selection: selected, href: link?.dataset.artifactHref ?? link?.getAttribute('href') ?? undefined, x: event.clientX, y: event.clientY });
+    } else onQuoteSelection?.(text, event.clientX, event.clientY);
   };
   return <div className={`assistant-quote-source ${className}`.trim()} onContextMenu={handleContextMenu}>{children}</div>;
 }

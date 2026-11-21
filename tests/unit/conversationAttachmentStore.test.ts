@@ -2,7 +2,7 @@ import { testRm as rm } from '../helpers/autoTest.mjs';
 import { mkdir, mkdtemp, readFile, readdir, rename, stat, truncate, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConversationAttachmentStore, MAX_MESSAGE_ATTACHMENT_BYTES } from '../../src/main/security/ConversationAttachmentStore';
 import { AGENT_PROTOCOL_VERSION, type SendMessageCommand } from '../../src/shared/agentProtocol';
 import { assertAgentCommand } from '../../src/shared/agentProtocolValidation';
@@ -25,6 +25,22 @@ async function fixture() {
 }
 
 describe('ConversationAttachmentStore', () => {
+  it('keeps a staged screenshot usable after a day until it is explicitly committed', async () => {
+    const { store } = await fixture();
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFZsAAAAASUVORK5CYII=', 'base64');
+    const pending = await store.stageClipboardImage(png);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 24 * 60 * 60 * 1000);
+    try {
+      expect(await readFile(await store.pendingPath(pending.selectionId))).toEqual(png);
+      const [sent] = await store.commit('fixture-conversation', [pending.selectionId], 'fixture-message', true);
+      expect(await store.read(sent.id, 'fixture-conversation')).toEqual(png);
+      const [retried] = await store.commit('fixture-conversation', [pending.selectionId], 'fixture-message-retry', true);
+      expect(await store.read(retried.id, 'fixture-conversation')).toEqual(png);
+      await store.discard([pending.selectionId]);
+      await expect(store.pendingPath(pending.selectionId)).rejects.toThrow();
+    } finally { clock.mockRestore(); }
+  });
+
   it('reclaims identical internal copies while preserving original files, message IDs and distinct versions', async () => {
     const { root, source, store, options } = await fixture();
     const identical = path.join(root, 'another-source.txt');

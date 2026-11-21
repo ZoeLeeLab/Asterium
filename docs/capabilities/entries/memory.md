@@ -47,6 +47,8 @@
 
 伙伴记忆的当前代码入口、测试和权限边界见以上元数据。
 
+当前 Bug 工作分支补齐旧对话导入的主题标签。提炼提示要求模型提供标签，候选预览显示标签，确认后规范化去重并保存。旧候选未带标签时仍可确认。实现位于 `MemoryImportService.ts`、`memoryImport.ts` 和 `MemoryImportPanel.tsx`，回归见 `memoryImportService.test.ts`、`MemoryImportPanel.test.tsx`。本段描述工作分支变更，核验提交引用沿用已有基线，提交后的核验另行绑定。
+
 在「设置 → 记忆」中，内容超出窗口时可在内容区上下滚动，滚动条隐藏。展开的设置、导入区和记忆档案可以一起滚动。
 
 ## 旧对话文本导入（当前工作区）

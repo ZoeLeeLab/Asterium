@@ -62,6 +62,7 @@ import { PartnerQuickCard } from '../components/ui/PartnerQuickCard';
 import { MarkdownContent } from '../components/chat/MarkdownContent';
 import { MessageQuoteCard } from '../components/chat/MessageQuoteCard';
 import { TurnTimeline } from '../components/chat/TurnTimeline';
+import { AssistantMessageMenu, type AssistantTextContext } from '../components/chat/AssistantMessageMenu';
 import { FilePreviewPane, type PreviewTab } from '../components/chat/FilePreviewPane';
 import type { Conversation, ConversationArtifact, Message, MessageQuote } from '../types/domain';
 import type { DelegationBatchView } from '../../main/runtime/PartnerDelegation';
@@ -235,6 +236,7 @@ export function ChatPage() {
     return () => { disposed = true; window.clearInterval(timer); };
   }, [activeConversationId]);
   const activePartner = state.partners.find((partner) => partner.id === (activeConversation?.partnerId ?? state.activePartnerId)) ?? availablePartners[0];
+  const activePartnerId = activePartner?.id;
   const [handoffOpen, setHandoffOpen] = useState(false);
   const activeHandoff = contextHandoffDraft?.target.kind === 'single' && contextHandoffDraft.target.id === activeConversation?.id ? contextHandoffDraft : undefined;
   const handoffTargets = activePartner && supportsContextHandoff(activePartner)
@@ -278,7 +280,7 @@ export function ChatPage() {
   const [lifecycleError, setLifecycleError] = useState('');
   const [pendingGuidanceByConversation, setPendingGuidanceByConversation] = useState<Record<string, { content: string; quote?: MessageQuote; targetRunId: string; clientMessageId: string; state: 'staged' | 'deferred' | 'sending'; error?: string }>>({});
   const [pendingQuote, setPendingQuote] = useState<MessageQuote>();
-  const [quoteMenu, setQuoteMenu] = useState<{ quote: MessageQuote; x: number; y: number } | null>(null);
+  const [quoteMenu, setQuoteMenu] = useState<{ quote?: MessageQuote; context: AssistantTextContext } | null>(null);
   const [workspaceSendRequest, setWorkspaceSendRequest] = useState<{
     conversationId: string;
     content: string;
@@ -661,9 +663,9 @@ export function ChatPage() {
   }, [collapsedPartners]);
 
   useEffect(() => {
-    if (!activePartner) return;
-    setCollapsedPartners((current) => ({ ...current, [activePartner.id]: false }));
-  }, [activePartner]);
+    if (!activePartnerId) return;
+    setCollapsedPartners((current) => ({ ...current, [activePartnerId]: false }));
+  }, [activePartnerId]);
 
   useEffect(() => {
     const ready = Object.entries(pendingGuidanceByConversation).find(([conversationId, guidance]) => {
@@ -841,7 +843,7 @@ export function ChatPage() {
 
   const togglePartnerGroup = (partnerId: string, collapsed: boolean) => {
     setCollapsedPartners((current) => ({ ...current, [partnerId]: !collapsed }));
-    if (partnerId !== activePartner?.id) selectPartner(partnerId);
+    if (collapsed && partnerId !== activePartner?.id) selectPartner(partnerId);
   };
 
   const createPartnerConversation = (partnerId: string) => {
@@ -1085,12 +1087,12 @@ export function ChatPage() {
     setComposerFocusKey((value) => value + 1);
   };
 
-  const openQuoteSelectionMenu = (message: Message, text: string, x: number, y: number) => {
-    const quote = makeQuote(message, 'selection', text);
-    if (!quote) return;
+  const openMessageContextMenu = (message: Message, context: AssistantTextContext, canQuote: boolean) => {
+    const text = context.selection ? context.text : assistantMessageText(message);
+    const quote = canQuote ? makeQuote(message, context.selection ? 'selection' : 'full', text) : undefined;
     setArtifactMenu(null);
     setAttachmentMenu(null);
-    setQuoteMenu({ quote, x, y });
+    setQuoteMenu({ quote: quote ?? undefined, context: { ...context, text } });
   };
 
   const copyMessage = async (message: Message) => {
@@ -1215,7 +1217,7 @@ export function ChatPage() {
                 const quoteText = mine ? '' : assistantMessageText(message);
                 const canQuote = !mine && Boolean(quoteText) && !message.isStreaming
                   && (message.runState === undefined || message.runState === 'completed')
-                  && activeConversation.activeRun?.runId !== message.runId;
+                  && (!activeConversation.activeRun || activeConversation.activeRun.runId !== message.runId);
                 const delegationReceipts = batches.map(batch => {
                   const pending = batch.tasks.some(task => task.status === 'queued' || task.status === 'running');
                   const uncertain = batch.tasks.some(task => task.status === 'uncertain');
@@ -1281,7 +1283,7 @@ export function ChatPage() {
                             {message.quote && <MessageQuoteCard quote={message.quote} className="message-quote-card--sent" />}
                             {message.content && <MarkdownContent className="message-content--user" onLocalArtifactLink={openLocalArtifactLink}>{message.content}</MarkdownContent>}
                             <MessageAttachmentCards attachments={message.attachments} conversationId={activeConversation.id} onPreview={(attachment) => void openUserAttachment(attachment.id)} onContextMenu={(attachment, x, y) => { setArtifactMenu(null); setQuoteMenu(null); setAttachmentMenu({ id: attachment.id, x, y }); }} />
-                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onLocalArtifactLink={openLocalArtifactLink} onArtifactContextMenu={openArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
+                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onLocalArtifactLink={openLocalArtifactLink} onArtifactContextMenu={openArtifactMenu} onTextContextMenu={context => openMessageContextMenu(message, context, canQuote)} />}
                         </div>
                       </div>
                       {retryableCodexMessage?.id === message.id && <div className="run-notice message-retry">
@@ -1508,7 +1510,8 @@ export function ChatPage() {
           </>}
         </div>;
       })()}
-      {quoteMenu && <div className="artifact-context-menu quote-context-menu" role="menu" aria-label="引用选中内容" style={contextMenuPosition(quoteMenu.x, quoteMenu.y)} onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setPendingQuote(quoteMenu.quote); setQuoteMenu(null); setComposerFocusKey((value) => value + 1); }}><Quote size={14} />引用选中内容</button></div>}
+      {quoteMenu && <AssistantMessageMenu context={quoteMenu.context} onOpenLocalLink={openLocalArtifactLink} onClose={() => setQuoteMenu(null)}
+        onQuote={quoteMenu.quote ? () => { setPendingQuote(quoteMenu.quote); setQuoteMenu(null); setComposerFocusKey(value => value + 1); } : undefined} />}
 
       {fileDeletionInspection && <FileDeletionModal inspection={fileDeletionInspection} busy={fileDeletionBusy} error={fileDeletionError} onClose={() => { if (!fileDeletionBusy) { setArtifactDeletionTarget(undefined); setFileDeletionInspection(undefined); setFileDeletionError(''); } }} onConfirm={() => void confirmArtifactDeletion()} />}
 

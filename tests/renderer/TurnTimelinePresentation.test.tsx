@@ -15,6 +15,17 @@ const baseMessage: Message = {
 };
 
 describe('user-facing runtime presentation', () => {
+  it('opens a reply menu without a selection and retains the real local link address', () => {
+    const context = vi.fn();
+    const selection = vi.spyOn(window, 'getSelection').mockReturnValue(null);
+    render(<TurnTimeline message={{ ...baseMessage, content: '交付了 [合成文档](C:/fixture/report.md)。' }}
+      partnerName="测试伙伴" onResolveAuthorization={vi.fn()} onResolveUserInput={vi.fn()} onOpenArtifact={vi.fn()}
+      onLocalArtifactLink={vi.fn()} onTextContextMenu={context} />);
+    fireEvent.contextMenu(screen.getByRole('link', { name: '合成文档' }), { clientX: 25, clientY: 40 });
+    expect(context).toHaveBeenCalledWith(expect.objectContaining({ selection: false, href: 'C:/fixture/report.md', x: 25, y: 40 }));
+    selection.mockRestore();
+  });
+
   it('clearly distinguishes one-command Native approval from ordinary permission or persistent trust', () => {
     const resolve = vi.fn();
     render(<TurnTimeline message={{ ...baseMessage, timeline: [{ id: 'native', sequence: 1, kind: 'authorization', authorizationId: 'native-auth', toolCallId: 'call', action: 'run_command', purpose: 'command_native', risk: 'high', state: 'running', summary: '仅本次 Native', detail: 'Write-Output OK\ncwd: C:\\fixture' }] }}

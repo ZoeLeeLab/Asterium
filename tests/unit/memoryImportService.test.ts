@@ -43,6 +43,26 @@ async function fixture() {
 }
 
 describe('memory import', () => {
+  it('normalizes model tags, keeps them when an older confirmation omits tags, and allows explicit edits', async () => {
+    const { service, input, connect, adapter, store } = await fixture();
+    connect.mockResolvedValueOnce(adapter(async function* ({ messages }) {
+      expect(messages[0].content).toContain('tags');
+      yield { type: 'text.delta', text: JSON.stringify([
+        { type: 'stable_fact', body: '第一条合成记忆', tags: [' 开发 ', '开发', '协作'], paragraph: 1 },
+        { type: 'stable_fact', body: '第二条合成记忆', tags: ['项目'], paragraph: 1 },
+        { type: 'stable_fact', body: '非法标签', tags: [1], paragraph: 1 },
+      ]) };
+    }));
+    const preview = await service.preview(input);
+    expect(preview.rejectedCount).toBe(1);
+    expect(preview.candidates[0].tags).toEqual(['开发', '协作']);
+    const selected = preview.candidates.map(({ id, type, body }, index) => ({ id, type, body, ...(index ? { tags: ['人工核对'] } : {}) }));
+    await service.confirm({ partnerId: input.partnerId, batchId: input.batchId, selected });
+    const records = await store('p1').list();
+    expect(records.find(record => record.body === '第一条合成记忆')?.tags).toEqual(['开发', '协作']);
+    expect(records.find(record => record.body === '第二条合成记忆')?.tags).toEqual(['人工核对']);
+  });
+
   it('previews without writes, imports a selected subset, preserves excerpts, and undoes only untouched entries', async () => {
     const { store, service, input } = await fixture();
     const { candidates } = await service.preview(input);

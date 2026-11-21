@@ -165,7 +165,7 @@ export const MarkdownContent = memo(function MarkdownContent({
         return <span className="studio-message-reference is-unavailable" title="原消息不可用">{label}</span>;
       }
       if (href && onLocalArtifactLink && isLocalArtifactLink(href)) {
-        return <a href="#" className={linkClassName} title="查看此对话交付的文件" onClick={(event) => {
+        return <a href="#" data-artifact-href={href} className={linkClassName} title="查看此对话交付的文件" onClick={(event) => {
           event.preventDefault();
           onLocalArtifactLink(href);
         }}>{label}</a>;
