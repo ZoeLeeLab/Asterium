@@ -364,8 +364,50 @@ describe('navigation shell interactions', () => {
 
     fireEvent.click(activePartnerRow);
     expect(screen.getByRole('button', { name: '展开 测试伙伴 A 的对话' })).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByRole('button', { name: '展开 测试伙伴 A 的对话' }));
     fireEvent.click(screen.getByRole('button', { name: '展开 测试伙伴 B 的对话' }));
     expect(screen.getByRole('button', { name: '收起 测试伙伴 B 的对话' })).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '收起 测试伙伴 A 的对话' }));
+    expect(screen.getByRole('button', { name: '展开 测试伙伴 A 的对话' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: '收起 测试伙伴 B 的对话' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('keeps selected-text quoting without adding a whole-reply context menu', async () => {
+    const content = createTestState().conversations[0].messages[0].content;
+    const nativeSelection = window.getSelection()!;
+    const selection = vi.spyOn(window, 'getSelection').mockReturnValue(null);
+    try {
+      withProvider(<ChatPage />, '/chat');
+      fireEvent.contextMenu(screen.getByText(content));
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      const range = document.createRange();
+      range.selectNodeContents(screen.getByText(content, { selector: '.markdown-content p' }));
+      nativeSelection.removeAllRanges();
+      nativeSelection.addRange(range);
+      selection.mockReturnValue(nativeSelection);
+      fireEvent.contextMenu(screen.getByText(content, { selector: '.markdown-content p' }));
+      expect(screen.getByRole('menu', { name: '引用选中内容' })).toBeVisible();
+      fireEvent.click(screen.getByRole('menuitem', { name: '引用选中内容' }));
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '移除引用' })).toBeInTheDocument();
+      fireEvent.contextMenu(screen.getByText(content, { selector: '.markdown-content p' }));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    } finally { nativeSelection.removeAllRanges(); selection.mockRestore(); }
+  });
+
+  it('keeps a partner collapsed when its profile refreshes and expands it when selected again', async () => {
+    function RefreshPartner() {
+      const { state, updatePartner } = usePrototype();
+      return <button onClick={() => void updatePartner({ ...state.partners[0], status: 'busy' }, true)}>刷新合成伙伴状态</button>;
+    }
+    withProvider(<><ChatPage /><RefreshPartner /></>, '/chat');
+    fireEvent.click(screen.getByRole('button', { name: '收起 测试伙伴 A 的对话' }));
+    fireEvent.click(screen.getByRole('button', { name: '刷新合成伙伴状态' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '展开 测试伙伴 A 的对话' })).toHaveAttribute('aria-expanded', 'false'));
+    fireEvent.click(screen.getByRole('button', { name: '展开 测试伙伴 B 的对话' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开 测试伙伴 A 的对话' }));
+    expect(screen.getByRole('button', { name: '收起 测试伙伴 A 的对话' })).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('marks partner avatars with their connection source', () => {

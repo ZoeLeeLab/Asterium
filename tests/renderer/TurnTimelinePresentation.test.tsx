@@ -15,6 +15,20 @@ const baseMessage: Message = {
 };
 
 describe('user-facing runtime presentation', () => {
+  it.each([false, true])('routes a local file link to its own context menu (timeline: %s)', (timeline) => {
+    const context = vi.fn();
+    const quote = vi.fn();
+    const selection = vi.spyOn(window, 'getSelection').mockReturnValue(null);
+    const text = '交付了 [合成文档](C:/fixture/report.md)。';
+    render(<TurnTimeline message={{ ...baseMessage, content: text, ...(timeline ? { timeline: [{ id: 'text', kind: 'text', sequence: 1, text }] } : {}) }}
+      partnerName="测试伙伴" onResolveAuthorization={vi.fn()} onResolveUserInput={vi.fn()} onOpenArtifact={vi.fn()}
+      onLocalArtifactLink={vi.fn()} onLocalArtifactContextMenu={context} onQuoteSelection={quote} />);
+    fireEvent.contextMenu(screen.getByRole('link', { name: '合成文档' }), { clientX: 25, clientY: 40 });
+    expect(context).toHaveBeenCalledWith('C:/fixture/report.md', expect.objectContaining({ clientX: 25, clientY: 40, defaultPrevented: true }));
+    expect(quote).not.toHaveBeenCalled();
+    selection.mockRestore();
+  });
+
   it('clearly distinguishes one-command Native approval from ordinary permission or persistent trust', () => {
     const resolve = vi.fn();
     render(<TurnTimeline message={{ ...baseMessage, timeline: [{ id: 'native', sequence: 1, kind: 'authorization', authorizationId: 'native-auth', toolCallId: 'call', action: 'run_command', purpose: 'command_native', risk: 'high', state: 'running', summary: '仅本次 Native', detail: 'Write-Output OK\ncwd: C:\\fixture' }] }}

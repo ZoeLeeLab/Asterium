@@ -152,7 +152,7 @@ export function MemoryImportPanel({ partnerId, partnerName = '当前伙伴' }: {
 
   const confirm = async () => {
     const batchId = batch.current;
-    const selected = candidates?.filter(item => item.selected).map(({ id, type, body }) => ({ id, type, body }));
+    const selected = candidates?.filter(item => item.selected).map(({ id, type, body, tags }) => ({ id, type, body, ...(tags ? { tags } : {}) }));
     if (!batchId || !selected?.length || busy) return;
     setBusy('confirm');
     setError('');
@@ -239,6 +239,7 @@ export function MemoryImportPanel({ partnerId, partnerName = '当前伙伴' }: {
             {Object.entries(memoryTypeLabels).map(([value, name]) => <option key={value} value={value}>{name}</option>)}
           </select></label>
           <label>记忆正文<textarea rows={3} maxLength={2000} value={item.body} onChange={event => setCandidates(items => items?.map(candidate => candidate.id === item.id ? { ...candidate, body: event.target.value } : candidate))} /></label>
+          <p aria-label="候选记忆标签">标签 {item.tags?.length ? item.tags.map(tag => `#${tag}`).join(' ') : '未提供'}</p>
           <blockquote>{label} · 第 {item.paragraph} 段<br />{item.excerpt}</blockquote>
           {item.possibleConflicts.length > 0 && <p>请核对已有相近记忆：{item.possibleConflicts.join('；')}</p>}
         </fieldset>)}

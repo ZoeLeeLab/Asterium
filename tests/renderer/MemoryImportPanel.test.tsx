@@ -12,7 +12,7 @@ it('shows the API destination, lets the user edit and select a subset, then show
     credentialConfigured: true, intervalMinutes: 20, partners: {},
   }, jobs: [] };
   const candidates: MemoryImportCandidate[] = [
-    { id: 'first', type: 'stable_fact', body: '第一条', paragraph: 1, excerpt: '对话原文', possibleConflicts: [] },
+    { id: 'first', type: 'stable_fact', body: '第一条', tags: ['协作'], paragraph: 1, excerpt: '对话原文', possibleConflicts: [] },
     { id: 'second', type: 'stable_fact', body: '第二条', paragraph: 1, excerpt: '对话原文', possibleConflicts: [] },
   ];
   const preview = vi.fn(async () => ({ candidates, duplicateCount: 0, rejectedCount: 1, failedBatchCount: 1 }));
@@ -39,6 +39,7 @@ it('shows the API destination, lets the user edit and select a subset, then show
   fireEvent.change(screen.getByLabelText('要发送的对话文本'), { target: { value: '对话原文' } });
   fireEvent.click(screen.getByRole('button', { name: '发送并生成预览' }));
   const controls = await screen.findAllByLabelText('记忆正文');
+  expect(screen.getByText('标签 #协作')).toBeVisible();
   const previewList = screen.getByRole('region', { name: '记忆候选列表' });
   expect(previewList).toHaveAttribute('tabindex', '0');
   expect(previewList).toContainElement(controls[1]);
@@ -51,7 +52,7 @@ it('shows the API destination, lets the user edit and select a subset, then show
   await screen.findByText(/已导入 1 条/);
   expect(preview).toHaveBeenCalledWith(expect.objectContaining({ partnerId: 'p1', text: '对话原文', model: 'test-model' }));
   expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
-    partnerId: 'p1', selected: [{ id: 'first', type: 'stable_fact', body: '核对后修改' }],
+    partnerId: 'p1', selected: [{ id: 'first', type: 'stable_fact', body: '核对后修改', tags: ['协作'] }],
   }));
   fireEvent.click(screen.getByRole('button', { name: '撤销本批' }));
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已移入归档库 1 条'));

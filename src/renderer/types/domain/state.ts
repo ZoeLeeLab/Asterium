@@ -35,6 +35,8 @@ export interface PrototypeState {
   activeGroupChatId: string;
 }
 
+export type NativeLifecycleUpdate = { type: 'syncNativeThreadLifecycle'; conversationId: string; state: NativeThreadLifecycleState; checkedAt: string; message?: string };
+
 export type PrototypeAction =
   | { type: 'automationEvent'; run: AutomationRun; event: PartnerEvent }
   | { type: 'automationHydrate'; runs: AutomationRun[] }
@@ -54,7 +56,8 @@ export type PrototypeAction =
   | { type: 'restoreConversation'; conversationId: string }
   | { type: 'deleteConversationPermanently'; conversationId: string }
   | { type: 'reconcileDeletedConversations'; conversationIds: string[] }
-  | { type: 'syncNativeThreadLifecycle'; conversationId: string; state: NativeThreadLifecycleState; checkedAt: string; message?: string }
+  | NativeLifecycleUpdate
+  | { type: 'syncNativeThreadLifecycles'; updates: NativeLifecycleUpdate[] }
   | { type: 'toggleConversationPin'; conversationId: string }
   | { type: 'setConversationPermissionMode'; conversationId: string; mode: PermissionMode }
   | { type: 'setConversationCodexModel'; conversationId: string; selection: import('../../../shared/codexModels').CodexModelSelection }

@@ -17,6 +17,7 @@ import { friendlyRuntimeErrorMessage } from './runtimeErrorPresentation';
 import { CODEX_THREAD_IN_USE } from '../../shared/codexThreadInUse';
 import { prepareSingleChatProfile, savePrototypeState } from './persistence';
 import { useSingleChatHistory } from './useSingleChatHistory';
+import type { NativeLifecycleUpdate } from './nativeThreadLifecycleSync';
 import { AGENT_PROTOCOL_VERSION, type JsonValue, type LocalThreadLifecycleRequest, type MessageAttachment, type MessageDeliveryEvent, type PartnerEvent, type PartnerProfileSeed, type PartnerWorkspaceState, type PermissionMode, type PlanMode, type RunId, type RuntimeModelObservation, type WorkspaceGrant } from '../../shared/agentProtocol';
 import { toolPresentation } from '../components/chat/toolPresentation';
 import { type StudioMention, type StudioRoomSettings, type StudioRoomSnapshot } from '../../shared/studioRuntime';
@@ -687,6 +688,8 @@ export function prototypeReducer(state: PrototypeState, action: PrototypeAction)
         activePartnerId: next?.partnerId ?? state.partners.find((partner) => !partner.isRemoved)?.id ?? '',
       };
     }
+    case 'syncNativeThreadLifecycles':
+      return action.updates.reduce(prototypeReducer, state);
     case 'syncNativeThreadLifecycle': {
       const target = state.conversations.find((conversation) => conversation.id === action.conversationId);
       if (!target) return state;
@@ -1387,6 +1390,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   const submittingChatRef = useRef(new Set<string>());
   const chatHistory = useSingleChatHistory(prototypeReducer);
   const { state, dispatch } = chatHistory;
+  const { isCurrentLifecycleUpdate } = chatHistory;
   const refreshConversationArtifacts = useCallback((conversationId: string, inspections: ReadonlyMap<string, ArtifactInfo | null>) => {
     dispatch({ type: 'refreshConversationArtifacts', conversationId, inspections });
   }, [dispatch]);
@@ -1764,6 +1768,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     let synchronization: Promise<void> | undefined;
     let lastSynchronizationStartedAt = 0;
     const performSynchronization = async () => {
+      const updates: NativeLifecycleUpdate[] = [];
       for (const group of groups) {
         try {
           const results = await agents.getLocalThreadLifecycles!(group.request);
@@ -1778,6 +1783,14 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
                 && conversation.nativeThreadState === 'archived'
                 ? 'deleted'
                 : result.state;
+              const update: NativeLifecycleUpdate = {
+                type: 'syncNativeThreadLifecycle',
+                conversationId: conversation.conversationId,
+                state,
+                checkedAt: result.checkedAt,
+                message: state === 'deleted' ? '原生 Codex 线程已删除，星丛已清理对应记录。' : result.message,
+              };
+              if (!isCurrentLifecycleUpdate(update)) continue;
               if (state === 'deleted') {
                 if (window.asteriumConversations) {
                   await window.asteriumConversations.delete({
@@ -1789,13 +1802,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
                   await window.asteriumAttachments?.deleteConversation(conversation.conversationId);
                 }
               }
-              dispatch({
-                type: 'syncNativeThreadLifecycle',
-                conversationId: conversation.conversationId,
-                state,
-                checkedAt: result.checkedAt,
-                message: state === 'deleted' ? '原生 Codex 线程已删除，星丛已清理对应记录。' : result.message,
-              });
+              updates.push(update);
             }
           }
         } catch (error) {
@@ -1806,7 +1813,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
             : detail.includes('CODEX_RUNTIME_SELECTION_REQUIRED')
               ? '找不到上次选择的 Codex 运行时；星丛没有切换到其他来源。请在伙伴管理中重新选择。'
               : '暂时无法同步原生 Codex 线程状态；星丛没有改动本地记录。';
-          for (const conversation of group.conversations) dispatch({
+          for (const conversation of group.conversations) updates.push({
             type: 'syncNativeThreadLifecycle',
             conversationId: conversation.conversationId,
             state: 'unavailable',
@@ -1815,6 +1822,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
           });
         }
       }
+      if (!cancelled && updates.length) dispatch({ type: 'syncNativeThreadLifecycles', updates });
     };
     const synchronize = () => {
       if (synchronization) return synchronization;
@@ -1827,7 +1835,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
     const onFocus = () => { void synchronize(); };
     window.addEventListener('focus', onFocus);
     return () => { cancelled = true; window.removeEventListener('focus', onFocus); };
-  }, [conversationAuthorityReady, nativeLifecycleSyncPayload]);
+  }, [conversationAuthorityReady, dispatch, isCurrentLifecycleUpdate, nativeLifecycleSyncPayload]);
 
   const existingThreadWatchSignature = JSON.stringify(
     state.partners
