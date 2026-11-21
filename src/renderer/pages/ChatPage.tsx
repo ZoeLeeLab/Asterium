@@ -235,6 +235,7 @@ export function ChatPage() {
     return () => { disposed = true; window.clearInterval(timer); };
   }, [activeConversationId]);
   const activePartner = state.partners.find((partner) => partner.id === (activeConversation?.partnerId ?? state.activePartnerId)) ?? availablePartners[0];
+  const activePartnerId = activePartner?.id;
   const [handoffOpen, setHandoffOpen] = useState(false);
   const activeHandoff = contextHandoffDraft?.target.kind === 'single' && contextHandoffDraft.target.id === activeConversation?.id ? contextHandoffDraft : undefined;
   const handoffTargets = activePartner && supportsContextHandoff(activePartner)
@@ -295,7 +296,7 @@ export function ChatPage() {
   useLayoutEffect(() => { deliveryRecordsRef.current = deliveryRecords; }, [deliveryRecords]);
   const visibleDeliveries = useMemo(() => latestDeliveriesBySource(deliveryRecords ?? []), [deliveryRecords]);
   const artifactMenuFile = artifactMenu?.conversationId === activeConversationId
-    ? deliveryRecords?.find((item) => item.id === artifactMenu?.id) ?? artifactMenu?.historicalFile
+    ? artifactMenu?.historicalFile ?? deliveryRecords?.find((item) => item.id === artifactMenu?.id)
     : undefined;
   useLayoutEffect(() => {
     if (!artifactLocation || artifactLocation.conversationId !== activeConversationId || rails.right || collapsedResourceSections.artifacts) return;
@@ -661,9 +662,9 @@ export function ChatPage() {
   }, [collapsedPartners]);
 
   useEffect(() => {
-    if (!activePartner) return;
-    setCollapsedPartners((current) => ({ ...current, [activePartner.id]: false }));
-  }, [activePartner]);
+    if (!activePartnerId) return;
+    setCollapsedPartners((current) => ({ ...current, [activePartnerId]: false }));
+  }, [activePartnerId]);
 
   useEffect(() => {
     const ready = Object.entries(pendingGuidanceByConversation).find(([conversationId, guidance]) => {
@@ -747,8 +748,7 @@ export function ChatPage() {
   }, [activeConversationId, refreshConversationArtifacts, replaceConversationArtifacts]);
 
   useEffect(() => {
-    if (!artifactMenu && !attachmentMenu && !quoteMenu) return;
-    const close = () => { setArtifactMenu(null); setAttachmentMenu(null); setQuoteMenu(null); };
+    const close = () => { artifactMenuRequest.current += 1; setArtifactMenu(null); setAttachmentMenu(null); setQuoteMenu(null); };
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
     window.addEventListener('pointerdown', close);
     window.addEventListener('keydown', onKeyDown);
@@ -756,7 +756,7 @@ export function ChatPage() {
       window.removeEventListener('pointerdown', close);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [artifactMenu, attachmentMenu, quoteMenu]);
+  }, []);
 
   const openNewChat = (partnerId?: string) => {
     const requested = newChatPartners.find((partner) => partner.id === partnerId)?.id;
@@ -841,7 +841,7 @@ export function ChatPage() {
 
   const togglePartnerGroup = (partnerId: string, collapsed: boolean) => {
     setCollapsedPartners((current) => ({ ...current, [partnerId]: !collapsed }));
-    if (partnerId !== activePartner?.id) selectPartner(partnerId);
+    if (collapsed && partnerId !== activePartner?.id) selectPartner(partnerId);
   };
 
   const createPartnerConversation = (partnerId: string) => {
@@ -913,6 +913,30 @@ export function ChatPage() {
       if (request === localFileLinkRequest.current) setArtifactActionError({ conversationId: activeConversationId, message: '无法打开此文件链接，请确认交付文件仍可用。' });
     }
   }, [activeConversationId, deliveryRecords, previewArtifact]);
+
+  const openLocalArtifactMenu = useCallback(async (href: string, event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    if (!activeConversationId || !window.asteriumArtifacts?.resolveConversationLink) return;
+    const request = ++artifactMenuRequest.current;
+    const position = { conversationId: activeConversationId, x: event.clientX, y: event.clientY, fromList: false };
+    setArtifactMenu(null);
+    setAttachmentMenu(null);
+    setQuoteMenu(null);
+    setArtifactActionError(undefined);
+    try {
+      const resolved = await window.asteriumArtifacts.resolveConversationLink(activeConversationId, href);
+      if (request !== artifactMenuRequest.current) return;
+      if (!resolved) {
+        setArtifactActionError({ conversationId: activeConversationId, message: '这个文件没有在当前对话中交付。' });
+        return;
+      }
+      const delivery = deliveryRecordsRef.current?.find(item => item.id === resolved.artifact.id || item.artifactRef === resolved.artifact.id);
+      const file = updateDeliveryInfo(delivery, resolved.artifact);
+      setArtifactMenu({ ...position, id: file.id, historicalFile: file });
+    } catch {
+      if (request === artifactMenuRequest.current) setArtifactActionError({ conversationId: activeConversationId, message: '无法打开此文件链接，请确认交付文件仍可用。' });
+    }
+  }, [activeConversationId]);
 
   const openArtifactMenu = (id: string, event: ReactMouseEvent<HTMLElement>, fromList = false) => {
     if (!activeConversationId) return;
@@ -1088,6 +1112,7 @@ export function ChatPage() {
   const openQuoteSelectionMenu = (message: Message, text: string, x: number, y: number) => {
     const quote = makeQuote(message, 'selection', text);
     if (!quote) return;
+    artifactMenuRequest.current += 1;
     setArtifactMenu(null);
     setAttachmentMenu(null);
     setQuoteMenu({ quote, x, y });
@@ -1215,7 +1240,7 @@ export function ChatPage() {
                 const quoteText = mine ? '' : assistantMessageText(message);
                 const canQuote = !mine && Boolean(quoteText) && !message.isStreaming
                   && (message.runState === undefined || message.runState === 'completed')
-                  && activeConversation.activeRun?.runId !== message.runId;
+                  && (!activeConversation.activeRun || activeConversation.activeRun.runId !== message.runId);
                 const delegationReceipts = batches.map(batch => {
                   const pending = batch.tasks.some(task => task.status === 'queued' || task.status === 'running');
                   const uncertain = batch.tasks.some(task => task.status === 'uncertain');
@@ -1281,7 +1306,7 @@ export function ChatPage() {
                             {message.quote && <MessageQuoteCard quote={message.quote} className="message-quote-card--sent" />}
                             {message.content && <MarkdownContent className="message-content--user" onLocalArtifactLink={openLocalArtifactLink}>{message.content}</MarkdownContent>}
                             <MessageAttachmentCards attachments={message.attachments} conversationId={activeConversation.id} onPreview={(attachment) => void openUserAttachment(attachment.id)} onContextMenu={(attachment, x, y) => { setArtifactMenu(null); setQuoteMenu(null); setAttachmentMenu({ id: attachment.id, x, y }); }} />
-                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onLocalArtifactLink={openLocalArtifactLink} onArtifactContextMenu={openArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
+                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onLocalArtifactLink={openLocalArtifactLink} onArtifactContextMenu={openArtifactMenu} onLocalArtifactContextMenu={openLocalArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
                         </div>
                       </div>
                       {retryableCodexMessage?.id === message.id && <div className="run-notice message-retry">

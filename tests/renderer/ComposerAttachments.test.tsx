@@ -14,6 +14,35 @@ function mockAttachmentApi(overrides: Partial<NonNullable<Window['asteriumAttach
 describe('Composer attachments', () => {
   afterEach(() => { window.asteriumAttachments = undefined; });
 
+  it('can send a screenshot draft after a day and returning to the conversation, including retrying a failed send', async () => {
+    const screenshot = { selectionId: 'fixture-aged-screenshot', name: '合成草稿截图.png', mediaType: 'image/png', sizeBytes: 8 };
+    const stageClipboardImage = vi.fn(async () => screenshot);
+    const discard = vi.fn(async () => undefined);
+    mockAttachmentApi({ stageClipboardImage, discard });
+    const send = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const first = <Composer key="aged-first" draftKey="chat:fixture-aged-screenshot" placeholder="合成截图草稿" onSend={send} attachmentsEnabled />;
+    const view = render(first);
+    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [{ type: 'image/png', size: 8, arrayBuffer: async () => new ArrayBuffer(8) }] } });
+    await screen.findByAltText(screenshot.name);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '合成待发送内容' } });
+    view.rerender(<Composer key="aged-other" draftKey="chat:fixture-aged-other" placeholder="另一段合成对话" onSend={vi.fn()} />);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 24 * 60 * 60 * 1000);
+    try {
+      view.rerender(first);
+      expect(screen.getByRole('textbox')).toHaveValue('合成待发送内容');
+      const button = screen.getByRole('button', { name: '发送' });
+      expect(button).toBeEnabled();
+      fireEvent.click(button);
+      await waitFor(() => expect(button).toBeEnabled());
+      expect(screen.getByAltText(screenshot.name)).toBeVisible();
+      fireEvent.click(button);
+      await waitFor(() => expect(screen.queryByAltText(screenshot.name)).not.toBeInTheDocument());
+      expect(send).toHaveBeenNthCalledWith(2, '合成待发送内容', [screenshot]);
+      expect(stageClipboardImage).toHaveBeenCalledOnce();
+      expect(discard).not.toHaveBeenCalled();
+    } finally { clock.mockRestore(); }
+  });
+
   it('previews a selected image and warns while still allowing a metadata-only partner to send it', async () => {
     const pending = { selectionId: 'pending-image', name: '无法识别.png', mediaType: 'image/png', sizeBytes: 512 };
     mockAttachmentApi({ choose: vi.fn(async () => [pending]), discard: vi.fn(async () => undefined) });

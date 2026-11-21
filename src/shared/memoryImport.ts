@@ -5,7 +5,12 @@ export const memoryImportContentKey = (record: { type: string; body: string }) =
   JSON.stringify([record.type, record.body.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase()]);
 
 export const MEMORY_IMPORT_MAX_CHARS = 100_000;
-export const importFields = z.object({ type: z.enum(MEMORY_TYPES), body: z.string().trim().min(1).max(2000) });
+export const importFields = z.object({
+  type: z.enum(MEMORY_TYPES),
+  body: z.string().trim().min(1).max(2000),
+  tags: z.array(z.string().trim().min(1).max(100)).max(20)
+    .transform(tags => [...new Set(tags)]).optional(),
+});
 export const importBatchRequest = z.object({ partnerId: z.string().min(1).max(200), batchId: z.uuid() });
 export const importPreviewRequest = importBatchRequest.extend({
   text: z.string().trim().min(1).max(MEMORY_IMPORT_MAX_CHARS),

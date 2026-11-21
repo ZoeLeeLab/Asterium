@@ -128,7 +128,10 @@ h1, h2, h3, p { margin: 0; }
 .pinned-row .conversation-title > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pinned-row small { color: var(--muted); font-size: calc(8px * var(--ui-font-scale,1)); }
 .pinned-row .icon-button { width: 26px; height: 26px; color: var(--accent-strong); }
-.partner-groups { flex: 1; min-height: 0; margin-top: 5px; padding: 2px 3px 12px; overflow: auto; }
+.partner-groups { flex: 1; min-height: 0; margin-top: 5px; padding: 2px 3px 12px; overflow: auto; scrollbar-gutter: stable; }
+.partner-groups.scroll-region { scrollbar-width: thin; }
+.partner-groups.scroll-region::-webkit-scrollbar { width: 6px; }
+.partner-groups.scroll-region:not(:hover)::-webkit-scrollbar-thumb { background: transparent; }
 .partner-group { padding: 8px 0 12px; }
 .partner-heading { display: flex; align-items: center; gap: 2px; margin: 0 1px; padding: 2px; border-radius: var(--radius-sm); transition: background var(--motion-fast); }
 .partner-group.is-collapsed .conversation-list { display: none; }

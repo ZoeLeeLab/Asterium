@@ -150,18 +150,32 @@ export function useNativeCodexHistory(conversation: Conversation | undefined, pa
   };
 }
 
-function mergePage(previous: HistoryState | undefined, key: string, page: CodexHistoryPage, older: boolean): HistoryState {
+export function mergePage(previous: HistoryState | undefined, key: string, page: CodexHistoryPage, older: boolean): HistoryState {
   if (previous?.key !== key) return { key, ...page };
+  const previousTurns = new Map(previous.turns.map(turn => [turn.id, turn]));
   const turns = new Map<string, CodexHistoryTurn>();
   const ordered = older ? [...previous.turns, ...page.turns] : [...page.turns, ...previous.turns];
-  for (const turn of ordered) if (!turns.has(turn.id)) turns.set(turn.id, turn);
-  const previousIds = new Set(previous.turns.map(turn => turn.id));
-  const overlaps = page.turns.some(turn => previousIds.has(turn.id));
-  return {
-    key,
-    turns: [...turns.values()],
-    nextCursor: older ? page.nextCursor : overlaps ? previous.nextCursor : page.nextCursor,
-  };
+  for (const turn of ordered) {
+    if (turns.has(turn.id)) continue;
+    const prior = previousTurns.get(turn.id);
+    turns.set(turn.id, prior && sameNativeTurn(prior, turn) ? prior : turn);
+  }
+  const overlaps = page.turns.some(turn => previousTurns.has(turn.id));
+  const nextCursor = older ? page.nextCursor : overlaps ? previous.nextCursor : page.nextCursor;
+  const merged = [...turns.values()];
+  if (nextCursor === previous.nextCursor && merged.length === previous.turns.length
+    && merged.every((turn, index) => turn === previous.turns[index])) return previous;
+  return { key, turns: merged, nextCursor };
+}
+
+function sameNativeTurn(before: CodexHistoryTurn, after: CodexHistoryTurn) {
+  return before === after || (before.state === after.state && before.startedAt === after.startedAt
+    && before.items.length === after.items.length && before.items.every((item, index) => {
+      const other = after.items[index];
+      if (item.id !== other.id || item.kind !== other.kind) return false;
+      return item.kind === 'tool' && other.kind === 'tool' ? item.label === other.label && item.state === other.state
+        : item.kind !== 'tool' && other.kind !== 'tool' && item.text === other.text;
+    }));
 }
 
 export function mergeNativeCodexMessages(conversation: Conversation, newestFirst: CodexHistoryTurn[]): Message[] {
