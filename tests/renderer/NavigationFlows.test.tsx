@@ -372,20 +372,28 @@ describe('navigation shell interactions', () => {
     expect(screen.getByRole('button', { name: '收起 测试伙伴 B 的对话' })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('opens a reply context menu and quotes the complete reply into the composer', async () => {
+  it('keeps selected-text quoting without adding a whole-reply context menu', async () => {
     const content = createTestState().conversations[0].messages[0].content;
+    const nativeSelection = window.getSelection()!;
     const selection = vi.spyOn(window, 'getSelection').mockReturnValue(null);
     try {
       withProvider(<ChatPage />, '/chat');
       fireEvent.contextMenu(screen.getByText(content));
-      expect(screen.getByRole('menu', { name: '回复内容操作' })).toBeVisible();
-      fireEvent.click(screen.getByRole('menuitem', { name: '引用回复' }));
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      const range = document.createRange();
+      range.selectNodeContents(screen.getByText(content, { selector: '.markdown-content p' }));
+      nativeSelection.removeAllRanges();
+      nativeSelection.addRange(range);
+      selection.mockReturnValue(nativeSelection);
+      fireEvent.contextMenu(screen.getByText(content, { selector: '.markdown-content p' }));
+      expect(screen.getByRole('menu', { name: '引用选中内容' })).toBeVisible();
+      fireEvent.click(screen.getByRole('menuitem', { name: '引用选中内容' }));
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: '移除引用' })).toBeInTheDocument();
       fireEvent.contextMenu(screen.getByText(content, { selector: '.markdown-content p' }));
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-    } finally { selection.mockRestore(); }
+    } finally { nativeSelection.removeAllRanges(); selection.mockRestore(); }
   });
 
   it('keeps a partner collapsed when its profile refreshes and expands it when selected again', async () => {

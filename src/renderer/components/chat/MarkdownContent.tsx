@@ -1,5 +1,5 @@
 import { Check, Copy } from 'lucide-react';
-import { isValidElement, memo, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { isValidElement, memo, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { isLocalArtifactLink } from '../../../shared/artifactLinks';
@@ -138,6 +138,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   studioMentions = [],
   onStudioReference,
   onLocalArtifactLink,
+  onLocalArtifactContextMenu,
 }: {
   children: string;
   className?: string;
@@ -146,6 +147,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   studioMentions?: StudioRenderedMention[];
   onStudioReference?: (messageId: string) => void;
   onLocalArtifactLink?: (href: string) => void;
+  onLocalArtifactContextMenu?: (href: string, event: ReactMouseEvent<HTMLElement>) => void;
 }) {
   const annotations = useMemo(() => createStudioAnnotationPlugin(studioReferences, studioReferenceAuthors, studioMentions), [studioMentions, studioReferenceAuthors, studioReferences]);
   const components = useMemo<Components>(() => ({
@@ -165,10 +167,14 @@ export const MarkdownContent = memo(function MarkdownContent({
         return <span className="studio-message-reference is-unavailable" title="原消息不可用">{label}</span>;
       }
       if (href && onLocalArtifactLink && isLocalArtifactLink(href)) {
-        return <a href="#" data-artifact-href={href} className={linkClassName} title="查看此对话交付的文件" onClick={(event) => {
+        return <a href="#" className={linkClassName} title="查看此对话交付的文件" onClick={(event) => {
           event.preventDefault();
           onLocalArtifactLink(href);
-        }}>{label}</a>;
+        }} onContextMenu={onLocalArtifactContextMenu ? (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onLocalArtifactContextMenu(href, event);
+        } : undefined}>{label}</a>;
       }
       return <a
         href={href}
@@ -182,7 +188,7 @@ export const MarkdownContent = memo(function MarkdownContent({
         }}
       >{label}</a>;
     },
-  }), [onLocalArtifactLink, onStudioReference]);
+  }), [onLocalArtifactContextMenu, onLocalArtifactLink, onStudioReference]);
   return (
     <div className={`markdown-content ${className}`.trim()}>
       <ReactMarkdown

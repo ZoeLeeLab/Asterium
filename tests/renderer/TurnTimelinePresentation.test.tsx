@@ -15,14 +15,17 @@ const baseMessage: Message = {
 };
 
 describe('user-facing runtime presentation', () => {
-  it('opens a reply menu without a selection and retains the real local link address', () => {
+  it.each([false, true])('routes a local file link to its own context menu (timeline: %s)', (timeline) => {
     const context = vi.fn();
+    const quote = vi.fn();
     const selection = vi.spyOn(window, 'getSelection').mockReturnValue(null);
-    render(<TurnTimeline message={{ ...baseMessage, content: '交付了 [合成文档](C:/fixture/report.md)。' }}
+    const text = '交付了 [合成文档](C:/fixture/report.md)。';
+    render(<TurnTimeline message={{ ...baseMessage, content: text, ...(timeline ? { timeline: [{ id: 'text', kind: 'text', sequence: 1, text }] } : {}) }}
       partnerName="测试伙伴" onResolveAuthorization={vi.fn()} onResolveUserInput={vi.fn()} onOpenArtifact={vi.fn()}
-      onLocalArtifactLink={vi.fn()} onTextContextMenu={context} />);
+      onLocalArtifactLink={vi.fn()} onLocalArtifactContextMenu={context} onQuoteSelection={quote} />);
     fireEvent.contextMenu(screen.getByRole('link', { name: '合成文档' }), { clientX: 25, clientY: 40 });
-    expect(context).toHaveBeenCalledWith(expect.objectContaining({ selection: false, href: 'C:/fixture/report.md', x: 25, y: 40 }));
+    expect(context).toHaveBeenCalledWith('C:/fixture/report.md', expect.objectContaining({ clientX: 25, clientY: 40, defaultPrevented: true }));
+    expect(quote).not.toHaveBeenCalled();
     selection.mockRestore();
   });
 

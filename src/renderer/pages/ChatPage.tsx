@@ -62,7 +62,6 @@ import { PartnerQuickCard } from '../components/ui/PartnerQuickCard';
 import { MarkdownContent } from '../components/chat/MarkdownContent';
 import { MessageQuoteCard } from '../components/chat/MessageQuoteCard';
 import { TurnTimeline } from '../components/chat/TurnTimeline';
-import { AssistantMessageMenu, type AssistantTextContext } from '../components/chat/AssistantMessageMenu';
 import { FilePreviewPane, type PreviewTab } from '../components/chat/FilePreviewPane';
 import type { Conversation, ConversationArtifact, Message, MessageQuote } from '../types/domain';
 import type { DelegationBatchView } from '../../main/runtime/PartnerDelegation';
@@ -280,7 +279,7 @@ export function ChatPage() {
   const [lifecycleError, setLifecycleError] = useState('');
   const [pendingGuidanceByConversation, setPendingGuidanceByConversation] = useState<Record<string, { content: string; quote?: MessageQuote; targetRunId: string; clientMessageId: string; state: 'staged' | 'deferred' | 'sending'; error?: string }>>({});
   const [pendingQuote, setPendingQuote] = useState<MessageQuote>();
-  const [quoteMenu, setQuoteMenu] = useState<{ quote?: MessageQuote; context: AssistantTextContext } | null>(null);
+  const [quoteMenu, setQuoteMenu] = useState<{ quote: MessageQuote; x: number; y: number } | null>(null);
   const [workspaceSendRequest, setWorkspaceSendRequest] = useState<{
     conversationId: string;
     content: string;
@@ -297,7 +296,7 @@ export function ChatPage() {
   useLayoutEffect(() => { deliveryRecordsRef.current = deliveryRecords; }, [deliveryRecords]);
   const visibleDeliveries = useMemo(() => latestDeliveriesBySource(deliveryRecords ?? []), [deliveryRecords]);
   const artifactMenuFile = artifactMenu?.conversationId === activeConversationId
-    ? deliveryRecords?.find((item) => item.id === artifactMenu?.id) ?? artifactMenu?.historicalFile
+    ? artifactMenu?.historicalFile ?? deliveryRecords?.find((item) => item.id === artifactMenu?.id)
     : undefined;
   useLayoutEffect(() => {
     if (!artifactLocation || artifactLocation.conversationId !== activeConversationId || rails.right || collapsedResourceSections.artifacts) return;
@@ -749,8 +748,7 @@ export function ChatPage() {
   }, [activeConversationId, refreshConversationArtifacts, replaceConversationArtifacts]);
 
   useEffect(() => {
-    if (!artifactMenu && !attachmentMenu && !quoteMenu) return;
-    const close = () => { setArtifactMenu(null); setAttachmentMenu(null); setQuoteMenu(null); };
+    const close = () => { artifactMenuRequest.current += 1; setArtifactMenu(null); setAttachmentMenu(null); setQuoteMenu(null); };
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
     window.addEventListener('pointerdown', close);
     window.addEventListener('keydown', onKeyDown);
@@ -758,7 +756,7 @@ export function ChatPage() {
       window.removeEventListener('pointerdown', close);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [artifactMenu, attachmentMenu, quoteMenu]);
+  }, []);
 
   const openNewChat = (partnerId?: string) => {
     const requested = newChatPartners.find((partner) => partner.id === partnerId)?.id;
@@ -915,6 +913,30 @@ export function ChatPage() {
       if (request === localFileLinkRequest.current) setArtifactActionError({ conversationId: activeConversationId, message: '无法打开此文件链接，请确认交付文件仍可用。' });
     }
   }, [activeConversationId, deliveryRecords, previewArtifact]);
+
+  const openLocalArtifactMenu = useCallback(async (href: string, event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    if (!activeConversationId || !window.asteriumArtifacts?.resolveConversationLink) return;
+    const request = ++artifactMenuRequest.current;
+    const position = { conversationId: activeConversationId, x: event.clientX, y: event.clientY, fromList: false };
+    setArtifactMenu(null);
+    setAttachmentMenu(null);
+    setQuoteMenu(null);
+    setArtifactActionError(undefined);
+    try {
+      const resolved = await window.asteriumArtifacts.resolveConversationLink(activeConversationId, href);
+      if (request !== artifactMenuRequest.current) return;
+      if (!resolved) {
+        setArtifactActionError({ conversationId: activeConversationId, message: '这个文件没有在当前对话中交付。' });
+        return;
+      }
+      const delivery = deliveryRecordsRef.current?.find(item => item.id === resolved.artifact.id || item.artifactRef === resolved.artifact.id);
+      const file = updateDeliveryInfo(delivery, resolved.artifact);
+      setArtifactMenu({ ...position, id: file.id, historicalFile: file });
+    } catch {
+      if (request === artifactMenuRequest.current) setArtifactActionError({ conversationId: activeConversationId, message: '无法打开此文件链接，请确认交付文件仍可用。' });
+    }
+  }, [activeConversationId]);
 
   const openArtifactMenu = (id: string, event: ReactMouseEvent<HTMLElement>, fromList = false) => {
     if (!activeConversationId) return;
@@ -1087,12 +1109,13 @@ export function ChatPage() {
     setComposerFocusKey((value) => value + 1);
   };
 
-  const openMessageContextMenu = (message: Message, context: AssistantTextContext, canQuote: boolean) => {
-    const text = context.selection ? context.text : assistantMessageText(message);
-    const quote = canQuote ? makeQuote(message, context.selection ? 'selection' : 'full', text) : undefined;
+  const openQuoteSelectionMenu = (message: Message, text: string, x: number, y: number) => {
+    const quote = makeQuote(message, 'selection', text);
+    if (!quote) return;
+    artifactMenuRequest.current += 1;
     setArtifactMenu(null);
     setAttachmentMenu(null);
-    setQuoteMenu({ quote: quote ?? undefined, context: { ...context, text } });
+    setQuoteMenu({ quote, x, y });
   };
 
   const copyMessage = async (message: Message) => {
@@ -1283,7 +1306,7 @@ export function ChatPage() {
                             {message.quote && <MessageQuoteCard quote={message.quote} className="message-quote-card--sent" />}
                             {message.content && <MarkdownContent className="message-content--user" onLocalArtifactLink={openLocalArtifactLink}>{message.content}</MarkdownContent>}
                             <MessageAttachmentCards attachments={message.attachments} conversationId={activeConversation.id} onPreview={(attachment) => void openUserAttachment(attachment.id)} onContextMenu={(attachment, x, y) => { setArtifactMenu(null); setQuoteMenu(null); setAttachmentMenu({ id: attachment.id, x, y }); }} />
-                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onLocalArtifactLink={openLocalArtifactLink} onArtifactContextMenu={openArtifactMenu} onTextContextMenu={context => openMessageContextMenu(message, context, canQuote)} />}
+                          </> : <TurnTimeline message={message} delegationReceipts={delegationReceipts} partnerName={author?.publicIdentity.displayName ?? '伙伴'} pendingAuthorization={activeConversation.pendingAuthorization} pendingUserInput={activeConversation.pendingUserInput} onResolveAuthorization={(decision, persist) => resolveChatAuthorization(activeConversation.id, decision, persist)} onResolveUserInput={(answers, custom, requestId) => resolveChatUserInput(activeConversation.id, answers, custom, requestId)} onOpenArtifact={openArtifact} onLocalArtifactLink={openLocalArtifactLink} onArtifactContextMenu={openArtifactMenu} onLocalArtifactContextMenu={openLocalArtifactMenu} onQuoteSelection={canQuote ? (text, x, y) => openQuoteSelectionMenu(message, text, x, y) : undefined} />}
                         </div>
                       </div>
                       {retryableCodexMessage?.id === message.id && <div className="run-notice message-retry">
@@ -1510,8 +1533,7 @@ export function ChatPage() {
           </>}
         </div>;
       })()}
-      {quoteMenu && <AssistantMessageMenu context={quoteMenu.context} onOpenLocalLink={openLocalArtifactLink} onClose={() => setQuoteMenu(null)}
-        onQuote={quoteMenu.quote ? () => { setPendingQuote(quoteMenu.quote); setQuoteMenu(null); setComposerFocusKey(value => value + 1); } : undefined} />}
+      {quoteMenu && <div className="artifact-context-menu quote-context-menu" role="menu" aria-label="引用选中内容" style={contextMenuPosition(quoteMenu.x, quoteMenu.y)} onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setPendingQuote(quoteMenu.quote); setQuoteMenu(null); setComposerFocusKey((value) => value + 1); }}><Quote size={14} />引用选中内容</button></div>}
 
       {fileDeletionInspection && <FileDeletionModal inspection={fileDeletionInspection} busy={fileDeletionBusy} error={fileDeletionError} onClose={() => { if (!fileDeletionBusy) { setArtifactDeletionTarget(undefined); setFileDeletionInspection(undefined); setFileDeletionError(''); } }} onConfirm={() => void confirmArtifactDeletion()} />}
 
