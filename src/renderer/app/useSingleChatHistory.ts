@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import type { AsteriumConversationsApi } from '../../shared/desktopBridge';
 import type { SingleChatHistoryChange, SingleChatHistoryPage, SingleChatPageBounds, SingleChatProfile } from '../../shared/singleChatHistory';
 import { withoutDeliveryState } from '../../shared/singleChatHistory';
 import type { Conversation, Message, PrototypeAction, PrototypeState } from '../types/domain';
 import { createInitialState } from '../data/initialState';
+import { isCurrentNativeLifecycleUpdate, reduceNativeLifecycleUpdates, type NativeLifecycleChecks, type NativeLifecycleUpdate } from './nativeThreadLifecycleSync';
 import {
   loadPrototypeState, prepareSingleChatMessage, prepareSingleChatMetadata, readLegacySingleChatHistory, restoreSingleChatHistory, restoreSingleChatPageMessages,
 } from './persistence';
@@ -11,7 +12,7 @@ import {
 type DesktopHistory = Required<Pick<AsteriumConversationsApi, 'openHistory' | 'migrateHistory' | 'writeHistory'>>;
 type PendingWrite = { id: number; changes: SingleChatHistoryChange[]; profile?: SingleChatProfile };
 type RecentPages = Record<string, SingleChatPageBounds>;
-type Frame = { state: PrototypeState; generation?: string; nextId: number; pending: PendingWrite[]; recentPages?: RecentPages };
+type Frame = { state: PrototypeState; lifecycleChecks: NativeLifecycleChecks; generation?: string; nextId: number; pending: PendingWrite[]; recentPages?: RecentPages };
 type HistoryAction = PrototypeAction
   | { type: 'historyHydrated'; state: PrototypeState; generation: string; recentPages?: RecentPages }
   | { type: 'historyRecentLoaded'; conversationId: string; page: SingleChatHistoryPage }
@@ -27,7 +28,7 @@ function desktopHistory(): DesktopHistory | undefined {
 export function useSingleChatHistory(reducer: (state: PrototypeState, action: PrototypeAction) => PrototypeState) {
   const bridge = desktopHistory();
   const [frame, dispatch] = useReducer((current: Frame, action: HistoryAction): Frame => {
-    if (action.type === 'historyHydrated') return { ...current, state: action.state, generation: action.generation, recentPages: action.recentPages };
+    if (action.type === 'historyHydrated') return { ...current, state: action.state, lifecycleChecks: new Map(), generation: action.generation, recentPages: action.recentPages };
     if (action.type === 'historyRecentLoaded') {
       const { conversationId, page } = action;
       return {
@@ -44,12 +45,23 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
     }
     if (action.type === 'historySaved') return { ...current, pending: current.pending.filter(item => item.id > action.id) };
     if (action.type === 'historySaveProfile') return queue(current, { changes: [], profile: action.profile });
-    const state = reducer(current.state, action);
-    if (state === current.state) return current;
-    if (!current.generation || current.state.conversations === state.conversations) return { ...current, state };
+    const lifecycle = action.type === 'syncNativeThreadLifecycle' || action.type === 'syncNativeThreadLifecycles'
+      ? reduceNativeLifecycleUpdates(current.state, current.lifecycleChecks, action.type === 'syncNativeThreadLifecycle' ? [action] : action.updates, reducer)
+      : undefined;
+    const state = lifecycle?.state ?? reducer(current.state, action);
+    const updated = lifecycle && lifecycle.checks !== current.lifecycleChecks ? { ...current, lifecycleChecks: lifecycle.checks } : current;
+    if (state === current.state) return updated;
+    if (!current.generation || current.state.conversations === state.conversations) return { ...updated, state };
     const changes = collectHistoryChanges(current.state, state, action);
-    return queue({ ...current, state }, { changes });
-  }, undefined, (): Frame => ({ state: bridge ? createInitialState() : loadPrototypeState(), pending: [], nextId: 1 }));
+    return queue({ ...updated, state }, { changes });
+  }, undefined, (): Frame => ({ state: bridge ? createInitialState() : loadPrototypeState(), lifecycleChecks: new Map(), pending: [], nextId: 1 }));
+
+  const lifecycleFrame = useRef(frame);
+  useLayoutEffect(() => { lifecycleFrame.current = frame; }, [frame]);
+  const isCurrentLifecycleUpdate = useCallback((update: NativeLifecycleUpdate) => {
+    const current = lifecycleFrame.current;
+    return isCurrentNativeLifecycleUpdate(current.state, current.lifecycleChecks, update);
+  }, []);
 
   const [startupFailed, setStartupFailed] = useState(false);
   const [startupAttempt, setStartupAttempt] = useState(0);
@@ -152,7 +164,7 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
   return {
     state: frame.state, dispatch, managed: Boolean(bridge), ready: !bridge || Boolean(generation), pending: pending.length > 0,
     startupFailed, writeFailed, sendSaveFailed, saveProfile, saveBeforeSend,
-    selectedPage, needsRecent,
+    selectedPage, needsRecent, isCurrentLifecycleUpdate,
   };
 }
 
