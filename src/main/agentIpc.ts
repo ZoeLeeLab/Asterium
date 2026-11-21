@@ -1,3 +1,5 @@
+import { registerStudioRoundCancellationIpc, registerStudioRoundIpc } from './ipc/studioRoundIpc';
+import { registerProjectTaskExecutionIpc } from './ipc/projectTaskExecutionIpc';
 import { registerNativeSingleBindingIpc, registerNativeSessionImportIpc, registerNativeSessionHistoryIpc, registerNativeSessionLifecycleIpc } from './ipc/nativeSessionIpc';
 import type { DesktopNotifications } from './settings/DesktopNotifications';
 import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
@@ -135,14 +137,11 @@ import {
   AGENT_PROTOCOL_VERSION,
   type ApiPartnerConnection,
   type PartnerProfileSeed,
-  type CancelRunCommand,
   type CodexRuntimeInfo,
   type LocalThreadLifecycleRequest,
   type MessageDeliveryEvent,
   type PartnerWorkspaceState,
   type PartnerEvent,
-  type ResolveAuthorizationCommand,
-  type ResumeSessionCommand,
   type SendMessageCommand,
   type SendMessageReceipt,
   type ExistingThreadConnection,
@@ -150,7 +149,7 @@ import {
   type ExistingThreadReplyEvent,
   type ExistingThreadConnectionStatus,
 } from '../shared/agentProtocol';
-import type { StudioRoomMetadata, StudioStartRoundRequest, StudioPrepareTurnRequest } from '../shared/studioRuntime';
+import type { StudioRoomMetadata, StudioPrepareTurnRequest } from '../shared/studioRuntime';
 import { registerApiConnectionsIpc, registerApiCredentialIpc, registerApiModelListIpc } from './ipc/apiConnectionsIpc';
 import { registerApiConnectionProbeIpc } from './ipc/apiConnectionProbeIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
@@ -181,7 +180,7 @@ import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
 import { registerPartnerProfileRefreshIpc, registerPartnerProfileIpc, registerUserProfileIpc, registerProfileDirectoryIpc } from './ipc/profileIpc';
 import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
 import { registerApiSessionDeletionIpc, registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/sessionIpc';
-import { registerRunGuidanceIpc, registerRunUserInputIpc } from './ipc/runInteractionIpc';
+import { registerApiMessageIpc, registerLocalMessageIpc, registerRunControlIpc, type ApiSendRequest, type LocalCliSendRequest } from './ipc/runInteractionIpc';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerLocalRuntimeDetectionIpc, registerCodexRuntimeQueryIpc } from './ipc/localRuntimeIpc';
@@ -190,29 +189,15 @@ import type { ConversationDeleteRequest } from '../shared/conversationLifecycle'
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
-import type { TaskGateResolutionRequest } from '../shared/projectTaskExecution';
 
 export { AGENT_IPC };
 
-type LocalAdapterType = 'claude_code' | 'codex_cli';
+
 const BRAVE_SEARCH_CREDENTIAL_REF = 'asterium-web-search-brave';
 
-interface LocalCliSendRequest {
-  adapterType: LocalAdapterType;
-  codexRuntimeId?: string;
-  codexRuntimeEnvironment?: CodexRuntimeInfo['environment'];
-  partnerId: string;
-  partnerRootGrantId?: string;
-  workspaceGrantIds: string[];
-  command: SendMessageCommand;
-  projectRootOverride?: string;
-}
 
-interface ApiSendRequest {
-  connection: ApiPartnerConnection;
-  command: SendMessageCommand;
-  projectRootOverride?: string;
-}
+
+
 
 interface ExistingThreadSendRequest {
   connection: ExistingThreadConnection;
@@ -228,31 +213,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isLocalAdapterType(value: unknown): value is LocalAdapterType {
-  return value === 'claude_code' || value === 'codex_cli';
-}
 
-function assertTaskAttemptRequest(value: unknown) {
-  if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.taskId !== 'string') throw new Error('INVALID_TASK_ATTEMPT_REQUEST');
-  return { projectId: value.projectId, taskId: value.taskId };
-}
 
-function assertTaskAttemptControlRequest(value: unknown) {
-  if (!isRecord(value) || typeof value.attemptId !== 'string' || (value.reason !== undefined && typeof value.reason !== 'string')) {
-    throw new Error('INVALID_TASK_ATTEMPT_CONTROL_REQUEST');
-  }
-  return { attemptId: value.attemptId, ...(typeof value.reason === 'string' ? { reason: value.reason } : {}) };
-}
 
-function assertTaskGateResolutionRequest(value: unknown): TaskGateResolutionRequest {
-  if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.taskId !== 'string'
-    || (value.action !== 'accept' && value.action !== 'request_changes')
-    || (value.feedback !== undefined && typeof value.feedback !== 'string')
-    || (value.affectedCriteria !== undefined && (!Array.isArray(value.affectedCriteria) || value.affectedCriteria.some((item) => typeof item !== 'string')))) {
-    throw new Error('INVALID_TASK_GATE_RESOLUTION_REQUEST');
-  }
-  return value as unknown as TaskGateResolutionRequest;
-}
+
+
+
+
 
 export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindow | null, options: { generalSettings?: GeneralSettingsStore; notifications?: DesktopNotifications; updates?: AppUpdateService; environment?: import('../shared/runtimeEnvironment').RuntimeEnvironment } = {}) {
   const restoreBackgroundServices = options.environment?.restoreBackgroundServices ?? true;
@@ -982,41 +949,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerProjectWorkflowMutationIpc(ipcMain, { projectService, projectTaskOrchestrator, getPartnerRuntimePort: () => partnerRuntimePort }, requireSender);
   registerProjectWorkflowTemplateIpc(ipcMain, projectService, requireSender);
   registerProjectWorkflowGenerationIpc(ipcMain, { projectWorkflowGenerations, workflowGenerationRuntimeRef }, requireSender);
-  ipcMain.handle(AGENT_IPC.projectTaskExecutionGet, async (event, value: unknown) => {
-    requireSender(event);
-    if (value !== undefined && typeof value !== 'string') throw new Error('INVALID_PROJECT_TASK_EXECUTION_QUERY');
-    return projectTaskOrchestrator.snapshot(value);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskExecutionEnqueue, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertTaskAttemptRequest(value);
-    await projectTaskOrchestrator.activate(partnerRuntimePort);
-    return projectTaskOrchestrator.enqueue(request.projectId, request.taskId);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskExecutionPause, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertTaskAttemptControlRequest(value);
-    return projectTaskOrchestrator.pause(request.attemptId, request.reason);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskExecutionResume, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertTaskAttemptControlRequest(value);
-    return projectTaskOrchestrator.resume(request.attemptId, request.reason);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskExecutionCancel, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertTaskAttemptControlRequest(value);
-    return projectTaskOrchestrator.cancel(request.attemptId, request.reason);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskExecutionRetry, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertTaskAttemptControlRequest(value);
-    return projectTaskOrchestrator.retry(request.attemptId);
-  });
-  ipcMain.handle(AGENT_IPC.projectTaskExecutionResolve, async (event, value: unknown) => {
-    requireSender(event);
-    return projectTaskOrchestrator.resolveGate(assertTaskGateResolutionRequest(value));
-  });
+  registerProjectTaskExecutionIpc(ipcMain, { projectTaskOrchestrator, getPartnerRuntimePort: () => partnerRuntimePort }, requireSender);
   registerProjectWorkspaceCreationIpc(ipcMain, projectLifecycle, requireSender);
   registerProjectWorkspaceIpc(ipcMain, projectService, projectWorkspaces, requireSender);
   registerProjectFileOpenIpc(ipcMain, projectFiles, requireSender);
@@ -1064,11 +997,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await memoryFallbackInventory.refresh();
   });
 
-  ipcMain.handle(AGENT_IPC.studioCancelRound, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roomId !== 'string' || !value.roomId) throw new Error('INVALID_STUDIO_CANCEL_REQUEST');
-    return studioOrchestration.orchestrator ? studioOrchestration.orchestrator.cancelRound(value.roomId) : studioRooms.cancelRound(value.roomId);
-  });
+  registerStudioRoundCancellationIpc(ipcMain, { studioOrchestration, studioRooms }, requireSender);
 
   ipcMain.handle(AGENT_IPC.studioWakeStatus, async (event) => {
     requireSender(event); return studioWakeControl.status();
@@ -1086,26 +1015,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerStudioMcpHostIpc(ipcMain, { studioMcpHost, studioMcpStartup, wakeReadinessChanged }, requireSender);
   registerStudioMcpCredentialIpc(ipcMain, { projectCoordinator, studioRuntimeCatalog, studioMcpAccess, studioMcpHost, wakeReadinessChanged }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.studioStartRound, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isStudioStartRoundRequest(value)) throw new Error('INVALID_STUDIO_ROUND_REQUEST');
-    if (!studioOrchestration.orchestrator) throw new Error('STUDIO_ORCHESTRATOR_NOT_READY');
-    const draft = value.contextHandoff === undefined ? undefined
-      : await contextHandoff.validate(value.contextHandoff, { kind: 'group', id: value.room.roomId });
-    return studioOrchestration.orchestrator.startRound(value, draft);
-  });
-
-  ipcMain.handle(AGENT_IPC.studioPrepareTurn, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isStudioPrepareTurnRequest(value)) throw new Error('INVALID_STUDIO_TURN_REQUEST');
-    return prepareStudioTurn(value);
-  });
-
-  ipcMain.handle(AGENT_IPC.studioFailTurn, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.roomId !== 'string' || typeof value.roundId !== 'string' || typeof value.partnerId !== 'string') throw new Error('INVALID_STUDIO_FAIL_REQUEST');
-    return studioRooms.failPreparedTurn(value.roomId, value.roundId, value.partnerId);
-  });
+  registerStudioRoundIpc(ipcMain, { studioOrchestration, contextHandoff, prepareStudioTurn, studioRooms, isStudioRoomMetadata }, requireSender);
 
   registerNativeSingleBindingIpc(ipcMain, { conversationDeletions, singleChatHistory, nativeBindings }, requireSender);
 
@@ -1901,18 +1811,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerSessionStatusIpc(ipcMain, sessionCommands, requireSender);
   registerSessionMaintenanceIpc(ipcMain, { sessionCommands, sessionCompactions }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.sendApiMessage, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isApiSendRequest(value)) throw new Error('INVALID_API_SEND_REQUEST');
-    assertAgentCommand(value.command);
-    const request = value as ApiSendRequest;
-    if (request.command.type !== 'message.send' || request.command.connectionSource !== 'api_partner') throw new Error('INVALID_API_SEND_COMMAND');
-    if (request.command.contextHandoff !== undefined) {
-      if (request.command.route) throw new Error('HANDOFF_SCOPE_UNAVAILABLE');
-      request.command.contextHandoff = await contextHandoff.validate(request.command.contextHandoff, { kind: 'single', id: request.command.conversationId }, request.command.partnerId);
-    }
-    return withDelegationChatPriority(request.command.conversationId, () => startApiRuntime(request));
-  });
+  registerApiMessageIpc(ipcMain, { contextHandoff, withDelegationChatPriority, startApiRuntime, isAttachmentCapabilities }, requireSender);
 
   registerApiModelListIpc(ipcMain, { apiProviders, apiConnections, credentials, configuredApiOptions }, requireSender);
 
@@ -2048,45 +1947,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     });
   });
 
-  ipcMain.handle(AGENT_IPC.sendMessage, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isLocalSendRequest(value)) throw new Error('INVALID_LOCAL_CLI_SEND_REQUEST');
-    assertAgentCommand(value.command);
-    if (value.command.type !== 'message.send') throw new Error('INVALID_LOCAL_CLI_SEND_COMMAND');
-    const request = value as LocalCliSendRequest;
-    if (request.command.connectionSource !== 'local_cli') throw new Error('INVALID_LOCAL_CLI_CONNECTION_SOURCE');
-    if (request.command.contextHandoff !== undefined) {
-      if (request.command.route || request.partnerId !== request.command.partnerId) throw new Error('HANDOFF_SCOPE_UNAVAILABLE');
-      request.command.contextHandoff = await contextHandoff.validate(request.command.contextHandoff, { kind: 'single', id: request.command.conversationId }, request.command.partnerId);
-    }
-    return withDelegationChatPriority(request.command.conversationId, () => startLocalRuntime(request));
-  });
+  registerLocalMessageIpc(ipcMain, { contextHandoff, withDelegationChatPriority, startLocalRuntime }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.cancelRun, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'run.cancel') throw new Error('INVALID_CANCEL_COMMAND');
-    automationConfirmations.cancelOwner(value.clientMessageId);
-    await runCoordinator.cancel(value as CancelRunCommand);
-  });
-
-  registerRunGuidanceIpc(ipcMain, runCoordinator, requireSender);
-
-  ipcMain.handle(AGENT_IPC.resolveAuthorization, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'authorization.resolve') throw new Error('INVALID_AUTHORIZATION_COMMAND');
-    await runCoordinator.resolveAuthorization(value as ResolveAuthorizationCommand);
-  });
-
-  registerRunUserInputIpc(ipcMain, runCoordinator, requireSender);
-
-  ipcMain.handle(AGENT_IPC.resumeSession, async (event, value: unknown) => {
-    requireSender(event);
-    assertAgentCommand(value);
-    if (value.type !== 'session.resume') throw new Error('INVALID_RESUME_COMMAND');
-    await runCoordinator.resume(value as ResumeSessionCommand);
-  });
+  registerRunControlIpc(ipcMain, { runCoordinator, automationConfirmations }, requireSender);
 
   function handoffFingerprint(command: SendMessageCommand) {
     return command.contextHandoff ? createHash('sha256').update(JSON.stringify(command.contextHandoff)).digest('hex') : undefined;
@@ -2602,20 +2465,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   };
 }
 
-function isApiSendRequest(value: unknown): value is ApiSendRequest {
-  return isRecord(value)
-    && isRecord(value.connection)
-    && ['deepseek', 'openai', 'responses', 'anthropic', 'gemini', 'custom'].includes(String(value.connection.provider))
-    && typeof value.connection.endpoint === 'string'
-    && typeof value.connection.model === 'string'
-    && typeof value.connection.credentialRef === 'string'
-    && (value.connection.thinkingMode === undefined || ['auto', 'enabled', 'disabled'].includes(String(value.connection.thinkingMode)))
-    && (value.connection.reasoningEffort === undefined || ['low', 'high', 'max'].includes(String(value.connection.reasoningEffort)))
-    && (value.connection.primaryWorkspaceGrantId === undefined || typeof value.connection.primaryWorkspaceGrantId === 'string')
-    && (value.connection.workspaceGrantIds === undefined || (Array.isArray(value.connection.workspaceGrantIds) && value.connection.workspaceGrantIds.every((item) => typeof item === 'string')))
-    && (value.connection.attachmentCapabilities === undefined || isAttachmentCapabilities(value.connection.attachmentCapabilities))
-    && isRecord(value.command);
-}
+
 function isUserProfileSeed(value: unknown): value is { displayName: string; introduction: string; updatedAt: string; revision?: string } {
   return isRecord(value)
     && typeof value.displayName === 'string' && value.displayName.length <= 80
@@ -2661,6 +2511,12 @@ function isAttachmentCapabilities(value: unknown) {
     && ['local_path', 'native_multimodal', 'metadata_only'].includes(String(value.attachmentTransport));
 }
 
+
+
+
+
+
+
 function isStudioRoomMetadata(value: unknown): value is StudioRoomMetadata {
   return isRecord(value)
     && typeof value.roomId === 'string' && Boolean(value.roomId)
@@ -2668,37 +2524,6 @@ function isStudioRoomMetadata(value: unknown): value is StudioRoomMetadata {
     && typeof value.name === 'string' && Boolean(value.name.trim())
     && (value.archived === undefined || typeof value.archived === 'boolean')
     && Array.isArray(value.memberIds) && value.memberIds.every((id) => typeof id === 'string' && Boolean(id));
-}
-
-function isStudioStartRoundRequest(value: unknown): value is StudioStartRoundRequest {
-  return isRecord(value) && isStudioRoomMetadata(value.room)
-    && typeof value.messageId === 'string' && Boolean(value.messageId)
-    && typeof value.content === 'string' && (Boolean(value.content.trim()) || (Array.isArray(value.attachmentSelectionIds) && value.attachmentSelectionIds.length > 0))
-    && value.attachments === undefined
-    && (value.attachmentSelectionIds === undefined || (Array.isArray(value.attachmentSelectionIds) && value.attachmentSelectionIds.length <= 10
-      && new Set(value.attachmentSelectionIds).size === value.attachmentSelectionIds.length
-      && value.attachmentSelectionIds.every(id => typeof id === 'string' && /^pending-attachment-[A-Za-z0-9-]+$/.test(id))))
-    && typeof value.authorId === 'string' && Boolean(value.authorId)
-    && Array.isArray(value.speakerQueue) && value.speakerQueue.length > 0
-    && value.speakerQueue.every((id) => typeof id === 'string' && Boolean(id))
-    && (value.mentions === undefined || (Array.isArray(value.mentions) && value.mentions.every((mention) => isRecord(mention)
-      && typeof mention.partnerId === 'string' && Boolean(mention.partnerId)
-      && typeof mention.label === 'string' && Boolean(mention.label.trim())
-      && mention.source === 'user'
-      && (mention.start === undefined || Number.isSafeInteger(mention.start))
-      && (mention.end === undefined || Number.isSafeInteger(mention.end)))));
-}
-
-function isStudioPrepareTurnRequest(value: unknown): value is StudioPrepareTurnRequest {
-  return isRecord(value)
-    && typeof value.roomId === 'string' && Boolean(value.roomId)
-    && typeof value.roundId === 'string' && Boolean(value.roundId)
-    && typeof value.partnerId === 'string' && Boolean(value.partnerId)
-    && ['local_cli', 'api_partner', 'existing_thread'].includes(String(value.source))
-    && (value.adapterType === undefined || ['codex_cli', 'claude_code'].includes(String(value.adapterType)))
-    && (value.partnerRootGrantId === undefined || typeof value.partnerRootGrantId === 'string')
-    && (value.codexRuntimeId === undefined || typeof value.codexRuntimeId === 'string')
-    && (value.codexRuntimeEnvironment === undefined || ['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)));
 }
 
 function resolveApiAttachmentCapabilities(connection: ApiPartnerConnection) {
@@ -2774,16 +2599,4 @@ function assertExistingThreadWatchRequest(value: unknown): ExistingThreadWatchRe
 
 function isSafeExistingThreadId(value: string) {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(value.trim());
-}
-
-function isLocalSendRequest(value: unknown): value is LocalCliSendRequest {
-  return isRecord(value)
-    && isLocalAdapterType(value.adapterType)
-    && typeof value.partnerId === 'string'
-    && (value.partnerRootGrantId === undefined || typeof value.partnerRootGrantId === 'string')
-    && Array.isArray(value.workspaceGrantIds)
-    && value.workspaceGrantIds.every((item) => typeof item === 'string')
-    && (value.codexRuntimeId === undefined || typeof value.codexRuntimeId === 'string')
-    && (value.codexRuntimeEnvironment === undefined || ['global_cli', 'desktop_app', 'vscode_extension', 'path'].includes(String(value.codexRuntimeEnvironment)))
-    && isRecord(value.command);
 }
