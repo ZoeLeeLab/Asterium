@@ -214,7 +214,9 @@ it('keeps the latest model context when the reader is viewing a search hit in an
   expect(messages.queryByText('远古索引唯一消息')).not.toBeInTheDocument();
   fireEvent.click(screen.getByLabelText('搜索当前对话'));
   fireEvent.change(screen.getByLabelText('搜索当前对话正文'), { target: { value: '远古索引' } });
-  expect(await messages.findByText('远古索引唯一消息', {}, { timeout: 5000 })).toBeInTheDocument();
+  // Wait for the indexed page without formatting the entire old page on each missing-text poll.
+  await waitFor(() => expect(container.querySelector('#chat-message-fixture-old-2')).toBeInTheDocument(), { container, timeout: 5000 });
+  expect(messages.getByText('远古索引唯一消息')).toBeInTheDocument();
   expect(messages.queryByText(latest)).not.toBeInTheDocument();
   fireEvent.click(screen.getByLabelText('关闭当前对话搜索'));
   await sendPrompt('继续最后的任务');
