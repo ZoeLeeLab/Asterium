@@ -46,6 +46,7 @@ function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
   const legacy = new SingleChatMessageStore(path.join(profile, 'single-chat-messages.v1.json'), history);
   const userSaved = deferred();
   const sent = deferred();
+  const open = vi.fn((recent?: boolean) => recent ? history.openRecent() : history.open());
   const migrate = vi.fn(async (input, recent?: boolean) => {
     await history.initialize(async () => ({
       profile: input.profile,
@@ -62,7 +63,7 @@ function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
   });
   window.asteriumConversations = {
     delete: vi.fn(), listDeleted: vi.fn(async () => []),
-    openHistory: recent => recent ? history.openRecent() : history.open(), migrateHistory: migrate, writeHistory: write,
+    openHistory: open, migrateHistory: migrate, writeHistory: write,
     readHistoryPage: request => history.readPage(request), searchHistory: request => history.search(request),
     readToolOutput: vi.fn(request => history.readToolOutput(request)),
   };
@@ -85,7 +86,7 @@ function connect(profile: string, stopNextUserWrite?: () => Promise<void>) {
       runId: 'fixture-run', sessionId: 'fixture-session', occurredAt: now, sequence, type, ...values,
     } as RendererAgentEvent));
   };
-  return { history, legacy, migrate, send, emit, userSaved: userSaved.promise, sent: sent.promise };
+  return { history, legacy, open, migrate, send, emit, userSaved: userSaved.promise, sent: sent.promise };
 }
 
 function RecentHistoryReady() {
@@ -93,8 +94,15 @@ function RecentHistoryReady() {
   return chatHistoryLoading ? null : <span hidden data-testid="recent-history-ready" />;
 }
 
-function mount() {
-  return render(<MemoryRouter initialEntries={['/chat']}><PrototypeProvider><RecentHistoryReady /><ChatPage /></PrototypeProvider></MemoryRouter>);
+async function mount(fixture: ReturnType<typeof connect>) {
+  const openIndex = fixture.open.mock.results.length, migrateIndex = fixture.migrate.mock.results.length;
+  const view = render(<MemoryRouter initialEntries={['/chat']}><PrototypeProvider><RecentHistoryReady /><ChatPage /></PrototypeProvider></MemoryRouter>);
+  // Await the real startup IO before the DOM assertions, including on a fresh mount after restart.
+  await act(async () => {
+    const existing = await fixture.open.mock.results[openIndex].value;
+    if (!existing) await fixture.migrate.mock.results[migrateIndex].value;
+  });
+  return view;
 }
 
 async function sendPrompt(text: string, label = /给 测试伙伴 C 发送消息/) {
@@ -122,7 +130,7 @@ it('cuts over once, preserves the old snapshot, and saves a plain reply at its e
     writeStarted.resolve();
     return allowWrite.promise;
   });
-  const view = mount();
+  const view = await mount(fixture);
   try {
     await sendPrompt('纯文字问题');
     await writeStarted.promise;
@@ -147,7 +155,7 @@ it('cuts over once, preserves the old snapshot, and saves a plain reply at its e
 
   localStorage.setItem(STATE_KEY, '{"stale":true}');
   const restarted = connect(profile);
-  mount();
+  await mount(restarted);
   expect(await screen.findByText('纯文字回复完成')).toBeInTheDocument();
   expect(restarted.migrate).not.toHaveBeenCalled();
   expect(restarted.send).not.toHaveBeenCalled();
@@ -157,7 +165,7 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
   seed();
   const profile = path.join(autoTestOutput(), 'tool');
   const fixture = connect(profile);
-  const view = mount();
+  const view = await mount(fixture);
   await sendPrompt('工具测试');
   await act(async () => { await fixture.sent; });
   expect(fixture.send).toHaveBeenCalledOnce();
@@ -174,7 +182,7 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
   view.unmount();
 
   const restarted = connect(profile);
-  mount();
+  await mount(restarted);
   expect(await screen.findByText('工具前已保存的文字')).toBeInTheDocument();
   expect(screen.getByText('回复中断')).toBeInTheDocument();
   expect(screen.queryByText('这一段只在内存')).not.toBeInTheDocument();
@@ -187,7 +195,7 @@ it('reopens at the last completed tool and does not replay the unsaved suffix', 
 it('leaves a draft in place if the pre-send disk write fails', async () => {
   seed();
   const fixture = connect(path.join(autoTestOutput(), 'disk-full'), async () => { throw new Error('ENOSPC'); });
-  mount();
+  await mount(fixture);
   const input = await sendPrompt('保留合成草稿');
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('消息保存失败');
@@ -207,7 +215,7 @@ it('keeps the latest model context when the reader is viewing a search hit in an
   }));
   localStorage.setItem(STATE_KEY, JSON.stringify(source));
   const fixture = connect(path.join(autoTestOutput(), 'search-context'));
-  const { container } = mount();
+  const { container } = await mount(fixture);
   await screen.findByTestId('recent-history-ready');
   const messages = within(container.querySelector<HTMLElement>('.message-list')!);
   expect(await messages.findByText(latest)).toBeInTheDocument();
@@ -239,7 +247,7 @@ it('reveals a native-only search result without replacing the latest local conve
   chat.sessionId = 'fixture-original-thread';
   chat.messages = [{ id: 'fixture-latest', authorId: partner.id, createdAt: '00:00', content: '星丛本地当前记录' }];
   localStorage.setItem(STATE_KEY, JSON.stringify(state));
-  connect(path.join(autoTestOutput(), 'native-search'));
+  const fixture = connect(path.join(autoTestOutput(), 'native-search'));
   const read = vi.fn(async (request: CodexHistoryRequest) => ({
     turns: request.aroundTurnId ? [{
       id: request.aroundTurnId, state: 'completed' as const,
@@ -253,7 +261,7 @@ it('reveals a native-only search result without replacing the latest local conve
     next: { pageCursor: 'next-fixture-cursor', index: 0 },
   });
   Object.assign(window.asteriumAgents!, { readCodexHistory: read, searchCodexHistory: search });
-  mount();
+  await mount(fixture);
   expect(await screen.findByText('星丛本地当前记录')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '搜索当前对话' }));
   const input = screen.getByRole('searchbox', { name: '搜索当前对话正文' });
@@ -289,7 +297,8 @@ it('reopens a refused Codex send and retries the same saved message on the origi
   chat.sessionId = 'fixture-original-thread';
   chat.messages = [];
   localStorage.setItem(STATE_KEY, JSON.stringify(state));
-  const { history, migrate } = connect(path.join(autoTestOutput(), 'codex-occupied'));
+  const fixture = connect(path.join(autoTestOutput(), 'codex-occupied'));
+  const { history, migrate } = fixture;
   const send = vi.fn<NonNullable<NonNullable<typeof window.asteriumAgents>['sendLocalCliMessage']>>(async (_adapter, _partner, _grant, _grants, command) => {
     const messages = (await history.readConversation(id))!.conversation.messages;
     expect(messages).toHaveLength(1);
@@ -298,7 +307,7 @@ it('reopens a refused Codex send and retries the same saved message on the origi
     return { runId: 'fixture-retry-run', sessionId: 'fixture-original-thread' };
   });
   window.asteriumAgents!.sendLocalCliMessage = send;
-  const view = mount();
+  const view = await mount(fixture);
   await sendPrompt('保留这条发送记录', /发送消息/);
   const initialRetry = await screen.findByRole('button', { name: '重试' });
   await waitFor(() => expect(initialRetry).toBeEnabled());
@@ -306,7 +315,7 @@ it('reopens a refused Codex send and retries the same saved message on the origi
     status: 'failed', error: { code: CODEX_THREAD_IN_USE },
   });
   view.unmount();
-  mount();
+  await mount(fixture);
   const restoredRetry = await screen.findByRole('button', { name: '重试' });
   await waitFor(() => {
     expect(restoredRetry).toBeEnabled();
