@@ -96,8 +96,8 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `projectTaskExecutionRetry` | `asterium:project-task-execution:retry` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
 | `projectTaskExecutionResolve` | `asterium:project-task-execution:resolve` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
 | `projectCreateWorkspace` | `asterium:project:create-workspace` | `projectWorkspaceIpc.ts` | `projectWorkspaceIpc.ts` |
-| `projectInspectFileDeletion` | `asterium:project:inspect-file-deletion` | `projectFilesIpc.ts` | `agentIpc.ts` |
-| `projectDeleteFile` | `asterium:project:delete-file` | `projectFilesIpc.ts` | `agentIpc.ts` |
+| `projectInspectFileDeletion` | `asterium:project:inspect-file-deletion` | `projectFilesIpc.ts` | `projectFilesIpc.ts` |
+| `projectDeleteFile` | `asterium:project:delete-file` | `projectFilesIpc.ts` | `projectFilesIpc.ts` |
 | `projectGetExecutionPolicy` | `asterium:project:get-execution-policy` | `projectIpc.ts` | `projectIpc.ts` |
 | `projectSetExecutionPolicy` | `asterium:project:set-execution-policy` | `projectIpc.ts` | `projectIpc.ts` |
 | `projectSyncMembers` | `asterium:project:sync-members` | `projectIpc.ts` | `projectIpc.ts` |

@@ -160,7 +160,7 @@ import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
 import { registerStorageIpc } from './ipc/storageIpc';
 import { registerMemoryImportIpc } from './ipc/memoryImportIpc';
 import { registerPartnerDiaryIpc } from './ipc/partnerDiaryIpc';
-import { registerProjectFileOpenIpc, registerProjectFileQueryIpc } from './ipc/projectFilesIpc';
+import { registerProjectFileOpenIpc, registerProjectFileQueryIpc, registerProjectFileDeletionIpc } from './ipc/projectFilesIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
@@ -953,18 +953,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerProjectRunChangesIpc(ipcMain, projectChanges, requireSender);
   registerProjectFileQueryIpc(ipcMain, projectBrowser, artifactDelivery, requireSender);
-  ipcMain.handle(AGENT_IPC.projectInspectFileDeletion, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
-    return projectFileDeletions.inspect({ kind: 'project_file', projectId: value.projectId, fileId: value.fileId });
-  });
-  ipcMain.handle(AGENT_IPC.projectDeleteFile, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
-    const result = await projectFileDeletions.delete({ kind: 'project_file', projectId: value.projectId, fileId: value.fileId });
-    for (const snapshot of result.projectSnapshots) publishProjectFiles(snapshot);
-    return result;
-  });
+  registerProjectFileDeletionIpc(ipcMain, { projectFileDeletions, publishProjectFiles }, requireSender);
 
   registerProjectManagementIpc(ipcMain, projectLifecycle, projectService, requireSender);
 
