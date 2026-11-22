@@ -164,7 +164,7 @@ import { registerProjectFileOpenIpc, registerProjectFileQueryIpc, registerProjec
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
-import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRoomIpc';
+import { registerStudioRoomIpc, registerStudioRoomSyncIpc, registerStudioRoomMaintenanceIpc } from './ipc/studioRoomIpc';
 import { registerStudioMcpHostIpc, registerStudioMcpCredentialIpc } from './ipc/studioMcpIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
@@ -965,23 +965,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerStudioRoomIpc(ipcMain, studioRooms, archivedMarkdownFileName, requireSender);
 
-  ipcMain.handle(AGENT_IPC.studioRetryProjectUploads, async (event, roomId: unknown) => {
-    requireSender(event);
-    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
-    await projectCoordinator.run(async () => {
-      const current = await studioRooms.getRoom(roomId);
-      if (!current || current.metadata.archived) return;
-      projectCoordinator.assertProjectActive(current.metadata.projectId);
-      await studioAttachments.archivePublished(current);
-    });
-  });
-
-  ipcMain.handle(AGENT_IPC.studioRemoveRoom, async (event, roomId: unknown) => {
-    requireSender(event);
-    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
-    await projectService.removeRoom(roomId);
-    await memoryFallbackInventory.refresh();
-  });
+  registerStudioRoomMaintenanceIpc(ipcMain, { projectCoordinator, studioRooms, studioAttachments, projectService, memoryFallbackInventory }, requireSender);
 
   registerStudioRoundCancellationIpc(ipcMain, { studioOrchestration, studioRooms }, requireSender);
 
