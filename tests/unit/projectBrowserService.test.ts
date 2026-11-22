@@ -39,14 +39,26 @@ describe('project browser read-only boundary', () => {
     await git(['add', '.']); await git(['commit', '-m', '第一项提交', '-m', '说明正文']);
     const history = await browser.query({ projectId: 'p', action: 'history' }); const sha = history.commits![0].sha;
     expect(history.commits![0].body).toContain('说明正文');
-    expect((await browser.query({ projectId: 'p', action: 'changes', revision: sha })).changes).toContainEqual({ path: '中文.ts', status: 'A' });
-    expect((await browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', revision: sha })).content?.diff).toContain('+const x = 1;');
+    // These queries observe the same immutable commit; avoid serial process startup in the fixture.
+    const [changes, committedDiff] = await Promise.all([
+      browser.query({ projectId: 'p', action: 'changes', revision: sha }),
+      browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', revision: sha }),
+    ]);
+    expect(changes.changes).toContainEqual({ path: '中文.ts', status: 'A' });
+    expect(committedDiff.content?.diff).toContain('+const x = 1;');
     await writeFile(path.join(root, '中文.ts'), 'const x = 2;\n'); await git(['add', '.']);
     await writeFile(path.join(root, '中文.ts'), 'const x = 3;\n');
-    expect((await browser.query({ projectId: 'p', action: 'status' })).changes).toHaveLength(2);
-    expect((await browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', group: 'staged' })).content?.text).toContain('x = 2');
-    expect((await browser.query({ projectId: 'p', action: 'file', path: '中文.ts', revision: sha })).content?.text).toContain('x = 1');
-    expect(await readFile(path.join(root, '中文.ts'), 'utf8')).toContain('x = 3');
+    // Finish every read before deleting or otherwise changing the working tree.
+    const [status, stagedDiff, committedFile, currentFile] = await Promise.all([
+      browser.query({ projectId: 'p', action: 'status' }),
+      browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', group: 'staged' }),
+      browser.query({ projectId: 'p', action: 'file', path: '中文.ts', revision: sha }),
+      readFile(path.join(root, '中文.ts'), 'utf8'),
+    ]);
+    expect(status.changes).toHaveLength(2);
+    expect(stagedDiff.content?.text).toContain('x = 2');
+    expect(committedFile.content?.text).toContain('x = 1');
+    expect(currentFile).toContain('x = 3');
     await rm(path.join(root, '中文.ts'));
     expect((await browser.query({ projectId: 'p', action: 'diff', path: '中文.ts', group: 'unstaged' })).content?.diff).toContain('-const x = 2;');
   });
