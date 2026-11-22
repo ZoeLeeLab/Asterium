@@ -1,3 +1,5 @@
+import { registerConversationHistoryIpc } from './ipc/conversationHistoryIpc';
+import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
 import { registerAttachmentSelectionIpc, registerAttachmentAccessIpc, registerAttachmentMaintenanceIpc } from './ipc/attachmentIpc';
 import { registerStudioRoundCancellationIpc, registerStudioRoundIpc } from './ipc/studioRoundIpc';
 import { registerProjectTaskExecutionIpc } from './ipc/projectTaskExecutionIpc';
@@ -80,9 +82,7 @@ import { ProjectFileDeletionService } from './project/ProjectFileDeletionService
 import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
 import { ConversationDeletionService } from './conversation/ConversationDeletionService';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { assertHistoryImport, assertHistoryPage, assertHistorySearch, assertHistoryWrite, assertToolOutputRequest, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
-import { mergeLegacySingleChats } from './conversation/singleChatHistoryProjection';
-import { assertSingleChatConversationSnapshots } from '../shared/singleChatMessages';
+import { SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
 import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
 import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallback/MemoryFallbackInputs';
@@ -183,7 +183,6 @@ import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerLocalRuntimeDetectionIpc, registerCodexRuntimeQueryIpc } from './ipc/localRuntimeIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
-import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
@@ -1023,124 +1022,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerAttachmentSelectionIpc(ipcMain, messageAttachments, requireSender);
   registerAttachmentAccessIpc(ipcMain, { messageAttachments, artifacts, saveArtifactToProject }, requireSender);
   registerAttachmentMaintenanceIpc(ipcMain, { messageAttachments, summaryRuns, delegation }, requireSender);
-  ipcMain.handle(AGENT_IPC.conversationDelete, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertConversationDeleteRequest(value);
-    const scope = { kind: 'conversation' as const, partnerId: request.partnerId, conversationId: request.conversationId };
-    const summary = summaryRuns.get(request.conversationId);
-    summary?.abort();
-    const lease = summary
-      ? await writerLeases.acquire(scope, `delete:${request.conversationId}`)
-      : writerLeases.tryAcquire(scope, `delete:${request.conversationId}`);
-    if (!lease) throw new Error('COMPACT_CONVERSATION_BUSY');
-    const result = await (async () => {
-      const result = await conversationDeletions.delete(request);
-      await delegation.remove(request.conversationId);
-      return result;
-    })().finally(() => lease.release());
-    await diarySettings.reconcileSources(); await diaryScheduler.changed();
-    await memoryFallbackInventory.refresh();
-    return result;
-  });
-  ipcMain.handle(AGENT_IPC.conversationListDeleted, async (event) => {
-    requireSender(event);
-    return conversationDeletions.listDeletedIds();
-  });
-  const openSingleChatHistory = async (recent: unknown) => {
-    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
-    const history = await (recent ? singleChatHistory.openRecent() : singleChatHistory.open());
-    if (!history) return undefined;
-    const deleted = new Set(await conversationDeletions.listDeletedIds());
-    const conversations = history.conversations.filter(conversation => !deleted.has(conversation.id));
-    const pending = await nativeBindings.pendingCodexImports();
-    if (pending.length) {
-      const committed = new Map(conversations.filter(conversation => conversation.importedCodexThread).map(conversation => [conversation.id, conversation]));
-      for (const binding of pending) {
-        const conversation = committed.get(binding.conversationId);
-        if (conversation && binding.nativeThreadId && conversation.partnerId === binding.partnerId && conversation.sessionId === binding.nativeThreadId) {
-          await nativeBindings.activate(binding.bindingId, binding.nativeThreadId);
-        }
-      }
-    }
-    return { ...history, conversations };
-  };
-  ipcMain.handle(AGENT_IPC.conversationOpenHistory, async (event, recent: unknown) => {
-    requireSender(event);
-    return openSingleChatHistory(recent);
-  });
-  ipcMain.handle(AGENT_IPC.conversationPreviewSnapshotCleanup, async (event) => {
-    requireSender(event);
-    return singleChatHistory.previewSnapshotCleanup();
-  });
-  ipcMain.handle(AGENT_IPC.conversationClearSnapshots, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string' || value.length !== 36) throw new Error('SNAPSHOT_PLAN_EXPIRED');
-    return singleChatHistory.clearSnapshots(value);
-  });
-  ipcMain.handle(AGENT_IPC.conversationMigrateHistory, async (event, value: unknown, recent: unknown) => {
-    requireSender(event);
-    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
-    await singleChatHistory.initialize(async () => {
-      assertHistoryImport(value);
-      const [projection, deletedConversationIds] = await Promise.all([singleChatMessages.listLegacy(), conversationDeletions.listDeletedIds()]);
-      return {
-        profile: value.profile,
-        conversations: mergeLegacySingleChats(value.conversations, projection),
-        deletedConversationIds,
-      };
-    });
-    const history = await openSingleChatHistory(recent);
-    if (!history) throw new Error('SINGLE_CHAT_HISTORY_ACTIVATION_MISSING');
-    return history;
-  });
-  ipcMain.handle(AGENT_IPC.conversationReadHistoryPage, async (event, value: unknown) => {
-    requireSender(event);
-    assertHistoryPage(value);
-    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
-    return singleChatHistory.readPage(value);
-  });
-  ipcMain.handle(AGENT_IPC.conversationReadToolOutput, async (event, value: unknown) => {
-    requireSender(event);
-    assertToolOutputRequest(value);
-    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
-    return singleChatHistory.readToolOutput(value);
-  });
-  ipcMain.handle(AGENT_IPC.conversationSearchHistory, async (event, value: unknown) => {
-    requireSender(event);
-    assertHistorySearch(value);
-    const result = await singleChatHistory.search(value);
-    const deleted = new Set(await conversationDeletions.listDeletedIds());
-    return {
-      ...result,
-      conversationIds: result.conversationIds.filter(id => !deleted.has(id)),
-      messageIds: value.conversationId && deleted.has(value.conversationId) ? [] : result.messageIds,
-      hasMore: result.hasMore && (!value.conversationId || !deleted.has(value.conversationId)),
-    };
-  });
-  ipcMain.handle(AGENT_IPC.conversationWriteHistory, async (event, value: unknown) => {
-    requireSender(event);
-    assertHistoryWrite(value);
-    const deleted = new Set(await conversationDeletions.listDeletedIds());
-    if (value.changes.some(change => deleted.has(change.conversationId) && change.upsert.some(message => message.status === 'sending'))) {
-      throw new Error('SINGLE_CHAT_HISTORY_CONVERSATION_DELETED');
-    }
-    const changes = value.changes.filter(change => !deleted.has(change.conversationId));
-    await singleChatHistory.write({ ...value, changes });
-    if (changes.some(change => change.busy === false && (change.upsert.length || change.remove.length))) {
-      void memoryFallbackInventory.refresh().catch(() => undefined);
-    }
-    if (changes.some(change => change.busy === false && (change.upsert.length || change.metadata?.isArchived || change.metadata?.isDisabled))) {
-      void diarySettings.reconcileSources().then(() => diaryScheduler.changed()).catch(() => undefined);
-    }
-  });
-  ipcMain.handle(AGENT_IPC.conversationSyncMessages, async (event, value: unknown) => {
-    requireSender(event);
-    if (await singleChatHistory.isActive()) return;
-    assertSingleChatConversationSnapshots(value);
-    await singleChatMessages.sync(value);
-    await diarySettings.reconcileSources(); await diaryScheduler.changed();
-    await memoryFallbackInventory.refresh();
-  });
+  const conversationLifecycle = new ConversationLifecycleService({ summaryRuns, writerLeases, conversationDeletions, delegation, diarySettings, diaryScheduler, memoryFallbackInventory });
+  registerConversationHistoryIpc(ipcMain, { conversationLifecycle, conversationDeletions, singleChatHistory, singleChatMessages, nativeBindings, diarySettings, diaryScheduler, memoryFallbackInventory }, requireSender);
   const delivery = (command: SendMessageCommand, state: MessageDeliveryEvent['state'], error?: MessageDeliveryEvent['error']) => sendEvent({
     protocolVersion: AGENT_PROTOCOL_VERSION,
     type: 'message.delivery',
@@ -2408,16 +2291,6 @@ function resolveApiAttachmentCapabilities(connection: ApiPartnerConnection) {
   if (!isAttachmentCapabilities(requested)) throw new Error('INVALID_ATTACHMENT_CAPABILITIES');
   if (requested.attachmentTransport === 'local_path' || (connection.provider === 'deepseek' && (requested.attachmentTransport !== defaults.attachmentTransport || requested.supportsImageInput))) throw new Error('API_ATTACHMENT_TRANSPORT_NOT_IMPLEMENTED');
   return { ...requested, acceptedMimeTypes: [...new Set(requested.acceptedMimeTypes)] };
-}
-
-
-
-function assertConversationDeleteRequest(value: unknown): ConversationDeleteRequest {
-  if (!isRecord(value) || typeof value.conversationId !== 'string' || typeof value.partnerId !== 'string'
-    || !['existing_thread', 'local_cli', 'api_partner'].includes(String(value.source))) {
-    throw new Error('INVALID_CONVERSATION_DELETE');
-  }
-  return value as unknown as ConversationDeleteRequest;
 }
 
 function archivedMarkdownFileName(name: string, suffix: string) {

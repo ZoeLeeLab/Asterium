@@ -27,7 +27,7 @@
 | 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 七 A | 聊天附件 | 18 | 26 | 源码迁移完成；累计 Windows 实机验收结果独立留档 |
-| 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 七 A 累计验收通过后再开始 |
+| 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 单聊历史 11 个入口迁移完成、待验收；其余 4 个尚未开始 |
 | 八 | Wake → CyberBoss | 11 | 0 | 未开始 |
 
 每组先补现状测试、原样迁移，默认全量与静态检查通过后独立本地提交。需要先整理 Service 的组，将服务协调抽取与 IPC 迁移分开提交；不改变数据格式、路径、界面、Preload、频道字符串、业务规则、调用顺序或退出清理。每阶段完成后做累计 Windows 实机冒烟并停下汇报。推送、合并与打包另行授权。
@@ -131,17 +131,17 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `attachmentDeleteConversation` | `asterium:attachment:delete-conversation` | `attachmentIpc.ts` | `attachmentIpc.ts` |
 | `attachmentPreviewSnapshotCleanup` | `asterium:attachment:preview-snapshot-cleanup` | `attachmentIpc.ts` | `attachmentIpc.ts` |
 | `attachmentClearSnapshots` | `asterium:attachment:clear-snapshots` | `attachmentIpc.ts` | `attachmentIpc.ts` |
-| `conversationDelete` | `asterium:conversation:delete` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationListDeleted` | `asterium:conversation:list-deleted` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationOpenHistory` | `asterium:conversation:open-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationPreviewSnapshotCleanup` | `asterium:conversation:preview-snapshot-cleanup` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationClearSnapshots` | `asterium:conversation:clear-snapshots` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationMigrateHistory` | `asterium:conversation:migrate-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationReadHistoryPage` | `asterium:conversation:read-history-page` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationReadToolOutput` | `asterium:conversation:read-tool-output` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationSearchHistory` | `asterium:conversation:search-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationWriteHistory` | `asterium:conversation:write-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationSyncMessages` | `asterium:conversation:sync-messages` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
+| `conversationDelete` | `asterium:conversation:delete` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationListDeleted` | `asterium:conversation:list-deleted` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationOpenHistory` | `asterium:conversation:open-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationPreviewSnapshotCleanup` | `asterium:conversation:preview-snapshot-cleanup` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationClearSnapshots` | `asterium:conversation:clear-snapshots` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationMigrateHistory` | `asterium:conversation:migrate-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationReadHistoryPage` | `asterium:conversation:read-history-page` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationReadToolOutput` | `asterium:conversation:read-tool-output` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationSearchHistory` | `asterium:conversation:search-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationWriteHistory` | `asterium:conversation:write-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationSyncMessages` | `asterium:conversation:sync-messages` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
 | `chooseCodexThreadDirectory` | `asterium:agent:choose-codex-thread-directory` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
 | `confirmCodexThreadImport` | `asterium:agent:confirm-codex-thread-import` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
 | `codexImportedWorkspaceStatus` | `asterium:agent:codex-imported-workspace-status` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
