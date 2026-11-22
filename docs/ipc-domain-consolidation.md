@@ -26,8 +26,8 @@
 | 四 | 存储位置 → 项目生命周期 → 工作区创建 | 16 | 73 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 五 | 伙伴资料 → API 会话删除 → 原生会话 | 13 | 60 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 源码三组已完成；累计 Windows 验收结果独立留档 |
-| 七 A | 聊天附件 | 18 | 26 | 未开始；完成后先做累计 Windows 实机验收 |
-| 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 七 A 累计验收通过后再开始 |
+| 七 A | 聊天附件 | 18 | 26 | 源码迁移完成；累计 Windows 实机验收结果独立留档 |
+| 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 源码三组已完成；累计全量与 Windows 验收独立留档 |
 | 八 | Wake → CyberBoss | 11 | 0 | 未开始 |
 
 每组先补现状测试、原样迁移，默认全量与静态检查通过后独立本地提交。需要先整理 Service 的组，将服务协调抽取与 IPC 迁移分开提交；不改变数据格式、路径、界面、Preload、频道字符串、业务规则、调用顺序或退出清理。每阶段完成后做累计 Windows 实机冒烟并停下汇报。推送、合并与打包另行授权。
@@ -96,15 +96,15 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `projectTaskExecutionRetry` | `asterium:project-task-execution:retry` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
 | `projectTaskExecutionResolve` | `asterium:project-task-execution:resolve` | `projectTaskExecutionIpc.ts` | `projectTaskExecutionIpc.ts` |
 | `projectCreateWorkspace` | `asterium:project:create-workspace` | `projectWorkspaceIpc.ts` | `projectWorkspaceIpc.ts` |
-| `projectInspectFileDeletion` | `asterium:project:inspect-file-deletion` | `projectFilesIpc.ts` | `agentIpc.ts` |
-| `projectDeleteFile` | `asterium:project:delete-file` | `projectFilesIpc.ts` | `agentIpc.ts` |
+| `projectInspectFileDeletion` | `asterium:project:inspect-file-deletion` | `projectFilesIpc.ts` | `projectFilesIpc.ts` |
+| `projectDeleteFile` | `asterium:project:delete-file` | `projectFilesIpc.ts` | `projectFilesIpc.ts` |
 | `projectGetExecutionPolicy` | `asterium:project:get-execution-policy` | `projectIpc.ts` | `projectIpc.ts` |
 | `projectSetExecutionPolicy` | `asterium:project:set-execution-policy` | `projectIpc.ts` | `projectIpc.ts` |
 | `projectSyncMembers` | `asterium:project:sync-members` | `projectIpc.ts` | `projectIpc.ts` |
 | `projectChangeMembers` | `asterium:project:change-members` | `projectIpc.ts` | `projectIpc.ts` |
 | `projectRemove` | `asterium:project:remove` | `projectIpc.ts` | `projectIpc.ts` |
-| `studioRetryProjectUploads` | `asterium:studio:retry-project-uploads` | `studioRoomIpc.ts` | `agentIpc.ts` |
-| `studioRemoveRoom` | `asterium:studio:remove-room` | `studioRoomIpc.ts` | `agentIpc.ts` |
+| `studioRetryProjectUploads` | `asterium:studio:retry-project-uploads` | `studioRoomIpc.ts` | `studioRoomIpc.ts` |
+| `studioRemoveRoom` | `asterium:studio:remove-room` | `studioRoomIpc.ts` | `studioRoomIpc.ts` |
 | `studioCancelRound` | `asterium:studio:cancel-round` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
 | `studioWakeStatus` | `asterium:studio-wake:status` | `studioWakeIpc.ts` | `agentIpc.ts` |
 | `studioWakeConfigure` | `asterium:studio-wake:configure` | `studioWakeIpc.ts` | `agentIpc.ts` |
@@ -113,35 +113,35 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `studioPrepareTurn` | `asterium:studio:prepare-turn` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
 | `studioFailTurn` | `asterium:studio:fail-turn` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
 | `nativeSyncSingleBindings` | `asterium:native-bindings:sync-single` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
-| `attachmentChoose` | `asterium:attachment:choose` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentStageFiles` | `asterium:attachment:stage-files` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentPasteFiles` | `asterium:attachment:paste-files` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentStageClipboardImage` | `asterium:attachment:stage-clipboard-image` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentDiscard` | `asterium:attachment:discard` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentCommit` | `asterium:attachment:commit` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentList` | `asterium:attachment:list` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentInspect` | `asterium:attachment:inspect` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentRead` | `asterium:attachment:read` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentOpen` | `asterium:attachment:open` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentReveal` | `asterium:attachment:reveal` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentCopyPath` | `asterium:attachment:copy-path` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentExportAs` | `asterium:attachment:export-as` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentSaveToProject` | `asterium:attachment:save-to-project` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentThumbnail` | `asterium:attachment:thumbnail` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentDeleteConversation` | `asterium:attachment:delete-conversation` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentPreviewSnapshotCleanup` | `asterium:attachment:preview-snapshot-cleanup` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `attachmentClearSnapshots` | `asterium:attachment:clear-snapshots` | `attachmentIpc.ts` | `agentIpc.ts` |
-| `conversationDelete` | `asterium:conversation:delete` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationListDeleted` | `asterium:conversation:list-deleted` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationOpenHistory` | `asterium:conversation:open-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationPreviewSnapshotCleanup` | `asterium:conversation:preview-snapshot-cleanup` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationClearSnapshots` | `asterium:conversation:clear-snapshots` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationMigrateHistory` | `asterium:conversation:migrate-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationReadHistoryPage` | `asterium:conversation:read-history-page` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationReadToolOutput` | `asterium:conversation:read-tool-output` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationSearchHistory` | `asterium:conversation:search-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationWriteHistory` | `asterium:conversation:write-history` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
-| `conversationSyncMessages` | `asterium:conversation:sync-messages` | `conversationHistoryIpc.ts` | `agentIpc.ts` |
+| `attachmentChoose` | `asterium:attachment:choose` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentStageFiles` | `asterium:attachment:stage-files` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentPasteFiles` | `asterium:attachment:paste-files` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentStageClipboardImage` | `asterium:attachment:stage-clipboard-image` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentDiscard` | `asterium:attachment:discard` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentCommit` | `asterium:attachment:commit` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentList` | `asterium:attachment:list` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentInspect` | `asterium:attachment:inspect` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentRead` | `asterium:attachment:read` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentOpen` | `asterium:attachment:open` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentReveal` | `asterium:attachment:reveal` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentCopyPath` | `asterium:attachment:copy-path` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentExportAs` | `asterium:attachment:export-as` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentSaveToProject` | `asterium:attachment:save-to-project` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentThumbnail` | `asterium:attachment:thumbnail` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentDeleteConversation` | `asterium:attachment:delete-conversation` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentPreviewSnapshotCleanup` | `asterium:attachment:preview-snapshot-cleanup` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `attachmentClearSnapshots` | `asterium:attachment:clear-snapshots` | `attachmentIpc.ts` | `attachmentIpc.ts` |
+| `conversationDelete` | `asterium:conversation:delete` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationListDeleted` | `asterium:conversation:list-deleted` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationOpenHistory` | `asterium:conversation:open-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationPreviewSnapshotCleanup` | `asterium:conversation:preview-snapshot-cleanup` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationClearSnapshots` | `asterium:conversation:clear-snapshots` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationMigrateHistory` | `asterium:conversation:migrate-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationReadHistoryPage` | `asterium:conversation:read-history-page` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationReadToolOutput` | `asterium:conversation:read-tool-output` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationSearchHistory` | `asterium:conversation:search-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationWriteHistory` | `asterium:conversation:write-history` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
+| `conversationSyncMessages` | `asterium:conversation:sync-messages` | `conversationHistoryIpc.ts` | `conversationHistoryIpc.ts` |
 | `chooseCodexThreadDirectory` | `asterium:agent:choose-codex-thread-directory` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
 | `confirmCodexThreadImport` | `asterium:agent:confirm-codex-thread-import` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |
 | `codexImportedWorkspaceStatus` | `asterium:agent:codex-imported-workspace-status` | `nativeSessionIpc.ts` | `nativeSessionIpc.ts` |

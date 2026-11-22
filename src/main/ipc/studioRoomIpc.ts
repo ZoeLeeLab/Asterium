@@ -1,3 +1,6 @@
+import type { ProjectMutationCoordinator } from '../project/ProjectMutationCoordinator';
+import type { StudioAttachments } from '../studio/StudioAttachments';
+import type { MemoryFallbackInventory } from '../memory/fallback/MemoryFallbackInventory';
 import { writeFile } from 'node:fs/promises';
 import { BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
@@ -84,4 +87,34 @@ export function registerStudioRoomIpc(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function registerStudioRoomMaintenanceIpc(
+  ipcMain: Pick<IpcMain, 'handle'>,
+  { projectCoordinator, studioRooms, studioAttachments, projectService, memoryFallbackInventory }: {
+    projectCoordinator: Pick<ProjectMutationCoordinator, 'run' | 'assertProjectActive'>;
+    studioRooms: Pick<StudioRoomStore, 'getRoom'>;
+    studioAttachments: Pick<StudioAttachments, 'archivePublished'>;
+    projectService: Pick<ProjectService, 'removeRoom'>;
+    memoryFallbackInventory: Pick<MemoryFallbackInventory, 'refresh'>;
+  },
+  requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
+) {
+  ipcMain.handle(AGENT_IPC.studioRetryProjectUploads, async (event, roomId: unknown) => {
+    requireSender(event);
+    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
+    await projectCoordinator.run(async () => {
+      const current = await studioRooms.getRoom(roomId);
+      if (!current || current.metadata.archived) return;
+      projectCoordinator.assertProjectActive(current.metadata.projectId);
+      await studioAttachments.archivePublished(current);
+    });
+  });
+
+  ipcMain.handle(AGENT_IPC.studioRemoveRoom, async (event, roomId: unknown) => {
+    requireSender(event);
+    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
+    await projectService.removeRoom(roomId);
+    await memoryFallbackInventory.refresh();
+  });
 }

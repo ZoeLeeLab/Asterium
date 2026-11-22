@@ -1,3 +1,6 @@
+import { registerConversationHistoryIpc } from './ipc/conversationHistoryIpc';
+import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
+import { registerAttachmentSelectionIpc, registerAttachmentAccessIpc, registerAttachmentMaintenanceIpc } from './ipc/attachmentIpc';
 import { registerStudioRoundCancellationIpc, registerStudioRoundIpc } from './ipc/studioRoundIpc';
 import { registerProjectTaskExecutionIpc } from './ipc/projectTaskExecutionIpc';
 import { registerNativeSingleBindingIpc, registerNativeSessionImportIpc, registerNativeSessionHistoryIpc, registerNativeSessionLifecycleIpc } from './ipc/nativeSessionIpc';
@@ -5,7 +8,6 @@ import type { DesktopNotifications } from './settings/DesktopNotifications';
 import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
 import { validateProjectDirectory } from './settings/projectDirectory';
 import { trimChatHistory } from '../shared/chatHistory';
-import { CYBERBOSS_CHAT_IMAGE_EXTENSIONS } from '../shared/cyberBossChatAttachments';
 import { AutomationScheduler } from './automation/AutomationScheduler';
 import { AutomationRuntime } from './automation/AutomationRuntime';
 import { automationPrompt } from './automation/automationPrompt';
@@ -27,10 +29,8 @@ import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerRev
 import { REVIEW_MARKDOWN_MAX_BYTES } from '../shared/existingPartnerReview';
 import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { access, copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
-import { app, clipboard, dialog, safeStorage, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
-import { createAttachmentThumbnail } from './security/attachmentThumbnail';
+import { access, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { app, safeStorage, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { AdapterHost } from './AdapterHost';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import { sameCodexPath } from './adapters/codexSessionFile';
@@ -42,7 +42,7 @@ import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/Cre
 import { BridgeCursorStore } from './security/BridgeCursorStore';
 import { WorkspaceGrantStore } from './security/WorkspaceGrantStore';
 import { ArtifactRegistry } from './security/ArtifactRegistry';
-import { ConversationAttachmentStore, MAX_MESSAGE_ATTACHMENTS } from './security/ConversationAttachmentStore';
+import { ConversationAttachmentStore } from './security/ConversationAttachmentStore';
 import { StudioAttachments } from './studio/StudioAttachments';
 import type { AppUpdateService } from './settings/AppUpdateService';
 import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
@@ -82,9 +82,7 @@ import { ProjectFileDeletionService } from './project/ProjectFileDeletionService
 import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
 import { ConversationDeletionService } from './conversation/ConversationDeletionService';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { assertHistoryImport, assertHistoryPage, assertHistorySearch, assertHistoryWrite, assertToolOutputRequest, SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
-import { mergeLegacySingleChats } from './conversation/singleChatHistoryProjection';
-import { assertSingleChatConversationSnapshots } from '../shared/singleChatMessages';
+import { SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
 import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
 import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallback/MemoryFallbackInputs';
@@ -162,11 +160,11 @@ import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
 import { registerStorageIpc } from './ipc/storageIpc';
 import { registerMemoryImportIpc } from './ipc/memoryImportIpc';
 import { registerPartnerDiaryIpc } from './ipc/partnerDiaryIpc';
-import { registerProjectFileOpenIpc, registerProjectFileQueryIpc } from './ipc/projectFilesIpc';
+import { registerProjectFileOpenIpc, registerProjectFileQueryIpc, registerProjectFileDeletionIpc } from './ipc/projectFilesIpc';
 import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
 import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
 import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
-import { registerStudioRoomIpc, registerStudioRoomSyncIpc } from './ipc/studioRoomIpc';
+import { registerStudioRoomIpc, registerStudioRoomSyncIpc, registerStudioRoomMaintenanceIpc } from './ipc/studioRoomIpc';
 import { registerStudioMcpHostIpc, registerStudioMcpCredentialIpc } from './ipc/studioMcpIpc';
 import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
 import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
@@ -185,7 +183,6 @@ import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerLocalRuntimeDetectionIpc, registerCodexRuntimeQueryIpc } from './ipc/localRuntimeIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
-import type { ConversationDeleteRequest } from '../shared/conversationLifecycle';
 import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
@@ -956,18 +953,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerProjectRunChangesIpc(ipcMain, projectChanges, requireSender);
   registerProjectFileQueryIpc(ipcMain, projectBrowser, artifactDelivery, requireSender);
-  ipcMain.handle(AGENT_IPC.projectInspectFileDeletion, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
-    return projectFileDeletions.inspect({ kind: 'project_file', projectId: value.projectId, fileId: value.fileId });
-  });
-  ipcMain.handle(AGENT_IPC.projectDeleteFile, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
-    const result = await projectFileDeletions.delete({ kind: 'project_file', projectId: value.projectId, fileId: value.fileId });
-    for (const snapshot of result.projectSnapshots) publishProjectFiles(snapshot);
-    return result;
-  });
+  registerProjectFileDeletionIpc(ipcMain, { projectFileDeletions, publishProjectFiles }, requireSender);
 
   registerProjectManagementIpc(ipcMain, projectLifecycle, projectService, requireSender);
 
@@ -979,23 +965,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerStudioRoomIpc(ipcMain, studioRooms, archivedMarkdownFileName, requireSender);
 
-  ipcMain.handle(AGENT_IPC.studioRetryProjectUploads, async (event, roomId: unknown) => {
-    requireSender(event);
-    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
-    await projectCoordinator.run(async () => {
-      const current = await studioRooms.getRoom(roomId);
-      if (!current || current.metadata.archived) return;
-      projectCoordinator.assertProjectActive(current.metadata.projectId);
-      await studioAttachments.archivePublished(current);
-    });
-  });
-
-  ipcMain.handle(AGENT_IPC.studioRemoveRoom, async (event, roomId: unknown) => {
-    requireSender(event);
-    if (typeof roomId !== 'string' || !roomId) throw new Error('INVALID_STUDIO_ROOM_ID');
-    await projectService.removeRoom(roomId);
-    await memoryFallbackInventory.refresh();
-  });
+  registerStudioRoomMaintenanceIpc(ipcMain, { projectCoordinator, studioRooms, studioAttachments, projectService, memoryFallbackInventory }, requireSender);
 
   registerStudioRoundCancellationIpc(ipcMain, { studioOrchestration, studioRooms }, requireSender);
 
@@ -1022,254 +992,11 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerArtifactIpc(ipcMain, {
     requireSender, artifacts, saveArtifactToProject, projectFileDeletions, publishProjectFiles,
   });
-  ipcMain.handle(AGENT_IPC.attachmentChoose, async (event, value: unknown) => {
-    const window = requireSender(event);
-    const remaining = isRecord(value) && Number.isSafeInteger(value.remaining) ? Number(value.remaining) : MAX_MESSAGE_ATTACHMENTS;
-    if (remaining < 1 || remaining > MAX_MESSAGE_ATTACHMENTS) throw new Error('ATTACHMENT_COUNT_LIMIT');
-    const imagesOnly = isRecord(value) && value.filter === 'cyberboss_images';
-    const result = await dialog.showOpenDialog(window, {
-      title: imagesOnly ? '选择图片' : '选择图片或文件',
-      buttonLabel: '添加', properties: ['openFile', 'multiSelections'],
-      ...(imagesOnly ? { filters: [{ name: '图片', extensions: CYBERBOSS_CHAT_IMAGE_EXTENSIONS }] } : {}),
-    });
-    if (result.canceled) return [];
-    if (result.filePaths.length > remaining) throw new Error('ATTACHMENT_COUNT_LIMIT');
-    return messageAttachments.stage(result.filePaths, isRecord(value) && value.allowLocalReferences === true);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentStageFiles, async (event, value: unknown) => {
-    requireSender(event);
-    const files = isRecord(value) ? value.paths : value;
-    if (!Array.isArray(files) || !files.every((file) => typeof file === 'string' && path.isAbsolute(file))) throw new Error('ATTACHMENT_NOT_FILE');
-    return messageAttachments.stage(files, isRecord(value) && value.allowLocalReferences === true);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentPasteFiles, async (event, value: unknown) => {
-    requireSender(event);
-    const remaining = isRecord(value) ? value.remaining : value;
-    if (typeof remaining !== 'number' || !Number.isSafeInteger(remaining) || remaining < 1 || remaining > MAX_MESSAGE_ATTACHMENTS) throw new Error('ATTACHMENT_COUNT_LIMIT');
-    const mimeType = 'text/uri-list';
-    const item = (await clipboard.read()).find((entry) => entry.types.includes(mimeType));
-    const payload = await item?.getType(mimeType);
-    if (!(payload instanceof Blob)) return [];
-    const urls = (await payload.text()).split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('file://'));
-    if (urls.length > remaining) throw new Error('ATTACHMENT_COUNT_LIMIT');
-    return urls.length ? messageAttachments.stage(urls.map((url) => fileURLToPath(url)), isRecord(value) && value.allowLocalReferences === true) : [];
-  });
-  ipcMain.handle(AGENT_IPC.attachmentStageClipboardImage, async (event, value: unknown) => {
-    requireSender(event);
-    if (!(value instanceof Uint8Array)) throw new Error('ATTACHMENT_CLIPBOARD_IMAGE_INVALID');
-    return messageAttachments.stageClipboardImage(value);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentDiscard, async (event, value: unknown) => {
-    requireSender(event);
-    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw new Error('INVALID_ATTACHMENT_SELECTIONS');
-    await messageAttachments.discard(value);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentCommit, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.conversationId !== 'string' || typeof value.messageId !== 'string' || !Array.isArray(value.selectionIds)
-      || value.selectionIds.some((item) => typeof item !== 'string')) throw new Error('INVALID_ATTACHMENT_COMMIT');
-    return messageAttachments.commit(value.conversationId, value.selectionIds as string[], value.messageId, true);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentList, async (event, conversationId: unknown) => {
-    requireSender(event);
-    if (typeof conversationId !== 'string') throw new Error('INVALID_CONVERSATION_ID');
-    return messageAttachments.list(conversationId);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentInspect, async (event, value: unknown) => {
-    requireSender(event);
-    const { attachmentId, conversationId } = assertAttachmentContext(value);
-    return messageAttachments.inspect(attachmentId, conversationId);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentRead, async (event, value: unknown) => {
-    requireSender(event);
-    const { attachmentId, conversationId } = assertAttachmentContext(value);
-    const info = await messageAttachments.inspect(attachmentId, conversationId);
-    const buffer = await messageAttachments.read(attachmentId, conversationId);
-    const publicInfo = { ...info, previewKind: attachmentPreviewKind(info.name, info.mediaType) };
-    if (isTextMime(info.mediaType)) return { info: publicInfo, text: buffer.toString('utf8') };
-    return { info: publicInfo, dataUrl: `data:${info.mediaType};base64,${buffer.toString('base64')}` };
-  });
-  ipcMain.handle(AGENT_IPC.attachmentOpen, async (event, value: unknown) => {
-    requireSender(event);
-    const { attachmentId, conversationId } = assertAttachmentContext(value);
-    const error = await shell.openPath(await messageAttachments.pathFor(attachmentId, conversationId));
-    if (error) throw new Error(error);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentReveal, async (event, value: unknown) => {
-    requireSender(event);
-    const { attachmentId, conversationId } = assertAttachmentContext(value);
-    shell.showItemInFolder(await messageAttachments.sourcePathFor(attachmentId, conversationId));
-  });
-  ipcMain.handle(AGENT_IPC.attachmentCopyPath, async (event, value: unknown) => {
-    requireSender(event);
-    const { attachmentId, conversationId } = assertAttachmentContext(value);
-    clipboard.writeText(await messageAttachments.sourcePathFor(attachmentId, conversationId));
-  });
-  ipcMain.handle(AGENT_IPC.attachmentExportAs, async (event, value: unknown) => {
-    const window = requireSender(event);
-    const { attachmentId, conversationId } = assertAttachmentContext(value);
-    const info = await messageAttachments.inspect(attachmentId, conversationId);
-    const result = await dialog.showSaveDialog(window, { defaultPath: info.name });
-    if (result.canceled || !result.filePath) return false;
-    await copyFile(await messageAttachments.pathFor(attachmentId, conversationId), result.filePath);
-    return true;
-  });
-  ipcMain.handle(AGENT_IPC.attachmentSaveToProject, async (event, value: unknown) => {
-    requireSender(event);
-    const { attachmentId, conversationId } = assertAttachmentContext(value);
-    if (!isRecord(value) || typeof value.projectId !== 'string' || !value.projectId.trim()) throw new Error('INVALID_PROJECT_ARTIFACT_REQUEST');
-    const projectId = value.projectId.trim();
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(projectId)) throw new Error('ARTIFACT_PROJECT_ID_REJECTED');
-    const info = await messageAttachments.inspect(attachmentId, conversationId);
-    const registered = await artifacts.register(
-      { kind: 'local_path', path: await messageAttachments.pathFor(attachmentId, conversationId) },
-      { method: 'manual', conversationId, name: info.name, mediaType: info.mediaType },
-    );
-    return saveArtifactToProject(registered.id, projectId, 'user');
-  });
-  ipcMain.handle(AGENT_IPC.attachmentThumbnail, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.id !== 'string') throw new Error('INVALID_ATTACHMENT_REFERENCE');
-    const sourcePath = value.id.startsWith('pending-attachment-')
-      ? await messageAttachments.pendingPath(value.id)
-      : typeof value.conversationId === 'string' ? await messageAttachments.pathFor(value.id, value.conversationId) : undefined;
-    if (!sourcePath) throw new Error('ATTACHMENT_CONVERSATION_REQUIRED');
-    return createAttachmentThumbnail(sourcePath);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentDeleteConversation, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string' || !value) throw new Error('INVALID_CONVERSATION_ID');
-    await messageAttachments.deleteConversation(value);
-    summaryRuns.get(value)?.abort();
-    await delegation.remove(value);
-  });
-  ipcMain.handle(AGENT_IPC.attachmentPreviewSnapshotCleanup, async (event) => {
-    requireSender(event);
-    return messageAttachments.previewSnapshotCleanup();
-  });
-  ipcMain.handle(AGENT_IPC.attachmentClearSnapshots, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string' || value.length !== 36) throw new Error('SNAPSHOT_PLAN_EXPIRED');
-    return messageAttachments.clearSnapshots(value);
-  });
-  ipcMain.handle(AGENT_IPC.conversationDelete, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertConversationDeleteRequest(value);
-    const scope = { kind: 'conversation' as const, partnerId: request.partnerId, conversationId: request.conversationId };
-    const summary = summaryRuns.get(request.conversationId);
-    summary?.abort();
-    const lease = summary
-      ? await writerLeases.acquire(scope, `delete:${request.conversationId}`)
-      : writerLeases.tryAcquire(scope, `delete:${request.conversationId}`);
-    if (!lease) throw new Error('COMPACT_CONVERSATION_BUSY');
-    const result = await (async () => {
-      const result = await conversationDeletions.delete(request);
-      await delegation.remove(request.conversationId);
-      return result;
-    })().finally(() => lease.release());
-    await diarySettings.reconcileSources(); await diaryScheduler.changed();
-    await memoryFallbackInventory.refresh();
-    return result;
-  });
-  ipcMain.handle(AGENT_IPC.conversationListDeleted, async (event) => {
-    requireSender(event);
-    return conversationDeletions.listDeletedIds();
-  });
-  const openSingleChatHistory = async (recent: unknown) => {
-    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
-    const history = await (recent ? singleChatHistory.openRecent() : singleChatHistory.open());
-    if (!history) return undefined;
-    const deleted = new Set(await conversationDeletions.listDeletedIds());
-    const conversations = history.conversations.filter(conversation => !deleted.has(conversation.id));
-    const pending = await nativeBindings.pendingCodexImports();
-    if (pending.length) {
-      const committed = new Map(conversations.filter(conversation => conversation.importedCodexThread).map(conversation => [conversation.id, conversation]));
-      for (const binding of pending) {
-        const conversation = committed.get(binding.conversationId);
-        if (conversation && binding.nativeThreadId && conversation.partnerId === binding.partnerId && conversation.sessionId === binding.nativeThreadId) {
-          await nativeBindings.activate(binding.bindingId, binding.nativeThreadId);
-        }
-      }
-    }
-    return { ...history, conversations };
-  };
-  ipcMain.handle(AGENT_IPC.conversationOpenHistory, async (event, recent: unknown) => {
-    requireSender(event);
-    return openSingleChatHistory(recent);
-  });
-  ipcMain.handle(AGENT_IPC.conversationPreviewSnapshotCleanup, async (event) => {
-    requireSender(event);
-    return singleChatHistory.previewSnapshotCleanup();
-  });
-  ipcMain.handle(AGENT_IPC.conversationClearSnapshots, async (event, value: unknown) => {
-    requireSender(event);
-    if (typeof value !== 'string' || value.length !== 36) throw new Error('SNAPSHOT_PLAN_EXPIRED');
-    return singleChatHistory.clearSnapshots(value);
-  });
-  ipcMain.handle(AGENT_IPC.conversationMigrateHistory, async (event, value: unknown, recent: unknown) => {
-    requireSender(event);
-    if (recent !== undefined && typeof recent !== 'boolean') throw new Error('SINGLE_CHAT_HISTORY_INVALID_OPEN');
-    await singleChatHistory.initialize(async () => {
-      assertHistoryImport(value);
-      const [projection, deletedConversationIds] = await Promise.all([singleChatMessages.listLegacy(), conversationDeletions.listDeletedIds()]);
-      return {
-        profile: value.profile,
-        conversations: mergeLegacySingleChats(value.conversations, projection),
-        deletedConversationIds,
-      };
-    });
-    const history = await openSingleChatHistory(recent);
-    if (!history) throw new Error('SINGLE_CHAT_HISTORY_ACTIVATION_MISSING');
-    return history;
-  });
-  ipcMain.handle(AGENT_IPC.conversationReadHistoryPage, async (event, value: unknown) => {
-    requireSender(event);
-    assertHistoryPage(value);
-    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
-    return singleChatHistory.readPage(value);
-  });
-  ipcMain.handle(AGENT_IPC.conversationReadToolOutput, async (event, value: unknown) => {
-    requireSender(event);
-    assertToolOutputRequest(value);
-    if (await conversationDeletions.isDeleted(value.conversationId)) return undefined;
-    return singleChatHistory.readToolOutput(value);
-  });
-  ipcMain.handle(AGENT_IPC.conversationSearchHistory, async (event, value: unknown) => {
-    requireSender(event);
-    assertHistorySearch(value);
-    const result = await singleChatHistory.search(value);
-    const deleted = new Set(await conversationDeletions.listDeletedIds());
-    return {
-      ...result,
-      conversationIds: result.conversationIds.filter(id => !deleted.has(id)),
-      messageIds: value.conversationId && deleted.has(value.conversationId) ? [] : result.messageIds,
-      hasMore: result.hasMore && (!value.conversationId || !deleted.has(value.conversationId)),
-    };
-  });
-  ipcMain.handle(AGENT_IPC.conversationWriteHistory, async (event, value: unknown) => {
-    requireSender(event);
-    assertHistoryWrite(value);
-    const deleted = new Set(await conversationDeletions.listDeletedIds());
-    if (value.changes.some(change => deleted.has(change.conversationId) && change.upsert.some(message => message.status === 'sending'))) {
-      throw new Error('SINGLE_CHAT_HISTORY_CONVERSATION_DELETED');
-    }
-    const changes = value.changes.filter(change => !deleted.has(change.conversationId));
-    await singleChatHistory.write({ ...value, changes });
-    if (changes.some(change => change.busy === false && (change.upsert.length || change.remove.length))) {
-      void memoryFallbackInventory.refresh().catch(() => undefined);
-    }
-    if (changes.some(change => change.busy === false && (change.upsert.length || change.metadata?.isArchived || change.metadata?.isDisabled))) {
-      void diarySettings.reconcileSources().then(() => diaryScheduler.changed()).catch(() => undefined);
-    }
-  });
-  ipcMain.handle(AGENT_IPC.conversationSyncMessages, async (event, value: unknown) => {
-    requireSender(event);
-    if (await singleChatHistory.isActive()) return;
-    assertSingleChatConversationSnapshots(value);
-    await singleChatMessages.sync(value);
-    await diarySettings.reconcileSources(); await diaryScheduler.changed();
-    await memoryFallbackInventory.refresh();
-  });
+  registerAttachmentSelectionIpc(ipcMain, messageAttachments, requireSender);
+  registerAttachmentAccessIpc(ipcMain, { messageAttachments, artifacts, saveArtifactToProject }, requireSender);
+  registerAttachmentMaintenanceIpc(ipcMain, { messageAttachments, summaryRuns, delegation }, requireSender);
+  const conversationLifecycle = new ConversationLifecycleService({ summaryRuns, writerLeases, conversationDeletions, delegation, diarySettings, diaryScheduler, memoryFallbackInventory });
+  registerConversationHistoryIpc(ipcMain, { conversationLifecycle, conversationDeletions, singleChatHistory, singleChatMessages, nativeBindings, diarySettings, diaryScheduler, memoryFallbackInventory }, requireSender);
   const delivery = (command: SendMessageCommand, state: MessageDeliveryEvent['state'], error?: MessageDeliveryEvent['error']) => sendEvent({
     protocolVersion: AGENT_PROTOCOL_VERSION,
     type: 'message.delivery',
@@ -2539,28 +2266,13 @@ function resolveApiAttachmentCapabilities(connection: ApiPartnerConnection) {
   return { ...requested, acceptedMimeTypes: [...new Set(requested.acceptedMimeTypes)] };
 }
 
-function assertAttachmentContext(value: unknown) {
-  if (!isRecord(value) || typeof value.attachmentId !== 'string' || typeof value.conversationId !== 'string') throw new Error('INVALID_ATTACHMENT_CONTEXT');
-  return { attachmentId: value.attachmentId, conversationId: value.conversationId };
-}
-
-function assertConversationDeleteRequest(value: unknown): ConversationDeleteRequest {
-  if (!isRecord(value) || typeof value.conversationId !== 'string' || typeof value.partnerId !== 'string'
-    || !['existing_thread', 'local_cli', 'api_partner'].includes(String(value.source))) {
-    throw new Error('INVALID_CONVERSATION_DELETE');
-  }
-  return value as unknown as ConversationDeleteRequest;
-}
-
 function archivedMarkdownFileName(name: string, suffix: string) {
   const withoutControlCharacters = [...name].map((character) => character.charCodeAt(0) < 32 ? '_' : character).join('');
   const safeName = withoutControlCharacters.replace(/[<>:"/\\|?*]/g, '_').trim().slice(0, 120) || '项目';
   return `${safeName}-${suffix}.md`;
 }
 
-function isTextMime(mediaType: string) {
-  return mediaType.startsWith('text/') || ['application/json', 'application/xml', 'application/javascript'].includes(mediaType);
-}
+
 
 async function resolveProjectRuntimeRoot(rootPath: string, protectedRoots: readonly string[]) {
   const resolved = path.resolve(rootPath);
@@ -2570,18 +2282,7 @@ async function resolveProjectRuntimeRoot(rootPath: string, protectedRoots: reado
   return realpath(resolved);
 }
 
-function attachmentPreviewKind(name: string, mediaType: string) {
-  const extension = path.extname(name).toLocaleLowerCase();
-  if (mediaType.startsWith('image/')) return 'image' as const;
-  if (mediaType === 'application/pdf') return 'pdf' as const;
-  if (extension === '.md' || mediaType === 'text/markdown') return 'markdown' as const;
-  if (extension === '.html' || extension === '.htm' || mediaType === 'text/html') return 'html' as const;
-  if (['.doc', '.docx'].includes(extension)) return 'word' as const;
-  if (['.xls', '.xlsx'].includes(extension)) return 'sheet' as const;
-  if (['.ppt', '.pptx'].includes(extension)) return 'slides' as const;
-  if (isTextMime(mediaType)) return 'text' as const;
-  return 'unsupported' as const;
-}
+
 
 function assertExistingThreadConnection(value: unknown, allowEmptyThreadId = false): ExistingThreadConnection {
   if (!isRecord(value) || typeof value.serviceUrl !== 'string' || typeof value.threadId !== 'string' || typeof value.credentialRef !== 'string' || !value.credentialRef) throw new Error('INVALID_EXISTING_THREAD_CONNECTION');

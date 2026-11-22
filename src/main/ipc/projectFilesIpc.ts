@@ -1,3 +1,5 @@
+import type { ProjectFileDeletionService } from '../project/ProjectFileDeletionService';
+import type { ProjectFilesSnapshot } from '../../shared/projectWorkspace';
 import { shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
 import type { ProjectFileStore } from '../project/ProjectFileStore';
@@ -35,5 +37,27 @@ export function registerProjectFileQueryIpc(
     requireSender(event);
     if (typeof projectId !== 'string') throw new Error('INVALID_PROJECT_ID');
     return artifactDelivery.listProjectFiles(projectId);
+  });
+}
+
+export function registerProjectFileDeletionIpc(
+  ipcMain: Pick<IpcMain, 'handle'>,
+  { projectFileDeletions, publishProjectFiles }: {
+    projectFileDeletions: Pick<ProjectFileDeletionService, 'inspect' | 'delete'>;
+    publishProjectFiles: (snapshot: ProjectFilesSnapshot) => void;
+  },
+  requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
+) {
+  ipcMain.handle(AGENT_IPC.projectInspectFileDeletion, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
+    return projectFileDeletions.inspect({ kind: 'project_file', projectId: value.projectId, fileId: value.fileId });
+  });
+  ipcMain.handle(AGENT_IPC.projectDeleteFile, async (event, value: unknown) => {
+    requireSender(event);
+    if (!isRecord(value) || typeof value.projectId !== 'string' || typeof value.fileId !== 'string') throw new Error('INVALID_PROJECT_FILE_REQUEST');
+    const result = await projectFileDeletions.delete({ kind: 'project_file', projectId: value.projectId, fileId: value.fileId });
+    for (const snapshot of result.projectSnapshots) publishProjectFiles(snapshot);
+    return result;
   });
 }

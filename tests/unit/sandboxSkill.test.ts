@@ -11,7 +11,12 @@ import type { SandboxProcessRequest, WindowsSandboxProcess } from '../../src/mai
 import { SkillScriptRunner } from '../../src/main/api/extensions/SkillScriptRunner';
 import type { SkillPackage } from '../../src/main/api/extensions/SkillPackageLoader';
 const folders: string[] = [];
-afterEach(async () => { for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true }); });
+let powerShellRun: { controller: AbortController; result: ReturnType<SkillScriptRunner['run']> } | undefined;
+afterEach(async () => {
+  const running = powerShellRun; powerShellRun = undefined;
+  if (running) { running.controller.abort(); await running.result.catch(() => undefined); }
+  for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true });
+});
 async function setup(launch: (request: SandboxProcessRequest) => Promise<unknown>) {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'asterium-sandbox-skill-')); folders.push(cwd); await mkdir(path.join(cwd, 'workspace'));
   const loaded = { files: new Map([['scripts/main.mjs', Buffer.from('console.log("fixture")')]]), digest: 'approved' } as SkillPackage;
@@ -85,12 +90,16 @@ it.skipIf(process.platform !== 'win32')('runs real PowerShell startup through th
     // production WindowsSandboxProcess/helper are not bypassed in the app.
     const child = spawn(request.executable, request.args, { cwd: request.cwd, windowsHide: true, signal: request.signal, stdio: ['ignore', 'pipe', 'pipe'] });
     const completed = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', exitCode => resolve({ reason: 'exited', exitCode })); });
-    return { pid: child.pid!, stdout: child.stdout, stderr: child.stderr, completed, close: async () => { if (child.exitCode === null) child.kill(); await completed; } };
+    const stopped = new Promise<void>(resolve => child.once('close', () => resolve()));
+    return { pid: child.pid!, stdout: child.stdout, stderr: child.stderr, completed, close: async () => { if (child.exitCode === null && child.signalCode === null) child.kill(); await stopped; await completed; } };
   };
   const s = await setup(launch), backend = new SandboxExtensionLaunchBackend({ launch } as unknown as WindowsSandboxProcess);
   const selected = { id: backend.id, sandboxed: backend.sandboxed, createMcpTransport: backend.createMcpTransport.bind(backend), launchSkillScript: (request: Parameters<typeof backend.launchSkillScript>[0]) => backend.launchSkillScript({ ...request, sandboxPolicy: { allowNetwork: false, policyKey: 'test' } }) };
   const runner = new SkillScriptRunner(selected), beforeStart = vi.fn(async () => undefined);
-  const result = await runner.run({ files: new Map([['scripts/probe.ps1', source]]) } as SkillPackage, 'scripts/probe.ps1', [], s.cwd, new AbortController().signal, start => start(), s.context, beforeStart);
+  const controller = new AbortController();
+  const running = runner.run({ files: new Map([['scripts/probe.ps1', source]]) } as SkillPackage, 'scripts/probe.ps1', [], s.cwd, controller.signal, start => start(), s.context, beforeStart);
+  powerShellRun = { controller, result: running };
+  const result = await running;
   const content = JSON.parse(result.content);
   expect(content).toMatchObject({ backend: 'sandbox', sandboxed: true, exitCode: 7 });
   expect(content.output).toContain('技能实际运行'); expect(content.output).toContain('技能中文错误'); expect(content.output).not.toContain('\uFFFD');

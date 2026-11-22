@@ -7,6 +7,7 @@ import { expect, it, vi } from 'vitest';
 import { registerAgentIpc } from '../../src/main/agentIpc';
 import { ProjectTaskOrchestrator } from '../../src/main/project/ProjectTaskOrchestrator';
 import { ProjectTaskExecutionStore } from '../../src/main/project/ProjectTaskExecutionStore';
+import { ProjectService } from '../../src/main/project/ProjectService';
 import { PartnerRuntimePort } from '../../src/main/runtime/PartnerRuntimePort';
 import { DESKTOP_IPC } from '../../src/shared/desktopIpc';
 import { testRm } from '../helpers/autoTest.mjs';
@@ -35,11 +36,15 @@ async function withExecution(run: (fixture: {
     if (channel === DESKTOP_IPC.projectTaskExecutionEnqueue) earlyEnqueue = Promise.resolve(handler({ sender }, attemptRequest)).catch(error => error);
   }, removeHandler: (channel: string) => { removed.push(channel); handlers.delete(channel); } } as unknown as IpcMain;
   let dispose: (() => Promise<void>) | undefined;
+  const projectRecovery = vi.spyOn(ProjectService.prototype, 'recover');
   try {
     dispose = registerAgentIpc(ipc, () => window, { environment: { profile: 'autotest', label: 'Fixture', userDataDirectory: root,
       projectsDirectory: path.join(root, 'projects'), temporaryDirectory: root, appUserModelId: 'Asterium.Test',
       allowStartup: false, allowUpdates: false, restoreBackgroundServices: false, mcpPort: 0 } });
     const invoke = async <T,>(channel: string, value?: unknown, caller: object = sender) => await handlers.get(channel)!({ sender: caller }, value) as T;
+    // Finish this fixture's startup before its spies or mutable profile path can be reused.
+    await projectRecovery.mock.results[0].value;
+    await invoke(channels[0]);
     await run({ invoke, earlyEnqueue, changes: () => sender.send.mock.calls.filter(([channel]) => channel === DESKTOP_IPC.projectTaskExecutionChanged) });
   } finally {
     try { await dispose?.(); expect(handlers.size).toBe(0); for (const channel of channels) expect(removed.filter(name => name === channel)).toHaveLength(1); }
