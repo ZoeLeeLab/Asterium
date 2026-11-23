@@ -58,7 +58,7 @@
     "docs/existing-partner-review-v1.md",
     "docs/delegation-access.md"
   ],
-  "lastVerifiedCommit": "2cf0ad7967eadd816b01b0498df939e78aef67f6"
+  "lastVerifiedCommit": "12f3b38a91872feec0d4529870f4eeafe34ca3c6"
 }
 ---
 
@@ -87,7 +87,7 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 
 ## 伙伴委派
 
-2026-11-23 独立工作树源码增量：任务增加 read/write 选择，只读与 Plan 不允许发起 write。普通本地/API 一次性通道仍只支持 read。接回伙伴的 write 需要宿主声明 v2，并回显任务权限；旧宿主不降级执行。排队期间权限收紧会拒绝启动，未知回执只查原 ID。宿主接线、真实工具级读写与服务器部署均未验收，旧原生线程工具清单不会自动升级。设计与验证见[委派任务权限](../../delegation-access.md)。本条 lastVerifiedCommit 绑定本轮已存在的代码基线 `2cf0ad7967eadd816b01b0498df939e78aef67f6`，不代表已打包或发布。
+2026-11-23 独立工作树源码增量：任务增加 read/write 选择，只读与 Plan 不允许发起 write。普通本地/API 一次性通道仍只支持 read。接回伙伴的 write 需要宿主声明 v2，未知回执只查原 ID。按用户确认，对外契约收简为 permissions 能力列表及单个 permission: read/write，请求与回执匹配该字段，不传发起方的审批配置。read 的强制只读、write 的权限和审批由接收宿主处理；来源在排队期间变为只读／Plan 会拒绝启动 write。宿主接线、真实工具级读写与服务器部署均未验收，旧原生线程工具清单不会自动升级。设计与分阶段验证见[委派任务权限](../../delegation-access.md)。本条 lastVerifiedCommit 绑定已存在且经过核验的简化代码基线 `12f3b38a91872feec0d4529870f4eeafe34ca3c6`，不代表已打包或发布。
 
 单聊委派工具、持久队列、结果与取消入口见 [阶段核验](../../partner-delegation-implementation.md)。本地 Codex 可作为执行伙伴接收文本和指定图片。该入口使用宿主读取权限，任务目录外的强制拒读仍待验收。
 
