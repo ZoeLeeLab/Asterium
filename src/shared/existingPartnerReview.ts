@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { delegationAccessSchema, delegationExecutionSchema } from './delegationAccess';
+import { delegationAccessSchema } from './delegationAccess';
 
 export const EXISTING_PARTNER_REVIEW_PATH = '/api/asterium/reviews';
 export const REVIEW_MARKDOWN_MAX_BYTES = 160_000;
@@ -9,7 +9,7 @@ const threadId = z.string().min(1).max(200);
 
 export const reviewCapabilitySchema = z.discriminatedUnion('version', [
   z.object({ version: z.literal(1), threadId }).strict(),
-  z.object({ version: z.literal(2), threadId, accessModes: z.array(delegationAccessSchema).min(1).max(2) }).strict(),
+  z.object({ version: z.literal(2), threadId, permissions: z.array(delegationAccessSchema).min(1).max(2) }).strict(),
 ]);
 const requestFields = {
   requestId: z.uuid(),
@@ -23,7 +23,7 @@ const requestFields = {
 };
 export const reviewRequestSchema = z.discriminatedUnion('version', [
   z.object({ version: z.literal(1), ...requestFields }).strict(),
-  z.object({ version: z.literal(2), ...requestFields, execution: delegationExecutionSchema }).strict(),
+  z.object({ version: z.literal(2), ...requestFields, permission: delegationAccessSchema }).strict(),
 ]);
 
 const receiptFields = {
@@ -34,7 +34,7 @@ const receiptFields = {
 const statuses = ['accepted', 'running', 'succeeded', 'failed', 'busy', 'thread_changed', 'file_unreadable'] as const;
 export const reviewReceiptSchema = z.discriminatedUnion('version', [
   z.object({ version: z.literal(1), ...receiptFields, status: z.enum(statuses) }).strict(),
-  z.object({ version: z.literal(2), ...receiptFields, execution: delegationExecutionSchema,
+  z.object({ version: z.literal(2), ...receiptFields, permission: delegationAccessSchema,
     status: z.enum([...statuses, 'permission_denied', 'approval_required']) }).strict(),
 ]).refine(receipt => receipt.status === 'succeeded' ? Boolean(receipt.result?.trim()) : receipt.result === undefined);
 

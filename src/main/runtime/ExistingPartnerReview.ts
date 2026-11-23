@@ -4,11 +4,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { CyberBossBridgeClient } from '../adapters/CyberBossBridgeClient';
 import type { ArtifactRegistry } from '../security/ArtifactRegistry';
 import { REVIEW_MARKDOWN_MAX_BYTES, reviewFileNameSchema, type ExistingPartnerReviewRequest } from '../../shared/existingPartnerReview';
-import type { DelegationAccess, DelegationExecution } from '../../shared/delegationAccess';
+import type { DelegationAccess } from '../../shared/delegationAccess';
 import { delegationTaskPolicy } from './DelegationAccess';
 
 type ReviewTransport = Pick<CyberBossBridgeClient, 'submitReview' | 'reviewStatus'>;
-type ReviewKey = Pick<ExistingPartnerReviewRequest, 'requestId' | 'threadId'> & { execution?: DelegationExecution };
+type ReviewKey = Pick<ExistingPartnerReviewRequest, 'requestId' | 'threadId'> & { permission?: DelegationAccess };
 
 export function describeReviewFile(name: string, bytes: Uint8Array): ExistingPartnerReviewRequest['file'] {
   if (!reviewFileNameSchema.safeParse(name).success) throw new Error('DELEGATION_REVIEW_MARKDOWN_REQUIRED');
@@ -63,9 +63,9 @@ export async function runExistingPartnerReview(
     const { bytes, ...metadata } = upload;
     try {
       signal.throwIfAborted();
-      const { execution, ...identity } = key;
-      receipt = await client.submitReview(execution
-        ? { version: 2, ...identity, ...metadata, execution }
+      const { permission, ...identity } = key;
+      receipt = await client.submitReview(permission
+        ? { version: 2, ...identity, ...metadata, permission }
         : { version: 1, ...identity, ...metadata }, bytes, signal);
     } catch {
       signal.throwIfAborted();
@@ -75,8 +75,7 @@ export async function runExistingPartnerReview(
   for (;;) {
     signal.throwIfAborted();
     const matches = (value: NonNullable<typeof receipt>) => value.requestId === key.requestId && value.threadId === key.threadId
-      && (key.execution ? value.version === 2 && value.execution.access === key.execution.access
-        && value.execution.permissionMode === key.execution.permissionMode : value.version === 1);
+      && (key.permission ? value.version === 2 && value.permission === key.permission : value.version === 1);
     if (!receipt || !matches(receipt)) {
       try { receipt = await client.reviewStatus(key.requestId, signal); }
       catch { throw new Error('DELEGATION_REVIEW_UNCERTAIN'); }

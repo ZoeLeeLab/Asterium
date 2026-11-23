@@ -1,38 +1,30 @@
 import type { PermissionMode, PlanMode } from '../../shared/contracts/core';
-import { delegationExecutionSchema, type DelegationAccess, type DelegationExecution } from '../../shared/delegationAccess';
+import { delegationAccessSchema, type DelegationAccess } from '../../shared/delegationAccess';
 import type { ExistingPartnerReviewCapability } from '../../shared/existingPartnerReview';
 
 type ParentExecution = { permissionMode?: PermissionMode; planMode?: PlanMode };
-const permissionOrder: PermissionMode[] = ['read_only', 'manual', 'automatic', 'full'];
 
 /** The parent execution is supplied by Main, never by a model tool argument. */
-export function resolveDelegationExecution(access: DelegationAccess = 'read', parent: ParentExecution = {}): DelegationExecution {
+export function resolveDelegationAccess(access: DelegationAccess = 'read', parent: ParentExecution = {}): DelegationAccess {
   if (access === 'write' && (parent.permissionMode === 'read_only' || parent.planMode === 'plan')) {
     throw new Error('DELEGATION_ACCESS_DENIED');
   }
-  return delegationExecutionSchema.parse({ access, permissionMode: access === 'read' ? 'read_only' : parent.permissionMode ?? 'manual' });
-}
-
-export function restrictDelegationExecution(accepted: DelegationExecution, current: ParentExecution): DelegationExecution {
-  const allowed = resolveDelegationExecution(accepted.access, current);
-  return { access: accepted.access, permissionMode: permissionOrder[Math.min(
-    permissionOrder.indexOf(accepted.permissionMode), permissionOrder.indexOf(allowed.permissionMode),
-  )] };
+  return delegationAccessSchema.parse(access);
 }
 
 export function reviewAccessModes(capability: ExistingPartnerReviewCapability): DelegationAccess[] {
-  return capability.version === 1 ? ['read'] : [...new Set(capability.accessModes)];
+  return capability.version === 1 ? ['read'] : [...new Set(capability.permissions)];
 }
 
 /** undefined means the legacy, read-only v1 protocol; write must never fall back. */
-export function negotiateReviewExecution(capability: ExistingPartnerReviewCapability, execution: DelegationExecution) {
-  if (!reviewAccessModes(capability).includes(execution.access)) throw new Error('DELEGATION_ACCESS_UNSUPPORTED');
-  return capability.version === 2 ? execution : undefined;
+export function negotiateReviewPermission(capability: ExistingPartnerReviewCapability, access: DelegationAccess) {
+  if (!reviewAccessModes(capability).includes(access)) throw new Error('DELEGATION_ACCESS_UNSUPPORTED');
+  return capability.version === 2 ? access : undefined;
 }
 
-export function assertReviewExecution(capability: ExistingPartnerReviewCapability, execution?: DelegationExecution) {
-  if (execution && capability.version !== 2) throw new Error('DELEGATION_ACCESS_UNSUPPORTED');
-  negotiateReviewExecution(capability, execution ?? { access: 'read', permissionMode: 'read_only' });
+export function assertReviewPermission(capability: ExistingPartnerReviewCapability, permission?: DelegationAccess) {
+  if (permission && capability.version !== 2) throw new Error('DELEGATION_ACCESS_UNSUPPORTED');
+  negotiateReviewPermission(capability, permission ?? 'read');
 }
 
 export function assertReadOnlyDelegation(access: DelegationAccess = 'read') {
