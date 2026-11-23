@@ -4,9 +4,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { CyberBossBridgeClient } from '../adapters/CyberBossBridgeClient';
 import type { ArtifactRegistry } from '../security/ArtifactRegistry';
 import { REVIEW_MARKDOWN_MAX_BYTES, reviewFileNameSchema, type ExistingPartnerReviewRequest } from '../../shared/existingPartnerReview';
+import type { DelegationAccess, DelegationExecution } from '../../shared/delegationAccess';
+import { delegationTaskPolicy } from './DelegationAccess';
 
 type ReviewTransport = Pick<CyberBossBridgeClient, 'submitReview' | 'reviewStatus'>;
-type ReviewKey = Pick<ExistingPartnerReviewRequest, 'requestId' | 'threadId'>;
+type ReviewKey = Pick<ExistingPartnerReviewRequest, 'requestId' | 'threadId'> & { execution?: DelegationExecution };
 
 export function describeReviewFile(name: string, bytes: Uint8Array): ExistingPartnerReviewRequest['file'] {
   if (!reviewFileNameSchema.safeParse(name).success) throw new Error('DELEGATION_REVIEW_MARKDOWN_REQUIRED');
@@ -37,13 +39,13 @@ export async function snapshotReviewArtifact(
   return { file, draft: { name: file.name, markdown: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) } };
 }
 
-export function existingPartnerReviewMessage(sender: string, instruction: string, original: string, filename: string, userName = '用户') {
+export function existingPartnerReviewMessage(sender: string, instruction: string, original: string, filename: string, userName = '用户', access: DelegationAccess = 'read') {
   const message = [
     `[星丛转交 · 来自${sender}]`,
     instruction,
     `${userName}原话：「${original}」`,
     `附件：${filename}`,
-    '本次只请你给评审意见，不要修改代码。',
+    delegationTaskPolicy(access),
   ].join('\n');
   if (instruction.length > 1_000 || message.length > 4_000) throw new Error('DELEGATION_REVIEW_MESSAGE_TOO_LONG');
   return message;
@@ -56,12 +58,15 @@ export async function runExistingPartnerReview(
   signal: AbortSignal,
   pollIntervalMs = 2_000,
 ) {
-  let receipt;
+  let receipt: Awaited<ReturnType<ReviewTransport['reviewStatus']>> | undefined;
   if (upload) {
     const { bytes, ...metadata } = upload;
     try {
       signal.throwIfAborted();
-      receipt = await client.submitReview({ version: 1, ...key, ...metadata }, bytes, signal);
+      const { execution, ...identity } = key;
+      receipt = await client.submitReview(execution
+        ? { version: 2, ...identity, ...metadata, execution }
+        : { version: 1, ...identity, ...metadata }, bytes, signal);
     } catch {
       signal.throwIfAborted();
       // A missing HTTP response is not evidence that the host rejected the upload.
@@ -69,10 +74,13 @@ export async function runExistingPartnerReview(
   }
   for (;;) {
     signal.throwIfAborted();
-    if (!receipt || receipt.requestId !== key.requestId || receipt.threadId !== key.threadId) {
+    const matches = (value: NonNullable<typeof receipt>) => value.requestId === key.requestId && value.threadId === key.threadId
+      && (key.execution ? value.version === 2 && value.execution.access === key.execution.access
+        && value.execution.permissionMode === key.execution.permissionMode : value.version === 1);
+    if (!receipt || !matches(receipt)) {
       try { receipt = await client.reviewStatus(key.requestId, signal); }
       catch { throw new Error('DELEGATION_REVIEW_UNCERTAIN'); }
-      if (receipt.requestId !== key.requestId || receipt.threadId !== key.threadId) throw new Error('DELEGATION_REVIEW_UNCERTAIN');
+      if (!matches(receipt)) throw new Error('DELEGATION_REVIEW_UNCERTAIN');
     }
     switch (receipt.status) {
       case 'succeeded': return receipt.result!;
@@ -80,6 +88,8 @@ export async function runExistingPartnerReview(
       case 'thread_changed': throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
       case 'file_unreadable': throw new Error('DELEGATION_REVIEW_FILE_UNREADABLE');
       case 'failed': throw new Error('DELEGATION_REVIEW_FAILED');
+      case 'permission_denied': throw new Error('DELEGATION_ACCESS_DENIED');
+      case 'approval_required': throw new Error('DELEGATION_APPROVAL_REQUIRED');
     }
     await delay(pollIntervalMs, undefined, { signal });
     receipt = undefined;
