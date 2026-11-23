@@ -24,6 +24,8 @@
     "src/main/runtime/PartnerRuntimePort.ts",
     "src/main/studio/StudioAttachments.ts",
     "src/main/runtime/PartnerDelegation.ts",
+    "src/main/runtime/DelegationAccess.ts",
+    "src/shared/delegationAccess.ts",
     "src/main/runtime/ExistingPartnerReview.ts",
     "src/main/adapters/CyberBossBridgeClient.ts",
     "src/main/agentIpc.ts",
@@ -45,6 +47,7 @@
     "tests/unit/studioAttachments.test.ts",
     "tests/unit/partnerRuntimePort.test.ts",
     "tests/unit/existingPartnerReview.test.ts",
+    "tests/unit/delegationAccess.test.ts",
     "tests/renderer/ExistingPartnerReview.test.tsx"
   ],
   "docs": [
@@ -52,9 +55,10 @@
     "docs/release-status.md",
     "docs/claude-cli-compatibility.md",
     "docs/studio-attachments.md",
-    "docs/existing-partner-review-v1.md"
+    "docs/existing-partner-review-v1.md",
+    "docs/delegation-access.md"
   ],
-  "lastVerifiedCommit": "f701024065c07f8da6146cb518e8666448079965"
+  "lastVerifiedCommit": "2cf0ad7967eadd816b01b0498df939e78aef67f6"
 }
 ---
 
@@ -83,10 +87,12 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 
 ## 伙伴委派
 
+2026-11-23 独立工作树源码增量：任务增加 read/write 选择，只读与 Plan 不允许发起 write。普通本地/API 一次性通道仍只支持 read。接回伙伴的 write 需要宿主声明 v2，并回显任务权限；旧宿主不降级执行。排队期间权限收紧会拒绝启动，未知回执只查原 ID。宿主接线、真实工具级读写与服务器部署均未验收，旧原生线程工具清单不会自动升级。设计与验证见[委派任务权限](../../delegation-access.md)。本条 lastVerifiedCommit 绑定本轮已存在的代码基线 `2cf0ad7967eadd816b01b0498df939e78aef67f6`，不代表已打包或发布。
+
 单聊委派工具、持久队列、结果与取消入口见 [阶段核验](../../partner-delegation-implementation.md)。本地 Codex 可作为执行伙伴接收文本和指定图片。该入口使用宿主读取权限，任务目录外的强制拒读仍待验收。
 
 接回伙伴的 Markdown 复核增加了星丛侧客户端与模拟验收。启用需宿主声明 v1 能力并匹配已绑定原线程。单次只发送一份 Markdown 文件及简短转交说明，回执回到发起单聊任务卡。附件文件不内联到任务消息正文。普通单聊附件、图片和其他文件格式仍不在此能力范围内。Sidecar 由宿主侧接线，实际部署单独验收。详见 [接回伙伴复核契约](../../existing-partner-review-v1.md)。
 
-本条结构化 SHA 绑定已存在的 Markdown 复核代码提交 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。仓库内验证覆盖模拟宿主的文件上传、同 ID 恢复查询、忙碌重试和界面回卡，实际连接与验收原件在私有环境留存。
+Markdown 复核阶段的代码提交为 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。该阶段仓库内验证覆盖模拟宿主的文件上传、同 ID 恢复查询、忙碌重试和界面回卡，实际连接与验收原件在私有环境留存；本轮结构化 SHA 与验证范围见上方源码增量和委派任务权限记录。
 
 单聊任务卡跟在发起委派的伙伴气泡中对应的「派出小弟」记录之后。任务详情默认折叠。无法确定对应记录时，卡片在原轮气泡顶部显示。后台返回的结果仍更新原轮的卡片。
