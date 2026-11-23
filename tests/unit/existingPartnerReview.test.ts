@@ -18,11 +18,9 @@ const message = existingPartnerReviewMessage('示例伙伴 A', '请判断这份�
 const threadId = 'synthetic-thread';
 const rawReply = ' 第一段意见。\n\n第二段意见。\n';
 
-it.each(['legacy-read', 'v2-read', 'v2-write'] as const)('uploads actual Markdown bytes and recovers a lost receipt after restart: %s', async mode => {
-  const access = mode === 'v2-write' ? 'write' : 'read';
+it.each(['read', 'write'] as const)('uses an unchanged v1 host and recovers a lost receipt with a %s prompt', async access => {
   const message = existingPartnerReviewMessage('示例伙伴 A', '请完成合成任务。', '请找示例伙伴 B 处理指定的合成方案。', filename, '示例用户', access);
-  const permission = mode === 'legacy-read' ? undefined : access;
-  const capability = permission ? { version: 2, threadId, permissions: ['read', 'write'] } : { version: 1, threadId };
+  const capability = { version: 1, threadId };
   const directory = await mkdtemp(path.join(os.tmpdir(), 'review-queue-'));
   const storage = path.join(directory, 'delegations.json');
   const uploads: { request: ExistingPartnerReviewRequest; text: string; name: string; type: string }[] = [];
@@ -46,14 +44,14 @@ it.each(['legacy-read', 'v2-read', 'v2-write'] as const)('uploads actual Markdow
       lookups.push(pathname.split('/').at(-1)!);
       if (!online) return new Response(null, { status: 503 });
       const { requestId } = uploads[0].request;
-      return Response.json({ ...(permission ? { version: 2, permission } : { version: 1 }), requestId, threadId,
+      return Response.json({ version: 1, requestId, threadId,
         ...(lookups.length < 3 ? { status: 'running' } : { status: 'succeeded', result: rawReply }) });
     }
     throw new Error('Unexpected mock endpoint');
   };
   const makeQueue = () => new PartnerDelegation(storage, async (_batch, task, signal, lookupOnly) => {
     const client = new CyberBossBridgeClient({ serviceUrl: 'https://review.example.test', secret: 'synthetic', fetcher });
-    const key = { threadId: task.review!.threadId, requestId: task.review!.requestId!, permission: task.review!.permission };
+    const key = { threadId: task.review!.threadId, requestId: task.review!.requestId! };
     if (lookupOnly) return runExistingPartnerReview(client, key, undefined, signal, 1);
     expect(await client.reviewCapability(signal)).toEqual(capability);
     const bytes = Buffer.from(task.reviewDraft!.markdown);
@@ -62,11 +60,11 @@ it.each(['legacy-read', 'v2-read', 'v2-write'] as const)('uploads actual Markdow
   let queue = makeQueue();
   try {
     const batch = await queue.submit(owner, 'tool-call', { tasks: [{ targetPartnerId: 'reviewer', access, instruction: '请完成合成任务。', reviewDraft: { name: filename, markdown } }] },
-      async () => ({ review: { threadId, message, permission }, materials: [{ id: 'draft', name: filename, sha256: file.sha256 }] }));
+      async () => ({ review: { threadId, message }, materials: [{ id: 'draft', name: filename, sha256: file.sha256 }] }));
     await vi.waitFor(async () => expect((await queue.list(owner.conversationId))[0].tasks[0].status).toBe('uncertain'));
     expect(uploads).toHaveLength(1);
-    expect(uploads[0].request).toEqual({ version: permission ? 2 : 1, requestId: expect.any(String),
-      threadId, message, file, ...(permission ? { permission } : {}) });
+    expect(uploads[0].request).toEqual({ version: 1, requestId: expect.any(String), threadId, message, file });
+    expect(uploads[0].request.message).toContain(`本次权限：${access}`);
     expect(uploads[0]).toMatchObject({ text: markdown, name: filename, type: 'text/markdown', request: { file, threadId, message } });
     expect(uploads[0].request.message).not.toContain('UNIQUE-REVIEW-CONTENT-92');
     await expect(queue.control(owner.conversationId, batch.tasks[0].id, 'retry')).rejects.toThrow('DELEGATION_RETRY_UNAVAILABLE');
@@ -104,40 +102,19 @@ it('treats a mismatched receipt as unknown and surfaces an explicit busy respons
   expect(client.submitReview).toHaveBeenCalledTimes(1);
 });
 
-it.each(['downgraded', 'wrong-permission'] as const)('does not confirm write execution from a mismatched receipt: %s', async mode => {
-  const key = { requestId: '00000001-0000-4000-8000-000000000002', threadId,
-    permission: 'write' as const };
+it.each(['wrong-request', 'wrong-thread'] as const)('does not accept a result from a different v1 task: %s', async mode => {
+  const key = { requestId: '00000001-0000-4000-8000-000000000002', threadId };
   const calls: string[] = [];
   const client = new CyberBossBridgeClient({ serviceUrl: 'https://review.example.test', secret: 'synthetic', fetcher: async (url, init) => {
     const request = new Request(url, init);
     if (new URL(request.url).pathname === '/api/auth') return new Response(null, { headers: { 'Set-Cookie': 'cyberboss_web_session=synthetic' } });
     calls.push(request.method);
-    const identity = { requestId: key.requestId, threadId, status: 'succeeded', result: 'Synthetic result' };
-    return Response.json(mode === 'downgraded' ? { version: 1, ...identity } : {
-      version: 2, ...identity, permission: 'read',
-    });
+    return Response.json({ version: 1, requestId: mode === 'wrong-request' ? '00000001-0000-4000-8000-000000000003' : key.requestId,
+      threadId: mode === 'wrong-thread' ? 'another-thread' : threadId, status: 'succeeded', result: 'Synthetic result' });
   } });
   await expect(runExistingPartnerReview(client, key, { message, file, bytes: Buffer.from(markdown) }, new AbortController().signal, 1))
     .rejects.toThrow('DELEGATION_REVIEW_UNCERTAIN');
   expect(calls).toEqual(['POST', 'GET']);
-});
-
-it.each([
-  ['permission_denied', 'DELEGATION_ACCESS_DENIED'],
-  ['approval_required', 'DELEGATION_APPROVAL_REQUIRED'],
-] as const)('reports host refusal %s without retrying or downgrading', async (status, reason) => {
-  const key = { requestId: '00000001-0000-4000-8000-000000000003', threadId,
-    permission: 'write' as const };
-  const calls: string[] = [];
-  const client = new CyberBossBridgeClient({ serviceUrl: 'https://review.example.test', secret: 'synthetic', fetcher: async (url, init) => {
-    const request = new Request(url, init);
-    if (new URL(request.url).pathname === '/api/auth') return new Response(null, { headers: { 'Set-Cookie': 'cyberboss_web_session=synthetic' } });
-    calls.push(request.method);
-    return Response.json({ version: 2, ...key, status });
-  } });
-  await expect(runExistingPartnerReview(client, key, { message, file, bytes: Buffer.from(markdown) }, new AbortController().signal, 1))
-    .rejects.toThrow(reason);
-  expect(calls).toEqual(['POST']);
 });
 
 it('rejects wrong file types, unsafe names, oversized files and invalid UTF-8', () => {
@@ -174,18 +151,19 @@ it('freezes bytes from a delivered file only within its source conversation and 
   }
 });
 
-it.each([undefined, 'read', 'write'] as const)('preserves permission %s and frozen bytes on an explicit busy retry', async permission => {
+it.each(['read', 'write'] as const)('preserves the %s instruction and frozen bytes on an explicit busy retry', async access => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'review-busy-'));
-  const executions: { requestId: string; markdown: string; permission?: DelegationAccess }[] = [];
+  const executions: { requestId: string; markdown: string; access?: DelegationAccess; message: string }[] = [];
+  const message = existingPartnerReviewMessage('示例伙伴 A', '请处理合成任务。', '仅处理合成示例。', filename, '示例用户', access);
   const queue = new PartnerDelegation(path.join(directory, 'delegations.json'), async (_batch, task) => {
-    executions.push({ requestId: task.review!.requestId!, markdown: task.reviewDraft!.markdown, permission: task.review!.permission });
+    executions.push({ requestId: task.review!.requestId!, markdown: task.reviewDraft!.markdown, access: task.access, message: task.review!.message });
     if (executions.length === 1) throw new Error('DELEGATION_REVIEW_BUSY');
     return rawReply;
   });
   try {
     const batch = await queue.submit(owner, 'busy-tool-call', {
-      tasks: [{ targetPartnerId: 'reviewer', access: permission ?? 'read', instruction: '请完成合成任务。', reviewDraft: { name: filename, markdown } }],
-    }, async () => ({ review: { threadId, message, permission } }));
+      tasks: [{ targetPartnerId: 'reviewer', access, instruction: '请完成合成任务。', reviewDraft: { name: filename, markdown } }],
+    }, async () => ({ review: { threadId, message } }));
     await vi.waitFor(async () => expect((await queue.list(owner.conversationId))[0].tasks[0].reason).toBe('DELEGATION_REVIEW_BUSY'));
     expect(await queue.readySummaries()).toEqual([]);
     await queue.control(owner.conversationId, batch.tasks[0].id, 'retry');
@@ -193,7 +171,8 @@ it.each([undefined, 'read', 'write'] as const)('preserves permission %s and froz
     expect(executions).toHaveLength(2);
     expect(executions[0].requestId).not.toBe(executions[1].requestId);
     expect(executions.map(attempt => attempt.markdown)).toEqual([markdown, markdown]);
-    expect(executions.map(attempt => attempt.permission)).toEqual([permission, permission]);
+    expect(executions.map(attempt => attempt.access)).toEqual([access, access]);
+    expect(executions.map(attempt => attempt.message)).toEqual([message, message]);
   } finally {
     queue.close();
     await testRm(directory, { recursive: true, force: true });

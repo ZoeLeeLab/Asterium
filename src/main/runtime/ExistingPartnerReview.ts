@@ -8,7 +8,7 @@ import type { DelegationAccess } from '../../shared/delegationAccess';
 import { delegationTaskPolicy } from './DelegationAccess';
 
 type ReviewTransport = Pick<CyberBossBridgeClient, 'submitReview' | 'reviewStatus'>;
-type ReviewKey = Pick<ExistingPartnerReviewRequest, 'requestId' | 'threadId'> & { permission?: DelegationAccess };
+type ReviewKey = Pick<ExistingPartnerReviewRequest, 'requestId' | 'threadId'>;
 
 export function describeReviewFile(name: string, bytes: Uint8Array): ExistingPartnerReviewRequest['file'] {
   if (!reviewFileNameSchema.safeParse(name).success) throw new Error('DELEGATION_REVIEW_MARKDOWN_REQUIRED');
@@ -63,10 +63,7 @@ export async function runExistingPartnerReview(
     const { bytes, ...metadata } = upload;
     try {
       signal.throwIfAborted();
-      const { permission, ...identity } = key;
-      receipt = await client.submitReview(permission
-        ? { version: 2, ...identity, ...metadata, permission }
-        : { version: 1, ...identity, ...metadata }, bytes, signal);
+      receipt = await client.submitReview({ version: 1, ...key, ...metadata }, bytes, signal);
     } catch {
       signal.throwIfAborted();
       // A missing HTTP response is not evidence that the host rejected the upload.
@@ -74,8 +71,7 @@ export async function runExistingPartnerReview(
   }
   for (;;) {
     signal.throwIfAborted();
-    const matches = (value: NonNullable<typeof receipt>) => value.requestId === key.requestId && value.threadId === key.threadId
-      && (key.permission ? value.version === 2 && value.permission === key.permission : value.version === 1);
+    const matches = (value: NonNullable<typeof receipt>) => value.requestId === key.requestId && value.threadId === key.threadId;
     if (!receipt || !matches(receipt)) {
       try { receipt = await client.reviewStatus(key.requestId, signal); }
       catch { throw new Error('DELEGATION_REVIEW_UNCERTAIN'); }
@@ -87,8 +83,6 @@ export async function runExistingPartnerReview(
       case 'thread_changed': throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
       case 'file_unreadable': throw new Error('DELEGATION_REVIEW_FILE_UNREADABLE');
       case 'failed': throw new Error('DELEGATION_REVIEW_FAILED');
-      case 'permission_denied': throw new Error('DELEGATION_ACCESS_DENIED');
-      case 'approval_required': throw new Error('DELEGATION_APPROVAL_REQUIRED');
     }
     await delay(pollIntervalMs, undefined, { signal });
     receipt = undefined;

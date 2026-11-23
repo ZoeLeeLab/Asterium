@@ -1,13 +1,10 @@
 // @vitest-environment node
 import { expect, it } from 'vitest';
-import { assertReadOnlyDelegation, assertReviewPermission, delegationSystemPrompt, negotiateReviewPermission, resolveDelegationAccess, reviewAccessModes } from '../../src/main/runtime/DelegationAccess';
+import { assertReadOnlyDelegation, delegationSystemPrompt, resolveDelegationAccess } from '../../src/main/runtime/DelegationAccess';
 import { existingPartnerReviewMessage } from '../../src/main/runtime/ExistingPartnerReview';
 import { delegationInput } from '../../src/main/runtime/PartnerDelegation';
 import { delegationAccessSchema } from '../../src/shared/delegationAccess';
 import { reviewCapabilitySchema, reviewReceiptSchema, reviewRequestSchema } from '../../src/shared/existingPartnerReview';
-
-const capability = { version: 2 as const, threadId: 'synthetic-thread', permissions: ['read', 'write'] as const };
-const host = reviewCapabilitySchema.parse(capability);
 
 it.each(['read_only', 'manual', 'automatic', 'full'] as const)('keeps read-only tasks read-only under parent %s', permissionMode => {
   expect(resolveDelegationAccess('read', { permissionMode })).toBe('read');
@@ -36,20 +33,7 @@ it('blocks a queued write after its source becomes read-only while keeping ordin
   expect(() => resolveDelegationAccess(accepted, { permissionMode: 'automatic', planMode: 'plan' })).toThrow('DELEGATION_ACCESS_DENIED');
 });
 
-it('negotiates explicit host capabilities and refuses silent fallback to a legacy review', () => {
-  const legacy = { version: 1 as const, threadId: 'synthetic-thread' };
-  const read = resolveDelegationAccess();
-  const write = resolveDelegationAccess('write', { permissionMode: 'full' });
-  expect(reviewAccessModes(legacy)).toEqual(['read']);
-  expect(reviewAccessModes(host)).toEqual(['read', 'write']);
-  expect(negotiateReviewPermission(legacy, read)).toBeUndefined();
-  expect(negotiateReviewPermission(host, write)).toBe(write);
-  expect(() => negotiateReviewPermission(legacy, write)).toThrow('DELEGATION_ACCESS_UNSUPPORTED');
-  expect(() => negotiateReviewPermission({ version: 2, threadId: 'synthetic-thread', permissions: ['read'] }, write)).toThrow('DELEGATION_ACCESS_UNSUPPORTED');
-  expect(() => assertReviewPermission(legacy, write)).toThrow('DELEGATION_ACCESS_UNSUPPORTED');
-  expect(() => assertReviewPermission(legacy, read)).toThrow('DELEGATION_ACCESS_UNSUPPORTED');
-  expect(() => assertReviewPermission(host, write)).not.toThrow();
-  expect(() => assertReviewPermission(host)).not.toThrow();
+it('keeps one-shot local and API delegates read-only', () => {
   expect(() => assertReadOnlyDelegation('write')).toThrow('DELEGATION_ACCESS_UNSUPPORTED');
   expect(() => assertReadOnlyDelegation()).not.toThrow();
 });
@@ -58,41 +42,39 @@ it.each(['full', 'root', '', null])('rejects invalid task permission %s', value 
   expect(delegationAccessSchema.safeParse(value).success).toBe(false);
 });
 
-it('keeps task intent and user scope, without imposing a review-only prompt on execution', () => {
+it.each(['read', 'write'] as const)('forwards the user scope and adds only the chosen %s task instruction', access => {
   const instruction = '按已授权的合成环境部署附件里的示例应用，并验证。';
   const original = '只允许修改合成测试服务，不要动其他服务。';
-  const forwarded = existingPartnerReviewMessage('示例伙伴', instruction, original, 'example.md', '示例用户', 'write');
+  const forwarded = existingPartnerReviewMessage('示例伙伴', instruction, original, 'example.md', '示例用户', access);
   expect(forwarded).toContain(instruction);
   expect(forwarded).toContain(original);
-  expect(forwarded).toContain('本次为可执行任务');
-  expect(forwarded).not.toContain('本次任务为只读');
+  expect(forwarded).toContain(`本次权限：${access}`);
+  expect(forwarded).not.toContain(`本次权限：${access === 'read' ? 'write' : 'read'}`);
   expect(forwarded).not.toContain('本次只请你给评审意见');
   expect(forwarded).not.toContain('只返回你的结论');
-  expect(forwarded).toContain('保留宿主审批和原线程权限');
+  if (access === 'write') expect(forwarded).toContain('沿用你当前的权限和审批');
+  else expect(forwarded).toContain('不修改文件');
   const read = existingPartnerReviewMessage('示例伙伴', '仅查看', '不要修改', 'example.md');
-  expect(read).toContain('本次任务为只读');
+  expect(read).toContain('本次权限：read');
   expect(read).toContain('不要修改');
   expect(delegationSystemPrompt('示例伙伴')).not.toContain('只返回你的结论');
   expect(delegationSystemPrompt('示例伙伴')).toContain('不修改文件');
 });
 
-it.each(['read', 'write'] as const)('uses only permission %s in v2 and preserves the strict v1 contract', permission => {
+it.each(['read', 'write'] as const)('uses the existing v1 protocol with only a %s instruction in the message', access => {
   const base = { requestId: '00000001-0000-4000-8000-000000000001', threadId: 'synthetic-thread' };
   const file = { name: 'example.md', sizeBytes: 12, sha256: 'a'.repeat(64) };
-  const request = { version: 2, ...base, message: 'Synthetic task', file, permission };
-  const receipt = { version: 2, ...base, permission, status: 'succeeded', result: 'Synthetic result' };
+  const message = existingPartnerReviewMessage('示例伙伴', '请处理合成任务。', '仅处理已授权的合成示例。', file.name, '示例用户', access);
+  const request = { version: 1, ...base, message, file };
+  const receipt = { version: 1, ...base, status: 'succeeded', result: 'Synthetic result' };
   expect(reviewRequestSchema.parse(request)).toEqual(request);
   expect(reviewReceiptSchema.parse(receipt)).toEqual(receipt);
-  for (const status of ['permission_denied', 'approval_required']) {
-    expect(reviewReceiptSchema.safeParse({ version: 2, ...base, permission, status }).success).toBe(true);
-  }
-  expect(reviewRequestSchema.safeParse({ ...request, version: 1 }).success).toBe(false);
-  expect(reviewReceiptSchema.safeParse({ ...receipt, version: 1 }).success).toBe(false);
-  expect(reviewRequestSchema.safeParse({ version: 2, ...base, message: 'Synthetic task', file }).success).toBe(false);
-  expect(reviewReceiptSchema.safeParse({ version: 2, ...base, status: 'accepted' }).success).toBe(false);
-  for (const extra of [{ permissionMode: 'full' }, { execution: { access: permission, permissionMode: 'manual' } }]) {
+  for (const extra of [{ access }, { permission: access }, { permissionMode: 'full' }, { execution: { access } }]) {
     expect(reviewRequestSchema.safeParse({ ...request, ...extra }).success).toBe(false);
     expect(reviewReceiptSchema.safeParse({ ...receipt, ...extra }).success).toBe(false);
   }
-  expect(reviewCapabilitySchema.safeParse({ ...capability, permissions: undefined, accessModes: ['read', 'write'] }).success).toBe(false);
+  expect(reviewCapabilitySchema.parse({ version: 1, threadId: base.threadId })).toEqual({ version: 1, threadId: base.threadId });
+  expect(reviewCapabilitySchema.safeParse({ version: 2, threadId: base.threadId, permissions: ['read', 'write'] }).success).toBe(false);
+  expect(reviewRequestSchema.safeParse({ ...request, version: 2 }).success).toBe(false);
+  expect(reviewReceiptSchema.safeParse({ ...receipt, version: 2 }).success).toBe(false);
 });

@@ -26,7 +26,7 @@ import { SessionCommandService } from './runtime/SessionCommandService';
 import { createHash, randomUUID } from 'node:crypto';
 import { PartnerDelegation, delegationInput, delegationWaitInput, type DelegationBatch, type DelegationTask } from './runtime/PartnerDelegation';
 import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from './runtime/ExistingPartnerReview';
-import { assertReadOnlyDelegation, assertReviewPermission, delegationSystemPrompt, negotiateReviewPermission, resolveDelegationAccess, reviewAccessModes } from './runtime/DelegationAccess';
+import { assertReadOnlyDelegation, delegationSystemPrompt, resolveDelegationAccess } from './runtime/DelegationAccess';
 import { REVIEW_MARKDOWN_MAX_BYTES } from '../shared/existingPartnerReview';
 import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
 import path from 'node:path';
@@ -552,7 +552,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const capability = await client.reviewCapability(signal).catch(() => { throw new Error('DELEGATION_REVIEW_UNAVAILABLE'); });
     signal.throwIfAborted();
     if (capability.threadId !== threadId) throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
-    return capability;
   }
   async function executeExistingReview(batch: DelegationBatch, task: DelegationTask, review: NonNullable<DelegationTask['review']>, signal: AbortSignal, lookupOnly: boolean) {
     if (await conversationDeletions.isDeleted(batch.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
@@ -561,9 +560,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       throw new Error(lookupOnly ? 'DELEGATION_REVIEW_UNCERTAIN' : 'DELEGATION_CONNECTION_CHANGED');
     }
     const client = await reviewClient(connection).catch(() => { throw new Error(lookupOnly ? 'DELEGATION_REVIEW_UNCERTAIN' : 'DELEGATION_REVIEW_UNAVAILABLE'); });
-    const key = { requestId: review.requestId!, threadId: review.threadId, permission: review.permission };
+    const key = { requestId: review.requestId!, threadId: review.threadId };
     if (lookupOnly) return runExistingPartnerReview(client, key, undefined, signal);
-    if ((task.access ?? 'read') !== (review.permission ?? 'read')) throw new Error('DELEGATION_ACCESS_DENIED');
     if (connection.threadId !== review.threadId) throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
     const material = task.materials?.[0];
     if (!material) throw new Error('DELEGATION_REVIEW_MARKDOWN_REQUIRED');
@@ -572,8 +570,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       : await messageAttachments.read(material.id, batch.conversationId);
     verifyDelegationMaterial(task, material.id, bytes);
     const file = describeReviewFile(material.name, bytes);
-    assertReviewPermission(await assertReviewThread(client, review.threadId, signal), review.permission);
-    if (review.permission === 'write') {
+    await assertReviewThread(client, review.threadId, signal);
+    if (task.access === 'write') {
       const source = await singleChatMessages.getConversation(batch.conversationId);
       if (!source || source.partnerId !== batch.partnerId || source.isArchived || source.isDisabled) throw new Error('DELEGATION_SOURCE_UNAVAILABLE');
       resolveDelegationAccess('write', source);
@@ -1077,9 +1075,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
               const connection = existingReviewConnection(partner.partnerId);
               if (!connection) return undefined;
               try {
-                const capability = await assertReviewThread(await reviewClient(connection), connection.threadId, signal);
+                await assertReviewThread(await reviewClient(connection), connection.threadId, signal);
                 const canWrite = command.execution?.permissionMode !== 'read_only' && command.execution?.planMode !== 'plan';
-                return { ...identity, kind: 'existing_thread', materials: ['markdown_file'], accessModes: reviewAccessModes(capability).filter(mode => mode === 'read' || canWrite) };
+                return { ...identity, kind: 'existing_thread', materials: ['markdown_file'], accessModes: canWrite ? ['read', 'write'] : ['read'] };
               } catch { return undefined; }
             }
             const codex = partner.runtime.kind === 'local' && partner.runtime.adapterType === 'codex_cli';
@@ -1101,7 +1099,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
           if (target.sourceMode === 'existing_thread') {
             const connection = existingReviewConnection(target.partnerId);
             if (!connection) throw new Error('DELEGATION_REVIEW_UNAVAILABLE');
-            const permission = negotiateReviewPermission(await assertReviewThread(await reviewClient(connection), connection.threadId, signal), access);
             if (parsed.tasks.length !== 1) throw new Error('DELEGATION_REVIEW_SINGLE_TARGET');
             if (task.attachmentIds.length + Number(Boolean(task.reviewDraft)) + Number(Boolean(task.reviewArtifactId)) !== 1) throw new Error('DELEGATION_REVIEW_MARKDOWN_REQUIRED');
             const id = task.reviewArtifactId ?? (task.reviewDraft ? 'review-draft' : task.attachmentIds[0]);
@@ -1121,9 +1118,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
               file = describeReviewFile(attachment.name, await messageAttachments.read(id, owner.conversationId));
             }
             const sender = studioRuntimeCatalog.partner(owner.partnerId)?.publicIdentity.displayName ?? '伙伴';
-            const message = existingPartnerReviewMessage(sender, task.instruction, command.sourceMessage!.content, file.name, studioRuntimeCatalog.user().displayName || '用户', task.access);
+            const message = existingPartnerReviewMessage(sender, task.instruction, command.sourceMessage!.content, file.name, studioRuntimeCatalog.user().displayName || '用户', access);
             signal.throwIfAborted();
-            return { materials: [{ id, name: file.name, sha256: file.sha256 }], connectionFingerprint: reviewConnectionFingerprint(connection), review: { threadId: connection.threadId, message, permission }, reviewDraft };
+            return { materials: [{ id, name: file.name, sha256: file.sha256 }], connectionFingerprint: reviewConnectionFingerprint(connection), review: { threadId: connection.threadId, message }, reviewDraft };
           }
           assertReadOnlyDelegation(task.access);
           if (task.reviewDraft || task.reviewArtifactId) throw new Error('DELEGATION_REVIEW_UNAVAILABLE');
