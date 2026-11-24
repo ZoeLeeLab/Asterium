@@ -1,47 +1,32 @@
 import { app, safeStorage, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  AGENT_PROTOCOL_VERSION,
   type ExistingThreadConnectionStatus,
-  type ExistingThreadReplyEvent,
-  type PartnerProfileSeed,
   type PartnerWorkspaceState,
   type SendMessageCommand
 } from '../shared/agentProtocol';
-import type { AutomationRun, AutomationTargetOption } from '../shared/automations';
-import { trimChatHistory } from '../shared/chatHistory';
-import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
-import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE } from '../shared/codexThreadImport';
 import { DESKTOP_IPC as AGENT_IPC, DESKTOP_INVOKE_CHANNELS } from '../shared/desktopIpc';
-import type { StudioPrepareTurnRequest, StudioRoomMetadata } from '../shared/studioRuntime';
 import { AdapterHost } from './AdapterHost';
-import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
-import { getCodexThreadLastTurnId, getCodexThreadLifecycles } from './adapters/CodexCliAdapter';
-import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
 import { ApiConnectionStore } from './api/ApiConnectionStore';
 import { ApiExtensionStore } from './api/ApiExtensionStore';
 import { createDefaultApiProviderRegistry } from './api/ApiProviderRegistry';
 import { createApiRuntimeConfiguration, isAttachmentCapabilities } from './api/ApiRuntimeConfiguration';
-import { compactApiSession } from './api/ApiSessionCompactor';
-import { confirmProfileReload } from './api/confirmProfileReload';
 import { McpConnectionManager } from './api/extensions/McpConnectionManager';
 import { McpManagementWorkspace } from './api/extensions/McpManagementWorkspace';
-import { AutomationAgentTools } from './automation/AutomationAgentTools';
 import { AutomationConfirmations } from './automation/AutomationConfirmations';
+import { createAutomationExecutionBridge } from './automation/AutomationExecutionBridge';
 import { AutomationRuntime } from './automation/AutomationRuntime';
 import { AutomationScheduler } from './automation/AutomationScheduler';
 import { AutomationService } from './automation/AutomationService';
 import { AutomationStore } from './automation/AutomationStore';
-import { automationPrompt } from './automation/automationPrompt';
+import { createAutomationTargetPolicy } from './automation/AutomationTargetPolicy';
 import { ConversationDeletionService } from './conversation/ConversationDeletionService';
 import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
 import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
 import { SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { generateApiDiary, generateClaudeDiary, generateCodexDiary, generateExistingDiary } from './diary/DiaryGenerators';
+import { createDiaryGeneration } from './diary/DiaryGeneration';
 import { PartnerDiaryCatalog } from './diary/PartnerDiaryCatalog';
 import { PartnerDiaryScheduler } from './diary/PartnerDiaryScheduler';
 import { PartnerDiaryService } from './diary/PartnerDiaryService';
@@ -63,6 +48,7 @@ import { registerExistingThreadIpc } from './ipc/existingThreadIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
 import { registerCodexRuntimeQueryIpc, registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeIpc';
+import { archivedMarkdownFileName } from './ipc/markdownExport';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
@@ -92,13 +78,14 @@ import { registerStudioWakeIpc } from './ipc/studioWakeIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
 import { MemoryImportService } from './memory/MemoryImportService';
+import { createMemoryModelConnections } from './memory/MemoryModelConnections';
 import { MemorySourceService } from './memory/MemorySourceService';
 import { PartnerMemoryBriefingService } from './memory/PartnerMemoryBriefingService';
 import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
 import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
 import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
-import { MemoryConsolidation, createMemoryFallbackAdapter } from './memory/fallback/MemoryConsolidation';
+import { MemoryConsolidation } from './memory/fallback/MemoryConsolidation';
 import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallback/MemoryFallbackInputs';
 import { MemoryFallbackInventory } from './memory/fallback/MemoryFallbackInventory';
 import { MemoryFallbackJobStore } from './memory/fallback/MemoryFallbackJobStore';
@@ -107,6 +94,7 @@ import { MemoryFallbackSettingsStore } from './memory/fallback/MemoryFallbackSet
 import { PartnerProjectNotebookService } from './notebook/PartnerProjectNotebookService';
 import { PartnerProfileService } from './partner/PartnerProfileService';
 import { PartnerProfileStore } from './partner/PartnerProfileStore';
+import { isPartnerProfileSeed, isUserProfileSeed } from './partner/profileSeedValidation';
 import { ArtifactDeliveryService } from './project/ArtifactDeliveryService';
 import { ProjectBrowserService } from './project/ProjectBrowserService';
 import { ProjectDeletionStore } from './project/ProjectDeletionStore';
@@ -118,6 +106,7 @@ import { ProjectFileStore } from './project/ProjectFileStore';
 import { ProjectLifecycleService } from './project/ProjectLifecycleService';
 import { ProjectMutationCoordinator } from './project/ProjectMutationCoordinator';
 import { ProjectRunChangeRecorder } from './project/ProjectRunChangeRecorder';
+import { createProjectRuntimeBindings, createProjectStateReconciler } from './project/ProjectRuntimeBindings';
 import { ProjectService } from './project/ProjectService';
 import { ProjectTaskExecutionStore } from './project/ProjectTaskExecutionStore';
 import { ProjectTaskHandoffValidator } from './project/ProjectTaskHandoffValidator';
@@ -137,25 +126,22 @@ import { createDelegationExecutor } from './runtime/DelegationExecutor';
 import { DelegationResultDelivery } from './runtime/DelegationResultDelivery';
 import { createDelegationRuntimeBridge } from './runtime/DelegationRuntimeBridge';
 import { createDelegationToolHandler } from './runtime/DelegationToolHandler';
-import { createExistingThreadService } from './runtime/ExistingThreadService';
+import { createExistingThreadEvents, createExistingThreadService } from './runtime/ExistingThreadService';
 import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
 import { createLegacyRunPath } from './runtime/LegacyRunPath';
 import { createLocalRuntimeResolver } from './runtime/LocalRuntimeResolver';
 import { createMessageRuntime } from './runtime/MessageRuntime';
-import { NativeProfileReloadError, confirmNativeProfileReload } from './runtime/NativeProfileReload';
 import { PartnerDelegation } from './runtime/PartnerDelegation';
-import { PartnerRuntimeFactory, localRuntimeAdapterKey } from './runtime/PartnerRuntimeFactory';
+import { PartnerRuntimeFactory } from './runtime/PartnerRuntimeFactory';
 import { PartnerRuntimePort } from './runtime/PartnerRuntimePort';
 import { RunCoordinator } from './runtime/RunCoordinator';
 import { createRuntimeEventBridge } from './runtime/RuntimeEventBridge';
 import { createRuntimeRunHooks } from './runtime/RuntimeRunHooks';
 import { createRuntimeToolBindings } from './runtime/RuntimeToolBindings';
-import { assembleSessionBootstrap } from './runtime/SessionBootstrapAssembler';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
 import { SessionBootstrapService } from './runtime/SessionBootstrapService';
 import { SessionCommandService } from './runtime/SessionCommandService';
-import { SessionCompactionService } from './runtime/SessionCompactionService';
-import { SessionProfileReloadService, profileReloadPrompt } from './runtime/SessionProfileReloadService';
+import { createSessionMaintenanceRuntime } from './runtime/SessionMaintenanceRuntime';
 import { WriterLeaseCoordinator } from './runtime/WriterLeaseCoordinator';
 import { ArtifactRegistry } from './security/ArtifactRegistry';
 import { BridgeCursorStore } from './security/BridgeCursorStore';
@@ -176,6 +162,7 @@ import { StudioNoteStore } from './studio/StudioNoteStore';
 import { StudioOrchestrator } from './studio/StudioOrchestrator';
 import { StudioRoomStore } from './studio/StudioRoomStore';
 import { StudioRuntimeCatalog } from './studio/StudioRuntimeCatalog';
+import { createStudioTurnRuntime, isStudioRoomMetadata } from './studio/StudioTurnRuntime';
 import { StudioWakeControlService } from './studio/StudioWakeControlService';
 import { StudioWakeEventStore } from './studio/StudioWakeEventStore';
 import { StudioWakeEvents } from './studio/StudioWakeEvents';
@@ -184,11 +171,8 @@ export { AGENT_IPC };
 
 const BRAVE_SEARCH_CREDENTIAL_REF = 'asterium-web-search-brave';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindow | null, options: { generalSettings?: GeneralSettingsStore; notifications?: DesktopNotifications; updates?: AppUpdateService; environment?: import('../shared/runtimeEnvironment').RuntimeEnvironment } = {}) {
+  const useLegacyRunPath = process.env.ASTERIUM_USE_LEGACY_RUN_PATH === '1';
   const restoreBackgroundServices = options.environment?.restoreBackgroundServices ?? true;
   const notifications = options.notifications;
   const generalSettings = options.generalSettings ?? new GeneralSettingsStore(() => path.join(app.getPath('userData'), 'general-settings.v1.json'));
@@ -355,7 +339,15 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     messages: singleChatMessages,
   });
   void conversationDeletions.recover().catch((error) => console.error('Failed to recover conversation deletion cleanup.', error));
-  const localRuntimeResolver = createLocalRuntimeResolver({ nativeBindings, singleChatHistory, conversationDeletions, workspaceGrants, grants, protectedRoots, userDataDirectory: () => app.getPath('userData') });
+  const localRuntimeResolver = createLocalRuntimeResolver({
+    nativeBindings,
+    singleChatHistory,
+    conversationDeletions,
+    workspaceGrants,
+    grants,
+    protectedRoots,
+    userDataDirectory: () => app.getPath('userData'),
+  });
   const { availableImportedDirectory, resolveSelectedCodexRuntime, resolveCodexDirectoryRuntime, resolveImportedCodexRuntime, importedCodexBinding, ensureCodexInstallation, resolveCodexLifecycleRuntime, resolveWorkspaceGrant, ensureClaudeInstallation, refreshCodexInstallation, refreshClaudeInstallation, currentCodexInstallation } = localRuntimeResolver;
   const apiProviders = createDefaultApiProviderRegistry();
   const delegationHandles: { delivery?: DelegationResultDelivery; conversation?: DelegationConversationRuntime } = {};
@@ -377,21 +369,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const partner = studioRuntimeCatalog.partner(id);
     return Boolean(partner?.available && (partner.runtime.kind === 'local' || partner.runtime.kind === 'api'));
   }, id => studioRuntimeCatalog.partner(id)?.publicIdentity.displayName ?? '伙伴');
-  const memoryImport = new MemoryImportService(partnerMemories, fallbackEligible, async input => {
-    const config = await memoryFallbackSettings.get();
-    if (config.provider !== input.provider || config.endpoint !== input.endpoint || config.model !== input.model) {
-      throw new Error('MEMORY_IMPORT_CONNECTION_CHANGED');
-    }
-    const apiKey = await memoryFallbackSettings.secret(config);
-    if (!apiKey) throw new Error('MEMORY_IMPORT_CREDENTIAL_REQUIRED');
-    return createMemoryFallbackAdapter(config, apiKey);
-  });
+  const { connectImport, connectFallback } = createMemoryModelConnections({ memoryFallbackSettings });
+  const memoryImport = new MemoryImportService(partnerMemories, fallbackEligible, connectImport);
   const memoryFallbackScheduler = new MemoryFallbackScheduler(memoryFallbackSettings, memoryFallbackJobs, memoryFallbackInventory,
-    new MemoryConsolidation(partnerMemories, memorySources), async (config) => {
-      const apiKey = await memoryFallbackSettings.secret(config);
-      if (!apiKey) throw new Error('MEMORY_FALLBACK_CREDENTIAL_REQUIRED');
-      return createMemoryFallbackAdapter(config, apiKey);
-    }, fallbackEligible);
+    new MemoryConsolidation(partnerMemories, memorySources), connectFallback, fallbackEligible);
   const unsubscribeFallbackInventory = memoryFallbackInventory.subscribe(() => { void memoryFallbackScheduler.revalidate().catch(() => memoryFallbackScheduler.cancelCurrent()); });
   const runtimeFactory = new PartnerRuntimeFactory({
     host,
@@ -407,112 +388,49 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     extensionLaunchBackend,
   });
   const existingThreadWatches = new ExistingThreadWatchRegistry<ExistingThreadConnectionStatus>();
-  const sessionCompactions = new SessionCompactionService(writerLeases, async (request, signal) => {
-    if (await conversationDeletions.isDeleted(request.conversationId)) throw new Error('COMPACT_SESSION_UNAVAILABLE');
-    const indexed = await singleChatMessages.getConversation(request.conversationId);
-    if (indexed && (indexed.partnerId !== request.partnerId || indexed.isArchived || indexed.isDisabled || indexed.busy)) throw new Error('COMPACT_SESSION_UNAVAILABLE');
-    const binding = await nativeBindings.getForScope(request.partnerId, 'single', request.conversationId);
-    if (!binding || binding.state !== 'active' || binding.nativeThreadId !== request.sessionId || binding.source !== request.source) throw new Error('COMPACT_SESSION_MISMATCH');
-    if (binding.profileRecoveryRequired) throw new Error('PROFILE_RELOAD_RECOVERY_REQUIRED');
-    const partner = studioRuntimeCatalog.partner(request.partnerId);
-    if (!partner?.available || partner.sourceMode !== request.source) throw new Error('COMPACT_NOT_SUPPORTED');
-    if (partner.runtime.kind === 'api') {
-      const connection = await apiConnections.resolve(partner.partnerId, partner.runtime.connection);
-      const { definition, endpoint, model } = apiProviders.normalizeConnection(connection);
-      const apiOptions = await configuredApiOptions(connection);
-      return compactApiSession(apiSessions, request.partnerId, request.conversationId, definition.createAdapter({ ...apiOptions, endpoint, model, thinkingMode: 'disabled', reasoningEffort: 'low' }), signal);
-    }
-    if (partner.runtime.kind !== 'local') throw new Error('COMPACT_NOT_SUPPORTED');
-    const adapter = await localMaintenanceAdapter(request);
-    if (!adapter.capabilities.compaction || !adapter.compactSession) throw new Error('COMPACT_NOT_SUPPORTED');
-    try {
-      return await adapter.compactSession(request.sessionId, signal, binding.bootstrap);
-    } finally {
-      if (binding.importedCodexWorkspace) await adapter.dispose?.();
-    }
+  const { sessionCompactions, profileReloads } = createSessionMaintenanceRuntime({
+    apiConnections,
+    apiProviders,
+    apiSessions,
+    configuredApiOptions,
+    conversationDeletions,
+    host,
+    nativeBindings,
+    partnerProfiles,
+    partnerWorkspaces,
+    runtimeFactory,
+    singleChatMessages,
+    studioRuntimeCatalog,
+    writerLeases,
+    availableImportedDirectory,
+    ensureClaudeInstallation,
+    importedCodexBinding,
+    resolveCodexLifecycleRuntime,
+    resolveImportedCodexRuntime,
+    resolveWorkspaceGrant,
   });
-  async function localMaintenanceAdapter(request: { partnerId: string; conversationId: string; sessionId: string }) {
-    const partner = studioRuntimeCatalog.partner(request.partnerId);
-    if (!partner?.available || partner.runtime.kind !== 'local') throw new Error('SESSION_COMMAND_UNAVAILABLE');
-    const runtime = partner.runtime;
-    const imported = await importedCodexBinding(request.partnerId, request.conversationId, request.sessionId);
-    if (imported && runtime.adapterType !== 'codex_cli') throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
-    if (imported) {
-      const root = await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
-      if (!root) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
-      const selected = await resolveImportedCodexRuntime(imported.workspace);
-      const adapterKey = localRuntimeAdapterKey({ adapterType: 'codex_cli', runtimeId: selected.runtimeId,
-        partnerId: request.partnerId, conversationId: request.conversationId, partnerRoot: root, additionalDirectories: [] });
-      return runtimeFactory.getLocal({ adapterType: 'codex_cli', adapterKey, executablePath: selected.executablePath, partnerRoot: root, additionalDirectories: [], importedCodexThread: true });
-    }
-    const workspace = await partnerWorkspaces.grantIds(request.partnerId);
-    const rootGrant = workspace?.cwdGrantId ?? runtime.partnerRootGrantId;
-    if (!rootGrant) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
-    const partnerRoot = await resolveWorkspaceGrant(rootGrant);
-    if (!partnerRoot) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
-    const additionalDirectories = (await Promise.all((workspace?.workspaceGrantIds ?? runtime.workspaceGrantIds).map(resolveWorkspaceGrant))).filter((directory): directory is string => Boolean(directory && directory !== partnerRoot));
-    let executablePath: string, runtimeId = runtime.codexRuntimeId;
-    if (runtime.adapterType === 'codex_cli') {
-      const resolved = await resolveCodexLifecycleRuntime({ partnerRootGrantId: rootGrant, codexRuntimeId: runtime.codexRuntimeId, codexRuntimeEnvironment: runtime.codexRuntimeEnvironment });
-      executablePath = resolved.runtime.executablePath; runtimeId = resolved.runtime.runtimeId;
-    } else {
-      const installed = await ensureClaudeInstallation();
-      if (!installed.executablePath || !installed.loggedIn) throw new Error('CLAUDE_NOT_LOGGED_IN');
-      executablePath = installed.executablePath;
-    }
-    const adapter = host.adapterForSession(request.partnerId, request.conversationId, request.sessionId) ?? runtimeFactory.getLocal({
-      adapterKey: localRuntimeAdapterKey({ adapterType: runtime.adapterType, runtimeId, partnerId: request.partnerId, conversationId: request.conversationId, partnerRoot, additionalDirectories }),
-      adapterType: runtime.adapterType, executablePath, partnerRoot, additionalDirectories,
-    });
-    return adapter;
-  }
-  const profileReloads = new SessionProfileReloadService({
-    leases: writerLeases, profiles: partnerProfiles, bindings: nativeBindings,
-    legacyBootstrap: async (request) => {
-      if (request.source !== 'api_partner') return undefined;
-      const stored = await apiSessions.load(request.partnerId, request.conversationId);
-      return stored?.bootstrapSystemPrompt ? { version: 1, content: stored.bootstrapSystemPrompt, createdAt: '', timeZone: '', appliedProfiles: {} } : undefined;
-    },
-    validate: async (request) => {
-      if (await conversationDeletions.isDeleted(request.conversationId)) throw new Error('SESSION_COMMAND_UNAVAILABLE');
-      const partner = studioRuntimeCatalog.partner(request.partnerId);
-      const indexed = await singleChatMessages.getConversation(request.conversationId);
-      if (!partner?.available || partner.sourceMode !== request.source || request.source === 'existing_thread' || indexed && (indexed.partnerId !== request.partnerId || indexed.isArchived || indexed.isDisabled || indexed.busy)) throw new Error('SESSION_COMMAND_UNAVAILABLE');
-    },
-    confirm: async (request, kind, previous, next, signal, recoverFirst) => {
-      const partner = studioRuntimeCatalog.partner(request.partnerId)!;
-      if (partner.runtime.kind === 'api') {
-        const connection = await apiConnections.resolve(partner.partnerId, partner.runtime.connection);
-        const { definition, endpoint, model } = apiProviders.normalizeConnection(connection);
-        const apiOptions = await configuredApiOptions(connection);
-        const original = await apiSessions.load(request.partnerId, request.conversationId);
-        const message = await confirmProfileReload(definition.createAdapter({ ...apiOptions, endpoint, model, thinkingMode: 'disabled', reasoningEffort: 'low' }), kind, next, signal);
-        let saved: typeof original;
-        return { message,
-          commit: async () => { if (original) saved = await apiSessions.replaceIfUnchanged(original, { ...original, bootstrapSystemPrompt: next.content, bootstrapVersion: next.version, turns: [...original.turns, { clientMessageId: 'profile-reload:' + request.commandId, userContent: profileReloadPrompt(kind, next), messages: [{ role: 'assistant', content: message, reasoningContent: '' }], completedAt: new Date().toISOString() }] }); },
-          rollback: async () => { if (original && saved) await apiSessions.replaceIfUnchanged(saved, original); },
-        };
-      }
-      if (!request.sessionId) throw new Error('SESSION_COMMAND_UNAVAILABLE');
-      const imported = await importedCodexBinding(request.partnerId, request.conversationId, request.sessionId);
-      let adapter: PartnerAdapter;
-      try {
-        adapter = await localMaintenanceAdapter({ ...request, sessionId: request.sessionId });
-      } catch (error) {
-        throw new NativeProfileReloadError(error, recoverFirst);
-      }
-      try {
-        const result = await confirmNativeProfileReload(adapter, request.sessionId, kind, previous, next, signal, recoverFirst);
-        return { ...result, release: imported ? () => adapter.dispose?.() : undefined };
-      } catch (error) {
-        if (imported) await adapter.dispose?.();
-        throw error;
-      }
-    },
+  const prepareStudioTurn = createStudioTurnRuntime({
+    nativeBindings,
+    resolveCodexLifecycleRuntime,
+    studioAttachments,
+    studioRooms,
   });
   const sessionCommands = new SessionCommandService({ bindings: nativeBindings, catalog: studioRuntimeCatalog, messages: singleChatMessages, leases: writerLeases, compactions: sessionCompactions, reload: (request) => profileReloads.execute(request), isDeleted: (id) => conversationDeletions.isDeleted(id) });
   const diaryCatalog = new PartnerDiaryCatalog(studioRuntimeCatalog);
-  const { executeDelegation, existingReviewConnection, reviewConnectionFingerprint, reviewClient, assertReviewThread, executeExistingReview } = createDelegationExecutor({ apiConnections, apiProviders, configuredApiOptions, conversationDeletions, credentials, diaryCatalog, ensureClaudeInstallation, ensureCodexInstallation, messageAttachments, singleChatMessages, studioRuntimeCatalog, temporaryDirectory: () => app.getPath('temp') });
+  const { executeDelegation, existingReviewConnection, reviewConnectionFingerprint, reviewClient, assertReviewThread, executeExistingReview } = createDelegationExecutor({
+    apiConnections,
+    apiProviders,
+    configuredApiOptions,
+    conversationDeletions,
+    credentials,
+    diaryCatalog,
+    ensureClaudeInstallation,
+    ensureCodexInstallation,
+    messageAttachments,
+    singleChatMessages,
+    studioRuntimeCatalog,
+    temporaryDirectory: () => app.getPath('temp'),
+  });
   const studioWakeControl = new StudioWakeControlService(() => path.join(app.getPath('userData'), 'studio-wake-settings.v1.json'), {
     autoConnect: restoreBackgroundServices,
     connection: (partnerId) => {
@@ -536,70 +454,38 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const diaryScheduler = new PartnerDiaryScheduler({
     settings: diarySettings, store: (id) => diaries.store(id), source: (id) => singleChatMessages.getConversation(id),
     identity: (id) => diaryCatalog.identity(id), leases: writerLeases,
-    generate: async ({ config, entry, source, signal }) => {
-      const current = diaryCatalog.current(config.partnerId);
-      if (!current?.identity.available) throw new Error('DIARY_RUNTIME_UNAVAILABLE');
-      if (current.existing) {
-        const secret = await credentials.get(current.existing.credentialRef);
-        if (!secret || !config.upstreamThreadId) throw new Error('DIARY_RUNTIME_UNAVAILABLE');
-        return generateExistingDiary(current.existing, secret, config.upstreamThreadId, entry.generationId, source, signal);
-      }
-      const partner = current.runtime;
-      const profile = await partnerProfiles.runtimeProfile(config.partnerId);
-      if (!partner || !profile) throw new Error('DIARY_RUNTIME_UNAVAILABLE');
-      const persona = await partnerProfiles.managedPersonaState(config.partnerId);
-      const bootstrap = assembleSessionBootstrap({ source: partner.sourceMode, partnerName: profile.publicIdentity.displayName,
-        management: { ...profile.management, memoryMode: 'self_managed' }, user: await partnerProfiles.runtimeUserProfile(),
-        ...(persona.enabled ? { persona } : {}), platformContext: '本回合是隔离的每日伙伴日记，不属于用户聊天；不提供记忆简报和记忆工具。',
-      })?.content ?? '';
-      if (partner.runtime.kind === 'api') {
-        const connection = await apiConnections.resolve(partner.partnerId, partner.runtime.connection); const apiOptions = await configuredApiOptions(connection);
-        const provider = apiProviders.normalizeConnection(connection);
-        return generateApiDiary(provider.definition.createAdapter({ ...apiOptions, endpoint: provider.endpoint, model: provider.model, thinkingMode: 'disabled' }), source, bootstrap, signal);
-      }
-      if (partner.runtime.kind !== 'local') throw new Error('DIARY_RUNTIME_UNAVAILABLE');
-      const directory = path.join(app.getPath('userData'), 'diary-runtime', entry.generationId);
-      await mkdir(directory, { recursive: true });
-      const input = { cwd: directory, source, bootstrap, signal };
-      if (partner.runtime.adapterType === 'codex_cli') {
-        const installation = await ensureCodexInstallation();
-        const runtime = resolveCodexRuntime(installation.runtimes, partner.runtime.codexRuntimeId, partner.runtime.codexRuntimeEnvironment);
-        if (!runtime?.loggedIn) throw new Error('DIARY_RUNTIME_UNAVAILABLE');
-        return generateCodexDiary({ ...input, executablePath: runtime.executablePath });
-      }
-      const installation = await ensureClaudeInstallation();
-      if (!installation.executablePath || !installation.loggedIn) throw new Error('DIARY_RUNTIME_UNAVAILABLE');
-      return generateClaudeDiary({ ...input, executablePath: installation.executablePath, ...(partner.recentModel?.model ? { model: partner.recentModel.model } : {}) }, (await loadClaudeCliRuntime()).query);
-    },
+    generate: createDiaryGeneration({
+    apiConnections,
+    apiProviders,
+    configuredApiOptions,
+    credentials,
+    diaryCatalog,
+    partnerProfiles,
+    ensureClaudeInstallation,
+    ensureCodexInstallation,
+    userDataDirectory: () => app.getPath('userData'),
+  }),
   });
 
   const automationStore = new AutomationStore(() => path.join(app.getPath('userData'), 'automations.v1.json'));
   const automationConfirmations = new AutomationConfirmations(() => { notifications?.confirmations(automationConfirmations.list()); const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.automationsConfirmationsChanged); });
   const automationHandles: { runtime?: AutomationRuntime; scheduler?: AutomationScheduler } = {};
+  const { automationWorkspaceSignature, checkAutomation, attachAutomationCommand, targets } = createAutomationTargetPolicy({
+    automationHandles,
+    conversationDeletions,
+    nativeBindings,
+    partnerWorkspaces,
+    projectWorkspaces,
+    singleChatMessages,
+    studioRooms,
+    studioRuntimeCatalog,
+    useLegacyRunPath,
+    writerLeases,
+  });
   const automationService = new AutomationService(automationStore, {
     runtimeReady: () => restoreBackgroundServices && Boolean(automationHandles.scheduler),
     get scheduler() { return restoreBackgroundServices ? automationHandles.scheduler : undefined; },
-    targets: async () => {
-      const targets: AutomationTargetOption[] = [];
-      for (const c of await singleChatMessages.list()) {
-        const partner = studioRuntimeCatalog.partner(c.partnerId);
-        if (!partner || c.isArchived || c.isDisabled || !c.sessionId || await conversationDeletions.isDeleted(c.conversationId)) continue;
-        const b = await nativeBindings.getForScope(c.partnerId, 'single', c.conversationId);
-        if ((!b || b.state !== 'active' || b.nativeThreadId !== c.sessionId) && partner.sourceMode !== 'existing_thread') continue;
-        targets.push({ target: { partnerId: c.partnerId, conversationId: c.conversationId, sourceMode: partner.sourceMode, nativeThreadId: c.sessionId, bindingGeneration: b?.generation ?? 1, workspaceSignature: await automationWorkspaceSignature(c.partnerId) },
-          label: `${partner.publicIdentity.displayName} · ${c.title || '单聊'}`, available: partner.sourceMode !== 'existing_thread' && partner.available,
-          ...(partner.sourceMode === 'existing_thread' ? { reason: '外部宿主尚未声明自动化能力' } : {}) });
-      }
-      for (const room of await studioRooms.listAll()) {
-        if (room.metadata.archived) continue;
-        for (const id of room.metadata.memberIds) {
-          const p = studioRuntimeCatalog.partner(id), b = await nativeBindings.getForScope(id, 'group', room.metadata.roomId);
-          if (!p || !b || b.state !== 'active' || !b.nativeThreadId) continue;
-          targets.push({ target: { partnerId: id, conversationId: b.conversationId, nativeThreadId: b.nativeThreadId, bindingGeneration: b.generation, sourceMode: p.sourceMode, workspaceSignature: await automationWorkspaceSignature(id, room.metadata.projectId), roomId: room.metadata.roomId, projectId: room.metadata.projectId }, label: `${p.publicIdentity.displayName} · ${room.metadata.name}`, available: p.available && p.sourceMode !== 'existing_thread' });
-        }
-      }
-      return targets;
-    },
+    targets: targets,
   });
   const unsubscribeAutomations = automationStore.subscribe(() => { if (notifications) void automationStore.snapshot().then(snapshot => notifications.automations(snapshot.runs)).catch(() => undefined); const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.automationsChanged); });
   const requireSender = (event: IpcMainInvokeEvent) => {
@@ -615,7 +501,18 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerGeneralSettingsIpc(ipcMain, generalSettings, requireSender);
   const unsubscribeGeneralSettings = generalSettings.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.generalSettingsChanged, snapshot); });
   const projectTaskRuntimeRef: { current?: ProjectTaskRuntime } = {};
-  const { sendEvent, transformRuntimeEvent, delivery, notifyHandoffDelivered } = createRuntimeEventBridge({ automationConfirmations, automationHandles, getWindow, notifications, partnerProfiles, projectFileDelivery, projectTaskRuntimeRef, sessionCommands, singleChatHistory, studioRuntimeCatalog });
+  const { sendEvent, transformRuntimeEvent, delivery, notifyHandoffDelivered } = createRuntimeEventBridge({
+    automationConfirmations,
+    automationHandles,
+    getWindow,
+    notifications,
+    partnerProfiles,
+    projectFileDelivery,
+    projectTaskRuntimeRef,
+    sessionCommands,
+    singleChatHistory,
+    studioRuntimeCatalog,
+  });
   const studioOrchestration = { orchestrator: undefined as StudioOrchestrator | undefined };
   const unsubscribeStudioRooms = studioRooms.subscribe((snapshot) => {
     const window = getWindow();
@@ -648,15 +545,12 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const window = getWindow();
     if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.projectExecutionPolicyChanged, policy);
   });
+  const reconcileProjectState = createProjectStateReconciler(projectTaskOrchestrator, projectWorkflows);
   const unsubscribeProjectDomain = projectDomain.subscribe((snapshot) => {
     notifications?.tasks(snapshot.tasks);
     const window = getWindow();
     if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.projectDomainChanged, { type: 'snapshot', snapshot });
-    void projectTaskOrchestrator.reconcileProject(snapshot).catch((error) => console.error('Failed to reconcile project task dependencies.', error));
-    for (const project of snapshot.projects) {
-      void projectWorkflows.reconcileProject(project.id, snapshot.tasks.filter((task) => task.projectId === project.id))
-        .catch((error) => console.error('Failed to reconcile project workflow state.', error));
-    }
+    reconcileProjectState(snapshot);
   });
   const unsubscribeProjectTaskExecutions = projectTaskExecutions.subscribe((snapshot) => {
     const window = getWindow();
@@ -732,77 +626,114 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const conversationLifecycle = new ConversationLifecycleService({ cancelDelegation, writerLeases, conversationDeletions, delegation, diarySettings, diaryScheduler, memoryFallbackInventory });
   registerConversationHistoryIpc(ipcMain, { conversationLifecycle, conversationDeletions, singleChatHistory, singleChatMessages, nativeBindings, diarySettings, diaryScheduler, memoryFallbackInventory }, requireSender);
 
-  const delegationToolFor = createDelegationToolHandler({ apiConnections, artifacts, assertReviewThread, conversationDeletions, delegation, delegationHandles, existingReviewConnection, messageAttachments, reviewClient, reviewConnectionFingerprint, studioRuntimeCatalog });
-  const runtimeToolsFor = createRuntimeToolBindings({ automationAgentTools: () => automationAgentTools, automationHandles, artifacts, delegationHandles, delegationToolFor, messageAttachments, partnerMemoryTools, partnerWorkspaces, projectNotebooks, projectTaskRuntimeRef, studioRooms, studioRuntimeCatalog, workflowGenerationRuntimeRef });
-  const { hooks, persistFirstSingleChatBinding, captureGuidanceSource, markAcceptedStudioSpeakingMode } = createRuntimeRunHooks({ automationHandles, checkAutomation: (run, owner) => checkAutomation(run, owner), delegation, delegationHandles, delivery, hydrateManagedRuntimeProfile, nativeBindings, notifyHandoffDelivered, projectChanges, projectTaskRuntimeRef, sendEvent, sessionBootstrapRecorder, singleChatHistory, singleChatMessages, studioOrchestration, studioRooms, transformRuntimeEvent, workflowGenerationRuntimeRef });
+  const delegationToolFor = createDelegationToolHandler({
+    apiConnections,
+    artifacts,
+    assertReviewThread,
+    conversationDeletions,
+    delegation,
+    delegationHandles,
+    existingReviewConnection,
+    messageAttachments,
+    reviewClient,
+    reviewConnectionFingerprint,
+    studioRuntimeCatalog,
+  });
+  const runtimeToolsFor = createRuntimeToolBindings({
+    automationAgentTools: () => automationAgentTools,
+    automationHandles,
+    artifacts,
+    delegationHandles,
+    delegationToolFor,
+    messageAttachments,
+    partnerMemoryTools,
+    partnerWorkspaces,
+    projectNotebooks,
+    projectTaskRuntimeRef,
+    studioRooms,
+    studioRuntimeCatalog,
+    workflowGenerationRuntimeRef,
+  });
+  const { hooks, persistFirstSingleChatBinding, captureGuidanceSource, markAcceptedStudioSpeakingMode } = createRuntimeRunHooks({
+    automationHandles,
+    checkAutomation: (run, owner) => checkAutomation(run, owner),
+    delegation,
+    delegationHandles,
+    delivery,
+    hydrateManagedRuntimeProfile,
+    nativeBindings,
+    notifyHandoffDelivered,
+    projectChanges,
+    projectTaskRuntimeRef,
+    sendEvent,
+    sessionBootstrapRecorder,
+    singleChatHistory,
+    singleChatMessages,
+    studioOrchestration,
+    studioRooms,
+    transformRuntimeEvent,
+    workflowGenerationRuntimeRef,
+  });
   const runCoordinator = new RunCoordinator(host, hooks, writerLeases);
-  const { startAdapterRun } = createLegacyRunPath({ captureGuidanceSource, delivery, host, hydrateManagedRuntimeProfile, markAcceptedStudioSpeakingMode, nativeBindings, notifyHandoffDelivered, persistFirstSingleChatBinding, sendEvent, sessionBootstrapRecorder, studioOrchestration, studioRooms, transformRuntimeEvent, writerLeases });
-  const useLegacyRunPath = process.env.ASTERIUM_USE_LEGACY_RUN_PATH === '1';
-  const { startApiRuntime, startLocalRuntime } = createMessageRuntime({ apiConnections, apiProviders, attachAutomationCommand: command => attachAutomationCommand(command), availableImportedDirectory, configuredApiOptions, ensureClaudeInstallation, hydrateManagedRuntimeProfile, importedCodexBinding, messageAttachments, partnerWorkspaces, protectedRoots, resolveImportedCodexRuntime, resolveSelectedCodexRuntime, resolveWorkspaceGrant, runCoordinator, runtimeFactory, runtimeToolsFor, singleChatMessages, startAdapterRun, useLegacyRunPath });
-  const projectTaskRuntime = new ProjectTaskRuntime({
-    catalog: studioRuntimeCatalog,
-    bindings: nativeBindings,
-    startApi: ({ partner, command, projectRoot }) => {
-      if (partner.runtime.kind !== 'api') throw new Error('PROJECT_TASK_PARTNER_RUNTIME_UNAVAILABLE');
-      return startApiRuntime({ connection: partner.runtime.connection, command, projectRootOverride: projectRoot });
-    },
-    startLocal: ({ partner, command, projectRoot }) => {
-      if (partner.runtime.kind !== 'local') throw new Error('PROJECT_TASK_PARTNER_RUNTIME_UNAVAILABLE');
-      return startLocalRuntime({
-        adapterType: partner.runtime.adapterType,
-        partnerId: partner.partnerId,
-        partnerRootGrantId: partner.runtime.partnerRootGrantId,
-        workspaceGrantIds: [],
-        command,
-        codexRuntimeId: partner.runtime.codexRuntimeId,
-        codexRuntimeEnvironment: partner.runtime.codexRuntimeEnvironment,
-        projectRootOverride: projectRoot,
-      });
-    },
-    cancelRun: (command) => runCoordinator.cancel(command),
-    submitHandoff: async (attemptId, handoff) => {
-      const result = await projectTaskOrchestrator.submitHandoff(attemptId, handoff);
-      projectTaskRuntimeRef.current?.reportChanges(attemptId, handoff.changedPaths, projectChanges, handoff.verification);
-      return result;
-    },
-    submitReview: (attemptId, review) => projectTaskOrchestrator.submitReview(attemptId, review),
-    captureChangedFiles: (projectId, changedPaths) => projectFiles.captureChangedPaths(projectId, changedPaths),
+  const { startAdapterRun } = createLegacyRunPath({
+    captureGuidanceSource,
+    delivery,
+    host,
+    hydrateManagedRuntimeProfile,
+    markAcceptedStudioSpeakingMode,
+    nativeBindings,
+    notifyHandoffDelivered,
+    persistFirstSingleChatBinding,
+    sendEvent,
+    sessionBootstrapRecorder,
+    studioOrchestration,
+    studioRooms,
+    transformRuntimeEvent,
+    writerLeases,
   });
+  const { startApiRuntime, startLocalRuntime } = createMessageRuntime({
+    apiConnections,
+    apiProviders,
+    attachAutomationCommand: command => attachAutomationCommand(command),
+    availableImportedDirectory,
+    configuredApiOptions,
+    ensureClaudeInstallation,
+    hydrateManagedRuntimeProfile,
+    importedCodexBinding,
+    messageAttachments,
+    partnerWorkspaces,
+    protectedRoots,
+    resolveImportedCodexRuntime,
+    resolveSelectedCodexRuntime,
+    resolveWorkspaceGrant,
+    runCoordinator,
+    runtimeFactory,
+    runtimeToolsFor,
+    singleChatMessages,
+    startAdapterRun,
+    useLegacyRunPath,
+  });
+  const { taskOptions, workflowOptions } = createProjectRuntimeBindings({
+    nativeBindings,
+    projectChanges,
+    projectDomain,
+    projectFiles,
+    projectService,
+    projectTaskOrchestrator,
+    projectTaskRuntimeRef,
+    projectWorkflowGenerations,
+    projectWorkflows,
+    projectWorkRoles,
+    runCoordinator,
+    startApiRuntime,
+    startLocalRuntime,
+    studioRooms,
+    studioRuntimeCatalog,
+    temporaryDirectory: () => options.environment?.temporaryDirectory ?? app.getPath('temp'),
+  });
+  const projectTaskRuntime = new ProjectTaskRuntime(taskOptions);
   projectTaskRuntimeRef.current = projectTaskRuntime;
-  const workflowGenerationRuntime = new ProjectWorkflowGenerationRuntime({
-    generations: projectWorkflowGenerations,
-    rooms: studioRooms,
-    catalog: studioRuntimeCatalog,
-    bindings: nativeBindings,
-    project: (projectId) => projectDomain.getProject(projectId),
-    roles: (projectId) => projectWorkRoles.catalog(projectId),
-    workflowCatalog: (projectId) => projectService.workflowCatalog(projectId),
-    createWorkflow: (input) => projectService.createGeneratedWorkflow(input),
-    workflowForGeneration: (generationId) => projectWorkflows.getByGenerationId(generationId),
-    startApi: ({ partner, command, planningRoot }) => {
-      if (partner.runtime.kind !== 'api') throw new Error('PROJECT_WORKFLOW_GENERATION_PLANNER_UNAVAILABLE');
-      return startApiRuntime({ connection: partner.runtime.connection, command, projectRootOverride: planningRoot });
-    },
-    startLocal: ({ partner, command, planningRoot }) => {
-      if (partner.runtime.kind !== 'local') throw new Error('PROJECT_WORKFLOW_GENERATION_PLANNER_UNAVAILABLE');
-      return startLocalRuntime({
-        adapterType: partner.runtime.adapterType,
-        partnerId: partner.partnerId,
-        partnerRootGrantId: partner.runtime.partnerRootGrantId,
-        workspaceGrantIds: [],
-        command,
-        codexRuntimeId: partner.runtime.codexRuntimeId,
-        codexRuntimeEnvironment: partner.runtime.codexRuntimeEnvironment,
-        projectRootOverride: planningRoot,
-      });
-    },
-    cancelRun: (command) => runCoordinator.cancel(command),
-    planningRoot: async () => {
-      const root = path.join(options.environment?.temporaryDirectory ?? app.getPath('temp'), 'workflow-planning');
-      await mkdir(root, { recursive: true });
-      return root;
-    },
-  });
+  const workflowGenerationRuntime = new ProjectWorkflowGenerationRuntime(workflowOptions);
   workflowGenerationRuntimeRef.current = workflowGenerationRuntime;
   void workflowGenerationRuntime.recover().catch((error) => console.error('Failed to recover workflow generations.', error));
   const partnerRuntimePort = new PartnerRuntimePort({
@@ -815,21 +746,12 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
   const studioOrchestrator = new StudioOrchestrator(studioRooms, studioRuntimeCatalog, partnerRuntimePort, projectCoordinator, projectExecutionPolicies, studioAttachments);
   studioOrchestration.orchestrator = studioOrchestrator;
-  const sendExistingThreadChanged = (partnerId: string, change: { threadId: string; previousThreadId?: string; workspaceRoot: string; reason: string }) => {
-    diaryCatalog.observeThread(partnerId, change.threadId, change.workspaceRoot);
-    void diaryScheduler.changed().catch(() => console.error('Diary upstream binding update failed.'));
-    sendEvent({
-    protocolVersion: AGENT_PROTOCOL_VERSION,
-    type: 'existing_thread.changed',
-    eventId: randomUUID(),
-    partnerId,
-    connectionSource: 'existing_thread',
-    threadId: change.threadId,
-    ...(change.previousThreadId ? { previousThreadId: change.previousThreadId } : {}),
-    workspaceRoot: change.workspaceRoot,
-    reason: change.reason,
-    occurredAt: new Date().toISOString(),
-  }); };
+  const { sendExistingThreadChanged, onReply } = createExistingThreadEvents({
+    getWindow,
+    diaryCatalog,
+    diaryScheduler,
+    sendEvent,
+  });
   registerLocalRuntimeDetectionIpc(
     ipcMain,
     refreshClaudeInstallation,
@@ -919,19 +841,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     credentials, bridgeCursors, existingThreadWatches, messageAttachments, protectedRoots, hydrateManagedRuntimeProfile,
     runCoordinator, runtimeFactory, sendExistingThreadChanged,
     startRun: (adapter, command) => useLegacyRunPath ? startAdapterRun(adapter, command) : runCoordinator.start(adapter, command),
-    onReply: (command, threadId, reply) => {
-      const window = getWindow();
-      if (!window || window.isDestroyed()) return;
-      window.webContents.send(AGENT_IPC.event, {
-        type: 'existing_thread.reply',
-        partnerId: command.partnerId,
-        conversationId: command.conversationId,
-        threadId,
-        eventId: reply.id,
-        occurredAt: Number.isFinite(Date.parse(reply.createdAt)) ? reply.createdAt : new Date().toISOString(),
-        text: reply.text,
-      } satisfies ExistingThreadReplyEvent);
-    },
+    onReply: onReply,
   });
   registerExistingThreadIpc(ipcMain, credentials, existingThreads, requireSender);
 
@@ -939,148 +849,38 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerRunControlIpc(ipcMain, { runCoordinator, automationConfirmations }, requireSender);
 
-  async function prepareStudioTurn(value: StudioPrepareTurnRequest) {
-    if (value.source === 'existing_thread') throw new Error('STUDIO_EXISTING_THREAD_NOT_SUPPORTED');
-    // v3 group bindings rebuild once from the canonical ledger so runtimes
-    // receive their own registered replies (including the public seq) instead
-    // of relying on native-thread history that cannot know the later seq.
-    const conversationBase = `group:v3:${value.roomId}:${value.partnerId}`;
-    let binding = await nativeBindings.reserve({
-      partnerId: value.partnerId,
-      source: value.source,
-      scope: 'group',
-      conversationId: conversationBase, generationScopedConversation: true,
-      roomId: value.roomId,
-    });
-    if (binding.conversationId !== conversationBase && !binding.conversationId.startsWith(conversationBase + ':generation:')) {
-      await nativeBindings.invalidate(binding.bindingId);
-      binding = await nativeBindings.reserve({ partnerId: value.partnerId, source: value.source, scope: 'group', conversationId: conversationBase, generationScopedConversation: true, roomId: value.roomId });
-    }
-    if (binding.state === 'active' && binding.nativeThreadId && value.adapterType === 'codex_cli') {
-      const { runtime, workingDirectory } = await resolveCodexLifecycleRuntime(value);
-      const [lifecycle] = await getCodexThreadLifecycles(runtime.executablePath, workingDirectory, [binding.nativeThreadId]);
-      const lastTurnId = lifecycle?.state === 'active'
-        ? await getCodexThreadLastTurnId(runtime.executablePath, workingDirectory, binding.nativeThreadId).catch(() => undefined)
-        : undefined;
-      if (lifecycle?.state !== 'active' || !binding.lastCompletedRunId || lastTurnId !== binding.lastCompletedRunId) {
-        await nativeBindings.invalidate(binding.bindingId);
-        binding = await nativeBindings.reserve({
-          partnerId: value.partnerId,
-          source: value.source,
-          scope: 'group',
-          conversationId: conversationBase, generationScopedConversation: true,
-          roomId: value.roomId,
-        });
-      }
-    }
-    const prepared = await studioRooms.prepareTurn(value.roomId, value.roundId, value.partnerId, binding.generation, binding.conversationId, binding.nativeThreadId, binding.studioSpeakingMode);
-    const snapshot = await studioRooms.getRoom(value.roomId);
-    return studioAttachments.prepareTurn(prepared, snapshot?.messages ?? []);
-  }
+  const { automationAgentTools, externalAutomation } = createAutomationExecutionBridge({
+    automationConfirmations,
+    automationHandles,
+    automationService,
+    automationStore,
+    checkAutomation,
+    getWindow,
+    projectExecutionPolicies,
+    runCoordinator,
+    singleChatMessages,
+    startApiRuntime,
+    startLocalRuntime,
+    studioMcpAccess,
+    studioMcpService,
+    studioRooms,
+    studioRuntimeCatalog,
+    writerLeases,
+  });
+  studioMcpService.automation = externalAutomation;
 
-  async function automationWorkspaceSignature(partnerId: string, projectId?: string) {
-    const workspace = projectId ? await projectWorkspaces.get(projectId) : await partnerWorkspaces.grantIds(partnerId);
-    return createHash('sha256').update(JSON.stringify(workspace ?? null)).digest('hex');
-  }
-  async function checkAutomation(run: AutomationRun, leaseOwner?: string) {
-    const t = run.definition.target, partner = studioRuntimeCatalog.partner(t.partnerId);
-    const unavailable = (reason: string) => ({ available: false, reason });
-    if (useLegacyRunPath) return unavailable('旧运行路径尚不支持自动化');
-    if (!partner || !partner.available || partner.sourceMode !== t.sourceMode) return unavailable('伙伴暂不可用');
-    if (partner.sourceMode === 'existing_thread') return unavailable('外部宿主尚未声明自动化能力');
-    if (!t.workspaceSignature || t.workspaceSignature !== await automationWorkspaceSignature(t.partnerId, t.projectId)) return unavailable('工作区已变化，请编辑后重新绑定');
-    const binding = await nativeBindings.getForScope(t.partnerId, t.roomId ? 'group' : 'single', t.roomId ?? t.conversationId);
-    if (!binding || binding.state !== 'active' || binding.nativeThreadId !== t.nativeThreadId || binding.generation !== t.bindingGeneration || binding.profileRecoveryRequired) return unavailable('原线程绑定已变化或需要恢复');
-    const owner = writerLeases.ownerFor({ kind: 'conversation', partnerId: t.partnerId, conversationId: t.conversationId });
-    if (owner && owner !== leaseOwner) return unavailable('原线程忙碌，等待空闲');
-    if (t.roomId) {
-      const room = await studioRooms.getRoom(t.roomId);
-      if (!room || room.metadata.archived || room.metadata.projectId !== t.projectId || !room.metadata.memberIds.includes(t.partnerId) || room.mutedPartnerIds.includes(t.partnerId)) return unavailable('群聊资格或项目已变化');
-      if (room.settings.speakingMode === 'selected_partners' && !room.settings.selectedPartnerIds.includes(t.partnerId)) return unavailable('目标伙伴不在当前指定发言成员中');
-      if (room.activeRound && !['completed', 'cancelled', 'failed'].includes(room.activeRound.state)
-        && room.activeRound.triggerMessageId !== `automation-trigger:${run.id}`) return unavailable('群聊正在进行另一轮');
-      const projectOwner = writerLeases.ownerFor({ kind: 'project_workspace', projectId: t.projectId! });
-      if (projectOwner && projectOwner !== `automation:${run.id}`) return unavailable('项目工作区忙碌');
-    } else {
-      const source = await singleChatMessages.getConversation(t.conversationId);
-      if (await conversationDeletions.isDeleted(t.conversationId) || !source || source.partnerId !== t.partnerId || source.isArchived || source.isDisabled || source.sessionId !== t.nativeThreadId) return unavailable('原对话不可用');
-      if (source.busy && !leaseOwner) return unavailable('原对话忙碌，等待空闲');
-      const workspace = await partnerWorkspaces.grantIds(t.partnerId);
-      if (source.partnerRootGrantId && source.partnerRootGrantId !== workspace?.cwdGrantId) return unavailable('请先切回原对话的工作区');
-    }
-    return { available: true };
-  }
-  async function attachAutomationCommand(command: SendMessageCommand) {
-    if (command.route?.scope === 'group') {
-      const run = automationHandles.runtime?.pendingGroup(command.route.roomId, command.partnerId);
-      if (run) {
-        const room = await studioRooms.getRoom(command.route.roomId);
-        if (room?.activeRound?.triggerMessageId === `automation-trigger:${run.id}`) automationHandles.runtime?.attach(command, run.id);
-      }
-    } else automationHandles.runtime?.attach(command);
-  }
-  const automationProjectLeases = new Map<string, ReturnType<WriterLeaseCoordinator['tryAcquire']>>();
-  const automationAgentTools = new AutomationAgentTools(automationService, async (request, owner) => {
-    const window = getWindow(); if (!window || window.isDestroyed()) return false;
-    if (request.action !== 'create' && request.action !== 'update' && request.action !== 'remove') return false;
-    const task = 'input' in request ? request.input : (await automationStore.snapshot()).automations.find(d => d.id === request.id);
-    if (!task) return false;
-    const target = (await automationService.get(owner.partnerId)).targets.find(t => t.target.conversationId === task.target.conversationId);
-    return automationConfirmations.request({ action: request.action,
-      partnerName: studioRuntimeCatalog.partner(owner.partnerId)?.publicIdentity.displayName ?? '伙伴', targetLabel: target?.label ?? '原对话',
-      task: { name: task.name, instructions: task.instructions, schedule: task.schedule, timezone: task.timezone, catchUp: task.catchUp, notifications: task.notifications, enabled: task.enabled },
-    }, owner.ownerKey, owner.signal);
+  const delegationRuntime = createDelegationRuntimeBridge({
+    nativeBindings,
+    singleChatMessages,
+    conversationDeletions,
+    studioRuntimeCatalog,
+    writerLeases,
+    automationWorkspaceSignature: (partnerId, projectId) => automationWorkspaceSignature(partnerId, projectId),
+    startApiRuntime,
+    startLocalRuntime,
+    runCoordinator,
+    delegation,
   });
-  studioMcpService.automation = async (token, input) => {
-    const identity = await studioMcpService.authenticate(token);
-    const revalidate = async () => {
-      if ((await studioMcpService.authenticate(token)).partnerId !== identity.partnerId) throw new Error('STUDIO_MCP_UNAUTHORIZED');
-      if (!(await studioMcpAccess.snapshot()).configuration.automationManagementEnabled) throw new Error('AUTOMATION_EXTERNAL_DISABLED');
-    };
-    return automationAgentTools.call(input, { partnerId: identity.partnerId, automatic: false, revalidate });
-  };
-  automationHandles.runtime = new AutomationRuntime(automationStore, {
-    check: run => checkAutomation(run),
-    launch: async (run, signal) => {
-      const t = run.definition.target, p = studioRuntimeCatalog.partner(t.partnerId);
-      if (!p || p.runtime.kind === 'unsupported') throw new Error('AUTOMATION_PARTNER_UNAVAILABLE');
-      const previous = (await automationStore.snapshot()).runs.filter(r => r.automationId === run.automationId && r.state === 'succeeded').slice(-3).map(r => ({ summary: r.summary?.slice(0, 8000), finishedAt: r.finishedAt }));
-      const prompt = automationPrompt(run, previous);
-      signal.throwIfAborted();
-      if (t.roomId) {
-        const lease = writerLeases.tryAcquire({ kind: 'project_workspace', projectId: t.projectId! }, `automation:${run.id}`);
-        if (!lease) throw new Error('AUTOMATION_PROJECT_BUSY'); automationProjectLeases.set(run.id, lease);
-        const policy = await projectExecutionPolicies.getOrCreate(t.projectId!);
-        await studioRooms.publishAutomationMessage(t.roomId, t.partnerId, { automationId: run.automationId, runId: run.id, name: run.definition.name }, prompt, policy.permissionMode);
-        return;
-      }
-      const source = await singleChatMessages.getConversation(t.conversationId); if (!source) throw new Error('AUTOMATION_SOURCE_MISSING');
-      const command: SendMessageCommand = { protocolVersion: AGENT_PROTOCOL_VERSION, type: 'message.send', commandId: `automation-command:${run.id}`, clientMessageId: `automation:${run.id}`,
-        partnerId: t.partnerId, conversationId: t.conversationId, connectionSource: t.sourceMode, sessionId: t.nativeThreadId,
-        content: { type: 'text', text: prompt }, execution: { permissionMode: source.permissionMode ?? 'manual', planMode: source.planMode ?? 'default' },
-        runtimeContext: { partner: { displayName: p.publicIdentity.displayName, introduction: p.publicIdentity.introduction, expertise: p.publicIdentity.expertise, mentionName: p.publicIdentity.mentionName, avatarAvailable: Boolean(p.publicIdentity.avatarDataUrl) },
-          runtime: p.runtimeContext, user: studioRuntimeCatalog.user(), conversation: { title: source.title ?? run.definition.name } },
-        apiContext: { apiSessionHistoryEnabled: source.apiSessionHistoryEnabled ?? true, history: trimChatHistory(source.messages.filter(m => m.fallbackEligible !== false).map(m => ({ role: m.authorType === 'user' ? 'user' as const : 'assistant' as const, content: m.content }))) },
-      };
-      automationHandles.runtime!.attach(command);
-      if (p.runtime.kind === 'api') await startApiRuntime({ connection: p.runtime.connection, command });
-      else await startLocalRuntime({ adapterType: p.runtime.adapterType, partnerId: t.partnerId, partnerRootGrantId: p.runtime.partnerRootGrantId, workspaceGrantIds: p.runtime.workspaceGrantIds,
-        codexRuntimeId: p.runtime.codexRuntimeId, codexRuntimeEnvironment: p.runtime.codexRuntimeEnvironment, command });
-    },
-    cancel: (command, receipt) => runCoordinator.cancel({ ...command, type: 'run.cancel', commandId: `automation-cancel:${randomUUID()}`, runId: receipt.runId, sessionId: receipt.sessionId, reason: '取消自动化本次执行' }),
-    saveResult: async (run, summary, messageId, completed) => {
-      if (run.definition.target.roomId) return;
-      const now = new Date(); await singleChatMessages.upsertMessage(run.definition.target.conversationId, run.definition.target.partnerId, {
-        messageId, automationRunId: run.id, authorType: 'partner', authorId: run.definition.target.partnerId, content: summary,
-        createdAt: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }), occurredAt: run.startedAt ?? now.toISOString(), completedAt: now.toISOString(), fallbackEligible: completed,
-      });
-    },
-  });
-  automationHandles.scheduler = new AutomationScheduler(automationStore, {
-    check: run => automationHandles.runtime!.check(run),
-    execute: async (run, signal) => { try { return await automationHandles.runtime!.execute(run, signal); } finally { automationProjectLeases.get(run.id)?.release(); automationProjectLeases.delete(run.id); } },
-  });
-  const delegationRuntime = createDelegationRuntimeBridge({ nativeBindings, singleChatMessages, conversationDeletions, studioRuntimeCatalog, writerLeases, automationWorkspaceSignature: (partnerId, projectId) => automationWorkspaceSignature(partnerId, projectId), startApiRuntime, startLocalRuntime, runCoordinator, delegation });
   delegationHandles.conversation = delegationRuntime.conversation;
   delegationHandles.delivery = delegationRuntime.delivery;
 
@@ -1137,55 +937,4 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     await singleChatHistory.flush();
     grants.clear();
   };
-}
-
-function isUserProfileSeed(value: unknown): value is { displayName: string; introduction: string; updatedAt: string; revision?: string } {
-  return isRecord(value)
-    && typeof value.displayName === 'string' && value.displayName.length <= 80
-    && typeof value.introduction === 'string' && value.introduction.length <= 20_000
-    && typeof value.updatedAt === 'string'
-    && (value.revision === undefined || typeof value.revision === 'string' && /^[a-f0-9]{64}$/.test(value.revision));
-}
-
-function isPartnerProfileSeed(value: unknown): value is PartnerProfileSeed {
-  if (!isRecord(value) || typeof value.partnerId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(value.partnerId)
-    || !['existing_thread', 'local_cli', 'api_partner'].includes(String(value.sourceMode))
-    || !isRecord(value.publicIdentity) || !isRecord(value.management) || !isRecord(value.connectionSettings)) return false;
-  const identity = value.publicIdentity;
-  return typeof identity.displayName === 'string' && identity.displayName.length <= 80
-    && typeof identity.introduction === 'string' && identity.introduction.length <= 20_000
-    && typeof identity.expertise === 'string' && identity.expertise.length <= 20_000
-    && typeof identity.mentionName === 'string' && identity.mentionName.length <= 80
-    && (identity.avatarDataUrl === undefined || typeof identity.avatarDataUrl === 'string')
-    && typeof value.management.personality === 'boolean'
-    && ['none', 'self_managed', 'asterium'].includes(String(value.management.memoryMode))
-    && typeof value.management.userProfile === 'boolean'
-    && (value.personality === undefined || (typeof value.personality === 'string' && value.personality.length <= 40_000))
-    && (value.systemPrompt === undefined || (typeof value.systemPrompt === 'string' && value.systemPrompt.length <= 80_000))
-    && (value.expectedRevision === undefined || typeof value.expectedRevision === 'string' && /^[a-f0-9]{64}$/.test(value.expectedRevision))
-    && isJsonRecord(value.connectionSettings);
-}
-
-function isJsonRecord(value: Record<string, unknown>) {
-  const valid = (item: unknown, depth: number): boolean => depth <= 8 && (
-    item === null || ['string', 'number', 'boolean'].includes(typeof item)
-    || (Array.isArray(item) && item.length <= 500 && item.every((entry) => valid(entry, depth + 1)))
-    || (isRecord(item) && Object.keys(item).length <= 200 && Object.values(item).every((entry) => valid(entry, depth + 1)))
-  );
-  return valid(value, 0);
-}
-
-function isStudioRoomMetadata(value: unknown): value is StudioRoomMetadata {
-  return isRecord(value)
-    && typeof value.roomId === 'string' && Boolean(value.roomId)
-    && typeof value.projectId === 'string' && Boolean(value.projectId)
-    && typeof value.name === 'string' && Boolean(value.name.trim())
-    && (value.archived === undefined || typeof value.archived === 'boolean')
-    && Array.isArray(value.memberIds) && value.memberIds.every((id) => typeof id === 'string' && Boolean(id));
-}
-
-function archivedMarkdownFileName(name: string, suffix: string) {
-  const withoutControlCharacters = [...name].map((character) => character.charCodeAt(0) < 32 ? '_' : character).join('');
-  const safeName = withoutControlCharacters.replace(/[<>:"/\\|?*]/g, '_').trim().slice(0, 120) || '项目';
-  return `${safeName}-${suffix}.md`;
 }
