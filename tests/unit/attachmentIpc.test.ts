@@ -290,21 +290,26 @@ it('previews and clears only the confirmed snapshot plan, preserving source file
   await expect(invoke('attachmentClearSnapshots', plan.planId)).rejects.toThrow('SNAPSHOT_PLAN_EXPIRED');
 });
 
-it('uses the live summary map and keeps attachment removal, summary abort and delegation removal in order', async () => {
-  const calls: string[] = [], summaries = new Map<string, AbortController>(), local = new Map<string, Handler>();
+it('awaits report cancellation between attachment removal and delegation removal, propagating failures', async () => {
+  const calls: string[] = [], local = new Map<string, Handler>();
   const remove = vi.fn(async () => { calls.push('attachments'); });
+  const cancelDelegation = vi.fn<(id: string) => Promise<boolean>>(async () => { calls.push('cancel'); return true; });
   const delegation = { remove: vi.fn(async () => { calls.push('delegation'); }) };
   registerAttachmentMaintenanceIpc({ handle: (channel: string, handler: Handler) => { expect(local.has(channel)).toBe(false); local.set(channel, handler); } } as unknown as IpcMain,
-    { messageAttachments: { deleteConversation: remove, previewSnapshotCleanup: vi.fn(), clearSnapshots: vi.fn() }, summaryRuns: summaries, delegation }, () => window);
-  const controller = new AbortController(); controller.signal.addEventListener('abort', () => calls.push('abort'));
-  summaries.set(conversationId, controller);
-  await local.get(DESKTOP_IPC.attachmentDeleteConversation)!({ sender }, conversationId);
-  expect(calls).toEqual(['attachments', 'abort', 'delegation']); expect(controller.signal.aborted).toBe(true);
-  const other = new AbortController(); summaries.set('fixture-other-chat', other);
+    { messageAttachments: { deleteConversation: remove, previewSnapshotCleanup: vi.fn(), clearSnapshots: vi.fn() }, cancelDelegation, delegation }, () => window);
+  let finishCancel!: () => void;
+  cancelDelegation.mockImplementationOnce(async () => { calls.push('cancel'); await new Promise<void>(resolve => { finishCancel = resolve; }); return true; });
+  const deletion = local.get(DESKTOP_IPC.attachmentDeleteConversation)!({ sender }, conversationId);
+  await vi.waitFor(() => expect(cancelDelegation).toHaveBeenCalledExactlyOnceWith(conversationId));
+  expect(delegation.remove).not.toHaveBeenCalled(); finishCancel(); await deletion;
+  expect(calls).toEqual(['attachments', 'cancel', 'delegation']);
   const failure = new Error('SYNTHETIC_REMOVAL_FAILURE'); remove.mockRejectedValueOnce(failure);
   await expect(local.get(DESKTOP_IPC.attachmentDeleteConversation)!({ sender }, 'fixture-other-chat')).rejects.toBe(failure);
-  expect(other.signal.aborted).toBe(false); expect(delegation.remove).toHaveBeenCalledTimes(1);
+  expect(cancelDelegation).toHaveBeenCalledTimes(1); expect(delegation.remove).toHaveBeenCalledTimes(1);
+  cancelDelegation.mockRejectedValueOnce(failure);
+  await expect(local.get(DESKTOP_IPC.attachmentDeleteConversation)!({ sender }, 'fixture-other-chat')).rejects.toBe(failure);
+  expect(delegation.remove).toHaveBeenCalledTimes(1);
   delegation.remove.mockRejectedValueOnce(failure);
   await expect(local.get(DESKTOP_IPC.attachmentDeleteConversation)!({ sender }, 'fixture-other-chat')).rejects.toBe(failure);
-  expect(other.signal.aborted).toBe(true);
+  expect(cancelDelegation).toHaveBeenLastCalledWith('fixture-other-chat');
 });

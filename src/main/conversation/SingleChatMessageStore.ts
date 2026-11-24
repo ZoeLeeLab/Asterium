@@ -27,7 +27,7 @@ export class SingleChatMessageStore {
       const previous = await this.storage.readNow();
       const conversations = Object.fromEntries(snapshots.map((snapshot) => [snapshot.conversationId, structuredClone(snapshot)]));
       for (const [id, snapshot] of Object.entries(conversations)) {
-        const managed = previous.conversations[id]?.messages.filter(m => m.automationRunId) ?? [];
+        const managed = previous.conversations[id]?.messages.filter(m => m.automationRunId || m.delegationBatchId) ?? [];
         if (previous.conversations[id]?.partnerId !== snapshot.partnerId && managed.length) throw new Error('SINGLE_CHAT_MESSAGE_INDEX_INVALID');
         const ids = new Set(snapshot.messages.map(m => m.messageId));
         for (const m of managed) { const current = snapshot.messages.find(item => item.messageId === m.messageId); if (current) Object.assign(current, m); }

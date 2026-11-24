@@ -73,6 +73,20 @@ function gatedAdapter(command: SendMessageCommand, gate: Promise<void>, started 
 }
 
 describe('RunCoordinator', () => {
+  it('does not queue or submit background input when a real writer owns the thread', async () => {
+    const current = command('fixture-background');
+    const leases = new WriterLeaseCoordinator();
+    const lease = leases.tryAcquire(conversationWriterScope(current), 'compact:fixture')!;
+    const adapter = adapterFor(current);
+    const send = vi.spyOn(adapter, 'sendMessage');
+    const coordinator = new RunCoordinator(new AdapterHost(), { deliver: vi.fn(), emit: vi.fn(), observe: async () => undefined }, leases);
+    await expect(coordinator.start(adapter, current, { waitForWriter: false })).rejects.toThrow('RUNTIME_WRITER_BUSY');
+    expect(send).not.toHaveBeenCalled();
+    lease.release();
+    await coordinator.start(adapter, current, { waitForWriter: false });
+    await vi.waitFor(() => expect(leases.ownerFor(conversationWriterScope(current))).toBeUndefined());
+    expect(send).toHaveBeenCalledTimes(1);
+  });
   it('rejects a forged API persistence flag targeted at a native adapter', async () => {
     const host = new AdapterHost(), native = adapterFor(command('single'));
     host.bindRun('native-run', native);

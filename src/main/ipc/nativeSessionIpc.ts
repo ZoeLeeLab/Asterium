@@ -16,6 +16,7 @@ import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
 import type { PartnerProfileStore } from '../partner/PartnerProfileStore';
 import type { WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
 import type { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
+import type { PartnerDelegation } from '../runtime/PartnerDelegation';
 
 type LocalAdapterType = 'claude_code' | 'codex_cli';
 type ImportedBinding = { binding: NativeThreadBinding; workspace: ImportedCodexWorkspace };
@@ -228,6 +229,7 @@ export function registerNativeSessionImportIpc(
 }
 
 interface NativeSessionHistoryDependencies extends NativeRuntimeResolvers {
+  delegation?: Pick<PartnerDelegation, 'hiddenHistoryInputs'>;
   nativeBindings: Pick<NativeThreadBindingStore, 'getForScope'>;
   conversationDeletions: Pick<ConversationDeletionService, 'isDeleted'>;
   partnerWorkspaces: Pick<PartnerWorkspaceStore, 'grantIds'>;
@@ -236,7 +238,7 @@ interface NativeSessionHistoryDependencies extends NativeRuntimeResolvers {
 export function registerNativeSessionHistoryIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
   { nativeBindings, conversationDeletions, partnerWorkspaces, importedCodexBinding,
-    resolveImportedCodexRuntime, resolveCodexLifecycleRuntime }: NativeSessionHistoryDependencies,
+    resolveImportedCodexRuntime, resolveCodexLifecycleRuntime, delegation }: NativeSessionHistoryDependencies,
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
 ) {
   type CodexHistoryRequest = import('../../shared/codexHistory').CodexHistoryRequest;
@@ -268,9 +270,10 @@ export function registerNativeSessionHistoryIpc(
   ipcMain.handle(AGENT_IPC.readCodexHistory, async (event, value: unknown) => {
     requireSender(event);
     const { request, runtime, workingDirectory } = await resolveBoundCodexHistory(value);
+    const hidden = await delegation?.hiddenHistoryInputs(request.conversationId, request.partnerId, request.threadId);
     const page = request.aroundTurnId
-      ? await locateCodexHistoryTurn(runtime.executablePath, workingDirectory, request.threadId, request.aroundTurnId, request.cursor)
-      : await readCodexThreadHistory(runtime.executablePath, workingDirectory, request.threadId, request.cursor);
+      ? await locateCodexHistoryTurn(runtime.executablePath, workingDirectory, request.threadId, request.aroundTurnId, request.cursor, undefined, hidden)
+      : await readCodexThreadHistory(runtime.executablePath, workingDirectory, request.threadId, request.cursor, undefined, hidden);
     await assertCodexHistoryBinding(request);
     return page;
   });
@@ -293,7 +296,8 @@ export function registerNativeSessionHistoryIpc(
     try {
       const { request, runtime, workingDirectory } = await resolveBoundCodexHistory(value);
       const query = value as unknown as CodexHistorySearchRequest;
-      const page = await searchCodexThreadHistory(runtime.executablePath, workingDirectory, query, cancellation.signal);
+      const hidden = await delegation?.hiddenHistoryInputs(request.conversationId, request.partnerId, request.threadId);
+      const page = await searchCodexThreadHistory(runtime.executablePath, workingDirectory, query, cancellation.signal, undefined, hidden);
       cancellation.signal.throwIfAborted();
       await assertCodexHistoryBinding(request);
       return page;

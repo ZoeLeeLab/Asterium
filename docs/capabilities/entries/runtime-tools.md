@@ -24,6 +24,19 @@
     "src/main/runtime/PartnerRuntimePort.ts",
     "src/main/studio/StudioAttachments.ts",
     "src/main/runtime/PartnerDelegation.ts",
+    "src/main/runtime/DelegationAccess.ts",
+    "src/main/runtime/DelegationConversationRuntime.ts",
+    "src/main/runtime/DelegationResultDelivery.ts",
+    "src/main/runtime/RunCoordinator.ts",
+    "src/main/runtime/PartnerRuntimeFactory.ts",
+    "src/main/conversation/ConversationLifecycleService.ts",
+    "src/main/conversation/NativeHistoryVisibility.ts",
+    "src/main/conversation/SingleChatHistoryStore.ts",
+    "src/main/conversation/SingleChatMessageStore.ts",
+    "src/main/ipc/attachmentIpc.ts",
+    "src/main/ipc/nativeSessionIpc.ts",
+    "src/main/adapters/CodexCliAdapter.ts",
+    "src/shared/delegationAccess.ts",
     "src/main/runtime/ExistingPartnerReview.ts",
     "src/main/adapters/CyberBossBridgeClient.ts",
     "src/main/agentIpc.ts",
@@ -45,6 +58,22 @@
     "tests/unit/studioAttachments.test.ts",
     "tests/unit/partnerRuntimePort.test.ts",
     "tests/unit/existingPartnerReview.test.ts",
+    "tests/unit/delegationAccess.test.ts",
+    "tests/unit/partnerDelegation.test.ts",
+    "tests/unit/delegationResultDelivery.test.ts",
+    "tests/unit/delegationIpc.test.ts",
+    "tests/unit/nativeHistoryVisibility.test.ts",
+    "tests/unit/nativeSessionIpc.test.ts",
+    "tests/unit/codexCliAdapter.test.ts",
+    "tests/unit/localRuntimeDetectionIpc.test.ts",
+    "tests/unit/partnerRuntimeFactory.test.ts",
+    "tests/unit/runCoordinator.test.ts",
+    "tests/unit/runInteractionIpc.test.ts",
+    "tests/unit/attachmentIpc.test.ts",
+    "tests/unit/conversationLifecycleService.test.ts",
+    "tests/unit/singleChatHistoryStore.test.ts",
+    "tests/unit/singleChatMessageStore.test.ts",
+    "tests/renderer/Phase6RunHistoryIntegration.test.tsx",
     "tests/renderer/ExistingPartnerReview.test.tsx"
   ],
   "docs": [
@@ -52,9 +81,12 @@
     "docs/release-status.md",
     "docs/claude-cli-compatibility.md",
     "docs/studio-attachments.md",
-    "docs/existing-partner-review-v1.md"
+    "docs/existing-partner-review-v1.md",
+    "docs/delegation-access.md",
+    "docs/delegation-result-delivery.md",
+    "docs/delegation-integration-verification-20261124.md"
   ],
-  "lastVerifiedCommit": "f701024065c07f8da6146cb518e8666448079965"
+  "lastVerifiedCommit": "d03e3bfaf89eab4ffcbc268d4c69d11ed2168361"
 }
 ---
 
@@ -83,10 +115,16 @@ CLI 子进程单独关闭后台自更新，不更改用户全局设置，仍由�
 
 ## 伙伴委派
 
+2026-11-23 独立工作树增量：发起伙伴选择 read/write；接回伙伴继续使用原 v1 接口，仅在 message 中追加“本次只读”或“本次可按授权执行”的要求，不新增 HTTP 权限字段或接收端升级要求。read 依赖模型遵守提示词，不代表服务器强制沙箱隔离；实际执行和审批仍沿用接收端原有配置。星丛保留只读／Plan 不可发起 write、排队前复查及未知回执只查原 ID 的处理。普通本地/API 一次性委派仍只读，旧原生线程工具清单不自动升级。此前未发布的 v2 草案已撤回。设计与分阶段验证见[委派任务说明](../../delegation-access.md)。提示词方案历史代码为 `6889c9e1849e1fb65f0c1fe7f534184f9b070bc5`；当前整合绑定见上方 lastVerifiedCommit，不代表已发布。
+
 单聊委派工具、持久队列、结果与取消入口见 [阶段核验](../../partner-delegation-implementation.md)。本地 Codex 可作为执行伙伴接收文本和指定图片。该入口使用宿主读取权限，任务目录外的强制拒读仍待验收。
 
 接回伙伴的 Markdown 复核增加了星丛侧客户端与模拟验收。启用需宿主声明 v1 能力并匹配已绑定原线程。单次只发送一份 Markdown 文件及简短转交说明，回执回到发起单聊任务卡。附件文件不内联到任务消息正文。普通单聊附件、图片和其他文件格式仍不在此能力范围内。Sidecar 由宿主侧接线，实际部署单独验收。详见 [接回伙伴复核契约](../../existing-partner-review-v1.md)。
 
-本条结构化 SHA 绑定已存在的 Markdown 复核代码提交 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。仓库内验证覆盖模拟宿主的文件上传、同 ID 恢复查询、忙碌重试和界面回卡，实际连接与验收原件在私有环境留存。
+Markdown 复核阶段的代码提交为 `a8c1a7838c732fa834d23cc463dff39d393f44cb`。该阶段仓库内验证覆盖模拟宿主的文件上传、同 ID 恢复查询、忙碌重试和界面回卡，实际连接与验收原件在私有环境留存；本轮结构化 SHA 与验证范围见上方源码增量和委派任务权限记录。
 
 单聊任务卡跟在发起委派的伙伴气泡中对应的「派出小弟」记录之后。任务详情默认折叠。无法确定对应记录时，卡片在原轮气泡顶部显示。后台返回的结果仍更新原轮的卡片。
+
+2026-11-24 整合第八阶段模块边界后，Main 持久记录原会话投递目标，在原单聊空闲时续用原线程主动汇报。同一单聊和发起伙伴可跨轮读取结果；前台消费正常完成后不重复后台汇报。用户消息优先，后台运行只尝试获取现有写租约，并在租约内复查绑定、重绑本轮工具；排队用户不会提前替换正在汇报的配置。
+
+内部输入按 Main 的确切消息／运行身份隐藏于 Codex 原生历史分页、搜索和定位，保留伙伴回复、工具及真实用户输入。重启仅补送尚未开始的结果；已接受或无法确定的提交不会盲目重发。read/write 仍为原 v1 message 的任务提示，不要求服务器升级。数据流、限制和合成验收边界见[原会话回传说明](../../delegation-result-delivery.md)。本轮 lastVerifiedCommit 绑定已存在的整合代码基线 `d03e3bfaf89eab4ffcbc268d4c69d11ed2168361`，在后续纯文档提交记录[核验](../../delegation-integration-verification-20261124.md)，不沿用旧候选验收归属。

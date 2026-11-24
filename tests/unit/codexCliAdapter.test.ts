@@ -103,6 +103,64 @@ it('reads the requested original thread through paginated history without starti
   }]]);
 });
 
+it.each([false, true])('hides recorded internal prompts from history, search and located pages (legacy: %s)', async legacy => {
+  const raw = [{ id: 'fixture-report-turn', status: 'completed', items: [
+    { id: 'fixture-internal-input', type: 'userMessage', content: [{ type: 'text', text: 'fixture-internal-only-token' }] },
+    { id: 'fixture-report', type: 'agentMessage', text: '合成伙伴汇报' },
+  ] }, { id: 'fixture-user-turn', status: 'completed', items: [
+    { id: 'fixture-user-input', type: 'userMessage', content: [{ type: 'text', text: 'fixture-user-question' }] },
+  ] }];
+  const transport = new FakeTransport();
+  const rpc = vi.spyOn(transport, 'request').mockImplementation(async method => {
+    if (method === 'thread/turns/list' && legacy) throw new Error('method not found');
+    return (method === 'thread/read' ? { thread: { id: 'fixture-thread', turns: raw } } : { data: raw }) as never;
+  });
+  const create = () => transport;
+  const hidden = { userMessageIds: new Set(['fixture-internal-input']), turnIds: new Set(['fixture-report-turn']) };
+  const page = await readCodexThreadHistory('fixture-cli', '.', 'fixture-thread', undefined, create, hidden);
+  expect(page.turns.flatMap(turn => turn.items).some(item => item.kind === 'user' && item.text.includes('internal-only'))).toBe(false);
+  const located = await locateCodexHistoryTurn('fixture-cli', '.', 'fixture-thread', 'fixture-report-turn', undefined, create, hidden);
+  expect(located.turns.find(turn => turn.id === 'fixture-report-turn')?.items).toEqual([{ id: 'fixture-report', kind: 'assistant', text: '合成伙伴汇报' }]);
+  const request = { partnerId: 'fixture-partner', conversationId: 'fixture-chat', threadId: 'fixture-thread', query: 'fixture-internal-only-token' };
+  expect((await searchCodexThreadHistory('fixture-cli', '.', request, new AbortController().signal, create, hidden)).hits).toEqual([]);
+  expect((await searchCodexThreadHistory('fixture-cli', '.', { ...request, query: '合成伙伴汇报' }, new AbortController().signal, create, hidden)).hits).toHaveLength(1);
+  expect((await searchCodexThreadHistory('fixture-cli', '.', { ...request, query: 'fixture-user-question' }, new AbortController().signal, create, hidden)).hits).toHaveLength(1);
+  expect(rpc.mock.calls.every(([method]) => method === 'thread/read' || method === 'thread/turns/list')).toBe(true);
+  expect(raw[0].items).toHaveLength(2);
+});
+
+it.each([false, true])('keeps internal inputs hidden across page boundaries and locates only the public report (legacy: %s)', async legacy => {
+  const hiddenTurn = 'fixture-internal-turn';
+  const raw = Array.from({ length: 32 }, (_, index) => ({
+    id: index === 30 ? hiddenTurn : `fixture-page-turn-${index}`, status: 'completed', items: [
+      { id: `fixture-page-user-${index}`, type: 'userMessage', content: [{ type: 'text', text: index === 30
+        ? 'fixture-private-page-token' : '【星丛内部：原会话委派结果到达】真实合成用户引用' }] },
+      { id: `fixture-page-answer-${index}`, type: 'agentMessage', text: `合成公开汇报-${index}` },
+    ],
+  }));
+  const transport = new FakeTransport();
+  const rpc = vi.spyOn(transport, 'request').mockImplementation(async (method, params) => {
+    if (method === 'thread/read') return { thread: { id: 'fixture-thread', turns: [...raw].reverse() } } as never;
+    if (legacy) throw new Error('method not found');
+    const start = Number(params?.cursor ?? 0), end = start + 30;
+    return { data: raw.slice(start, end), nextCursor: end < raw.length ? String(end) : undefined } as never;
+  });
+  const create = () => transport, hidden = { userMessageIds: new Set<string>(), turnIds: new Set([hiddenTurn]) };
+  const first = await readCodexThreadHistory('fixture-cli', '.', 'fixture-thread', undefined, create, hidden);
+  expect(first.turns).toHaveLength(30); expect(first.nextCursor).toBeTruthy();
+  const second = await readCodexThreadHistory('fixture-cli', '.', 'fixture-thread', first.nextCursor, create, hidden);
+  expect(second.turns).toHaveLength(2); expect(second.nextCursor).toBeUndefined();
+  expect(second.turns[0].items).toEqual([{ id: 'fixture-page-answer-30', kind: 'assistant', text: '合成公开汇报-30' }]);
+  const located = await locateCodexHistoryTurn('fixture-cli', '.', 'fixture-thread', hiddenTurn, undefined, create, hidden);
+  expect(located.turns).toEqual(second.turns);
+  const request = { partnerId: 'fixture-partner', conversationId: 'fixture-chat', threadId: 'fixture-thread', query: 'fixture-private-page-token' };
+  expect((await searchCodexThreadHistory('fixture-cli', '.', request, new AbortController().signal, create, hidden)).hits).toEqual([]);
+  expect((await searchCodexThreadHistory('fixture-cli', '.', { ...request, query: '合成公开汇报-30' }, new AbortController().signal, create, hidden)).hits)
+    .toEqual([expect.objectContaining({ turnId: hiddenTurn })]);
+  expect((await searchCodexThreadHistory('fixture-cli', '.', { ...request, query: '真实合成用户引用' }, new AbortController().signal, create, hidden)).hits).toHaveLength(31);
+  expect(rpc.mock.calls.every(([method]) => method === 'thread/read' || method === 'thread/turns/list')).toBe(true);
+});
+
 it('searches native-only history and continues at the next hit using a single read-only transport per query', async () => {
   const transport = new FakeTransport();
   const turns = Array.from({ length: 121 }, (_, index) => ({

@@ -56,6 +56,8 @@ export interface LocalRuntimeRequest {
   partnerRoot: string;
   additionalDirectories: string[];
   runtimeTools?: AsteriumRuntimeToolController;
+  /** The caller configures a reused adapter only after acquiring its writer lease. */
+  deferRuntimeConfiguration?: boolean;
   importedCodexThread?: boolean;
 }
 
@@ -145,8 +147,10 @@ export class PartnerRuntimeFactory {
   getLocal(request: LocalRuntimeRequest) {
     let adapter = this.options.host.get(request.adapterKey);
     if (adapter) {
-      if (request.runtimeTools) adapter.replaceRuntimeTools?.(request.runtimeTools);
-      adapter.replaceRuntimeWorkspaceRoots?.(request.additionalDirectories);
+      if (!request.deferRuntimeConfiguration) {
+        if (request.runtimeTools) adapter.replaceRuntimeTools?.(request.runtimeTools);
+        adapter.replaceRuntimeWorkspaceRoots?.(request.additionalDirectories);
+      }
       return adapter;
     }
     const resolveAttachment = (attachmentId: string, conversationId: string) => this.options.attachments.pathFor(attachmentId, conversationId);

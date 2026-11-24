@@ -7,6 +7,7 @@ import { CyberBossBridgeClient } from '../../src/main/adapters/CyberBossBridgeCl
 import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from '../../src/main/runtime/ExistingPartnerReview';
 import { PartnerDelegation } from '../../src/main/runtime/PartnerDelegation';
 import { EXISTING_PARTNER_REVIEW_PATH, reviewRequestSchema, type ExistingPartnerReviewRequest } from '../../src/shared/existingPartnerReview';
+import type { DelegationAccess } from '../../src/shared/delegationAccess';
 import { testRm } from '../helpers/autoTest.mjs';
 
 const owner = { conversationId: 'source-chat', partnerId: 'source-partner', turnId: 'source-turn', messageId: 'source-message' };
@@ -17,7 +18,9 @@ const message = existingPartnerReviewMessage('示例伙伴 A', '请判断这份�
 const threadId = 'synthetic-thread';
 const rawReply = ' 第一段意见。\n\n第二段意见。\n';
 
-it('uploads actual Markdown bytes, recovers a lost receipt after restart, and exposes the full reply on the source task', async () => {
+it.each(['read', 'write'] as const)('uses an unchanged v1 host and recovers a lost receipt with a %s prompt', async access => {
+  const message = existingPartnerReviewMessage('示例伙伴 A', '请完成合成任务。', '请找示例伙伴 B 处理指定的合成方案。', filename, '示例用户', access);
+  const capability = { version: 1, threadId };
   const directory = await mkdtemp(path.join(os.tmpdir(), 'review-queue-'));
   const storage = path.join(directory, 'delegations.json');
   const uploads: { request: ExistingPartnerReviewRequest; text: string; name: string; type: string }[] = [];
@@ -28,7 +31,7 @@ it('uploads actual Markdown bytes, recovers a lost receipt after restart, and ex
     const pathname = new URL(request.url).pathname;
     if (pathname === '/api/auth') return new Response(null, { headers: { 'Set-Cookie': 'cyberboss_web_session=synthetic' } });
     expect(request.headers.get('Cookie')).toBe('cyberboss_web_session=synthetic');
-    if (pathname === EXISTING_PARTNER_REVIEW_PATH && request.method === 'GET') return Response.json({ version: 1, threadId });
+    if (pathname === EXISTING_PARTNER_REVIEW_PATH && request.method === 'GET') return Response.json(capability);
     if (pathname === EXISTING_PARTNER_REVIEW_PATH && request.method === 'POST') {
       const form = await request.formData();
       const metadata = reviewRequestSchema.parse(JSON.parse(String(form.get('metadata'))));
@@ -41,7 +44,8 @@ it('uploads actual Markdown bytes, recovers a lost receipt after restart, and ex
       lookups.push(pathname.split('/').at(-1)!);
       if (!online) return new Response(null, { status: 503 });
       const { requestId } = uploads[0].request;
-      return Response.json({ version: 1, requestId, threadId, ...(lookups.length < 3 ? { status: 'running' } : { status: 'succeeded', result: rawReply }) });
+      return Response.json({ version: 1, requestId, threadId,
+        ...(lookups.length < 3 ? { status: 'running' } : { status: 'succeeded', result: rawReply }) });
     }
     throw new Error('Unexpected mock endpoint');
   };
@@ -49,16 +53,18 @@ it('uploads actual Markdown bytes, recovers a lost receipt after restart, and ex
     const client = new CyberBossBridgeClient({ serviceUrl: 'https://review.example.test', secret: 'synthetic', fetcher });
     const key = { threadId: task.review!.threadId, requestId: task.review!.requestId! };
     if (lookupOnly) return runExistingPartnerReview(client, key, undefined, signal, 1);
-    expect(await client.reviewCapability(signal)).toEqual({ version: 1, threadId });
+    expect(await client.reviewCapability(signal)).toEqual(capability);
     const bytes = Buffer.from(task.reviewDraft!.markdown);
     return runExistingPartnerReview(client, key, { message: task.review!.message, file: describeReviewFile(filename, bytes), bytes }, signal, 1);
   });
   let queue = makeQueue();
   try {
-    const batch = await queue.submit(owner, 'tool-call', { tasks: [{ targetPartnerId: 'reviewer', instruction: '请复核方案。', reviewDraft: { name: filename, markdown } }] },
+    const batch = await queue.submit(owner, 'tool-call', { tasks: [{ targetPartnerId: 'reviewer', access, instruction: '请完成合成任务。', reviewDraft: { name: filename, markdown } }] },
       async () => ({ review: { threadId, message }, materials: [{ id: 'draft', name: filename, sha256: file.sha256 }] }));
     await vi.waitFor(async () => expect((await queue.list(owner.conversationId))[0].tasks[0].status).toBe('uncertain'));
     expect(uploads).toHaveLength(1);
+    expect(uploads[0].request).toEqual({ version: 1, requestId: expect.any(String), threadId, message, file });
+    expect(uploads[0].request.message).toContain(`本次权限：${access}`);
     expect(uploads[0]).toMatchObject({ text: markdown, name: filename, type: 'text/markdown', request: { file, threadId, message } });
     expect(uploads[0].request.message).not.toContain('UNIQUE-REVIEW-CONTENT-92');
     await expect(queue.control(owner.conversationId, batch.tasks[0].id, 'retry')).rejects.toThrow('DELEGATION_RETRY_UNAVAILABLE');
@@ -71,6 +77,7 @@ it('uploads actual Markdown bytes, recovers a lost receipt after restart, and ex
     expect(new Set(lookups)).toEqual(new Set([uploads[0].request.requestId]));
     const [view] = await queue.list(owner.conversationId);
     expect(view).toMatchObject({ id: batch.id, messageId: owner.messageId, tasks: [{ externalReview: true, materials: [{ name: filename }] }] });
+    expect(view.tasks[0].access).toBe(access);
     expect(JSON.stringify(view)).not.toContain(markdown);
     expect(view.tasks[0]).not.toHaveProperty('review');
     expect(view.tasks[0]).not.toHaveProperty('reviewDraft');
@@ -93,6 +100,21 @@ it('treats a mismatched receipt as unknown and surfaces an explicit busy respons
   expect(client.reviewStatus).not.toHaveBeenCalled();
   await expect(runExistingPartnerReview(client, key, undefined, signal)).rejects.toThrow('DELEGATION_REVIEW_UNCERTAIN');
   expect(client.submitReview).toHaveBeenCalledTimes(1);
+});
+
+it.each(['wrong-request', 'wrong-thread'] as const)('does not accept a result from a different v1 task: %s', async mode => {
+  const key = { requestId: '00000001-0000-4000-8000-000000000002', threadId };
+  const calls: string[] = [];
+  const client = new CyberBossBridgeClient({ serviceUrl: 'https://review.example.test', secret: 'synthetic', fetcher: async (url, init) => {
+    const request = new Request(url, init);
+    if (new URL(request.url).pathname === '/api/auth') return new Response(null, { headers: { 'Set-Cookie': 'cyberboss_web_session=synthetic' } });
+    calls.push(request.method);
+    return Response.json({ version: 1, requestId: mode === 'wrong-request' ? '00000001-0000-4000-8000-000000000003' : key.requestId,
+      threadId: mode === 'wrong-thread' ? 'another-thread' : threadId, status: 'succeeded', result: 'Synthetic result' });
+  } });
+  await expect(runExistingPartnerReview(client, key, { message, file, bytes: Buffer.from(markdown) }, new AbortController().signal, 1))
+    .rejects.toThrow('DELEGATION_REVIEW_UNCERTAIN');
+  expect(calls).toEqual(['POST', 'GET']);
 });
 
 it('rejects wrong file types, unsafe names, oversized files and invalid UTF-8', () => {
@@ -129,17 +151,18 @@ it('freezes bytes from a delivered file only within its source conversation and 
   }
 });
 
-it('allows an explicit busy retry with a new dispatch ID and the same frozen file', async () => {
+it.each(['read', 'write'] as const)('preserves the %s instruction and frozen bytes on an explicit busy retry', async access => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'review-busy-'));
-  const executions: { requestId: string; markdown: string }[] = [];
+  const executions: { requestId: string; markdown: string; access?: DelegationAccess; message: string }[] = [];
+  const message = existingPartnerReviewMessage('示例伙伴 A', '请处理合成任务。', '仅处理合成示例。', filename, '示例用户', access);
   const queue = new PartnerDelegation(path.join(directory, 'delegations.json'), async (_batch, task) => {
-    executions.push({ requestId: task.review!.requestId!, markdown: task.reviewDraft!.markdown });
+    executions.push({ requestId: task.review!.requestId!, markdown: task.reviewDraft!.markdown, access: task.access, message: task.review!.message });
     if (executions.length === 1) throw new Error('DELEGATION_REVIEW_BUSY');
     return rawReply;
   });
   try {
     const batch = await queue.submit(owner, 'busy-tool-call', {
-      tasks: [{ targetPartnerId: 'reviewer', instruction: '请复核。', reviewDraft: { name: filename, markdown } }],
+      tasks: [{ targetPartnerId: 'reviewer', access, instruction: '请完成合成任务。', reviewDraft: { name: filename, markdown } }],
     }, async () => ({ review: { threadId, message } }));
     await vi.waitFor(async () => expect((await queue.list(owner.conversationId))[0].tasks[0].reason).toBe('DELEGATION_REVIEW_BUSY'));
     expect(await queue.readySummaries()).toEqual([]);
@@ -148,6 +171,8 @@ it('allows an explicit busy retry with a new dispatch ID and the same frozen fil
     expect(executions).toHaveLength(2);
     expect(executions[0].requestId).not.toBe(executions[1].requestId);
     expect(executions.map(attempt => attempt.markdown)).toEqual([markdown, markdown]);
+    expect(executions.map(attempt => attempt.access)).toEqual([access, access]);
+    expect(executions.map(attempt => attempt.message)).toEqual([message, message]);
   } finally {
     queue.close();
     await testRm(directory, { recursive: true, force: true });

@@ -4,6 +4,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { CyberBossBridgeClient } from '../adapters/CyberBossBridgeClient';
 import type { ArtifactRegistry } from '../security/ArtifactRegistry';
 import { REVIEW_MARKDOWN_MAX_BYTES, reviewFileNameSchema, type ExistingPartnerReviewRequest } from '../../shared/existingPartnerReview';
+import type { DelegationAccess } from '../../shared/delegationAccess';
+import { delegationTaskPolicy } from './DelegationAccess';
 
 type ReviewTransport = Pick<CyberBossBridgeClient, 'submitReview' | 'reviewStatus'>;
 type ReviewKey = Pick<ExistingPartnerReviewRequest, 'requestId' | 'threadId'>;
@@ -37,13 +39,13 @@ export async function snapshotReviewArtifact(
   return { file, draft: { name: file.name, markdown: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) } };
 }
 
-export function existingPartnerReviewMessage(sender: string, instruction: string, original: string, filename: string, userName = '用户') {
+export function existingPartnerReviewMessage(sender: string, instruction: string, original: string, filename: string, userName = '用户', access: DelegationAccess = 'read') {
   const message = [
     `[星丛转交 · 来自${sender}]`,
     instruction,
     `${userName}原话：「${original}」`,
     `附件：${filename}`,
-    '本次只请你给评审意见，不要修改代码。',
+    delegationTaskPolicy(access),
   ].join('\n');
   if (instruction.length > 1_000 || message.length > 4_000) throw new Error('DELEGATION_REVIEW_MESSAGE_TOO_LONG');
   return message;
@@ -56,7 +58,7 @@ export async function runExistingPartnerReview(
   signal: AbortSignal,
   pollIntervalMs = 2_000,
 ) {
-  let receipt;
+  let receipt: Awaited<ReturnType<ReviewTransport['reviewStatus']>> | undefined;
   if (upload) {
     const { bytes, ...metadata } = upload;
     try {
@@ -69,10 +71,11 @@ export async function runExistingPartnerReview(
   }
   for (;;) {
     signal.throwIfAborted();
-    if (!receipt || receipt.requestId !== key.requestId || receipt.threadId !== key.threadId) {
+    const matches = (value: NonNullable<typeof receipt>) => value.requestId === key.requestId && value.threadId === key.threadId;
+    if (!receipt || !matches(receipt)) {
       try { receipt = await client.reviewStatus(key.requestId, signal); }
       catch { throw new Error('DELEGATION_REVIEW_UNCERTAIN'); }
-      if (receipt.requestId !== key.requestId || receipt.threadId !== key.threadId) throw new Error('DELEGATION_REVIEW_UNCERTAIN');
+      if (!matches(receipt)) throw new Error('DELEGATION_REVIEW_UNCERTAIN');
     }
     switch (receipt.status) {
       case 'succeeded': return receipt.result!;

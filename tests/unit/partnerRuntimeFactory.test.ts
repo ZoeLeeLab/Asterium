@@ -46,6 +46,15 @@ describe('PartnerRuntimeFactory', () => {
     expect(replaceRuntimeTools).toHaveBeenCalledOnce();
     expect(replaceRuntimeTools).toHaveBeenCalledWith(current);
     expect(replaceRuntimeWorkspaceRoots).toHaveBeenCalledWith(['D:\\current']);
+
+    // Preparing a queued turn must not broaden a running report's tools or roots.
+    replaceRuntimeTools.mockClear(); replaceRuntimeWorkspaceRoots.mockClear();
+    expect(factory.getLocal({
+      adapterType: 'codex_cli', adapterKey: 'workspace-adapter', executablePath: 'codex.exe', partnerRoot: 'K:\\project',
+      additionalDirectories: ['D:\\queued'], runtimeTools: controller('queued-user'), deferRuntimeConfiguration: true,
+    })).toBe(adapter);
+    expect(replaceRuntimeTools).not.toHaveBeenCalled();
+    expect(replaceRuntimeWorkspaceRoots).not.toHaveBeenCalled();
   });
 
   it('keeps Codex adapter identity stable across project workspace changes', () => {

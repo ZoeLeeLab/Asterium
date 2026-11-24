@@ -1,6 +1,7 @@
 import { codexHistoryMessageId, visibleNativeUserText, type CodexHistoryHit, type CodexHistoryPage, type CodexHistorySearchPage, type CodexHistorySearchRequest } from '../../shared/codexHistory';
 import { normalizeHistoryQuery, searchableHistoryText } from '../../shared/historySearchText';
 import { SINGLE_CHAT_SEARCH_SIZE } from '../../shared/singleChatHistory';
+import { visibleNativeHistoryTurns, type NativeHistoryHiddenInputs } from '../conversation/NativeHistoryVisibility';
 import { visibleAssistantText } from '../../shared/visibleAssistantText';
 import { isCodexEffort, isCodexModelId, type CodexModelOption } from '../../shared/codexModels';
 import type { CodexQuotaResult, CodexQuotaWindow } from '../../shared/codexQuota';
@@ -354,8 +355,9 @@ export async function readCodexThreadHistory(
   threadId: string,
   cursor?: string,
   createTransport: CreateCodexTransport = defaultCreateTransport,
+  hiddenInputs?: NativeHistoryHiddenInputs,
 ): Promise<CodexHistoryPage> {
-  return withCodexHistoryReader(executablePath, workingDirectory, threadId, AbortSignal.timeout(10_000), createTransport, read => read(cursor));
+  return withCodexHistoryReader(executablePath, workingDirectory, threadId, AbortSignal.timeout(10_000), createTransport, read => read(cursor), hiddenInputs);
 }
 
 export async function locateCodexHistoryTurn(
@@ -365,6 +367,7 @@ export async function locateCodexHistoryTurn(
   turnId: string,
   hint?: string,
   createTransport: CreateCodexTransport = defaultCreateTransport,
+  hiddenInputs?: NativeHistoryHiddenInputs,
 ) {
   const signal = AbortSignal.timeout(60_000);
   return withCodexHistoryReader(executablePath, workingDirectory, threadId, signal, createTransport, async read => {
@@ -383,7 +386,7 @@ export async function locateCodexHistoryTurn(
       cursor = page.nextCursor;
     } while (cursor);
     return { turns: [] };
-  });
+  }, hiddenInputs);
 }
 
 export async function searchCodexThreadHistory(
@@ -392,6 +395,7 @@ export async function searchCodexThreadHistory(
   request: CodexHistorySearchRequest,
   cancellation: AbortSignal,
   createTransport: CreateCodexTransport = defaultCreateTransport,
+  hiddenInputs?: NativeHistoryHiddenInputs,
 ): Promise<CodexHistorySearchPage> {
   const query = normalizeHistoryQuery(request.query.trim());
   if (!query) return { hits: [] };
@@ -423,7 +427,7 @@ export async function searchCodexThreadHistory(
       cursor = page.nextCursor;
     } while (cursor);
     return { hits };
-  });
+  }, hiddenInputs);
 }
 
 async function withCodexHistoryReader<T>(
@@ -433,6 +437,7 @@ async function withCodexHistoryReader<T>(
   signal: AbortSignal,
   createTransport: CreateCodexTransport,
   action: (read: (cursor?: string) => Promise<CodexHistoryPage>) => Promise<T>,
+  hiddenInputs?: NativeHistoryHiddenInputs,
 ) {
   signal.throwIfAborted();
   const client = createTransport(executablePath, workingDirectory);
@@ -447,7 +452,7 @@ async function withCodexHistoryReader<T>(
             ...(cursor ? { cursor } : {}),
           }), signal);
           if (!Array.isArray(response?.data)) throw new Error('CODEX_HISTORY_INVALID');
-          return { turns: parseCodexHistoryTurns(response.data), nextCursor: text(response.nextCursor) || undefined };
+          return { turns: visibleNativeHistoryTurns(parseCodexHistoryTurns(response.data), hiddenInputs), nextCursor: text(response.nextCursor) || undefined };
         } catch (error) {
           if (cursor || !(error instanceof Error) || !/method not found|unknown (request|method|variant)|unsupported|does not support/i.test(error.message)) throw error;
         }
@@ -462,7 +467,7 @@ async function withCodexHistoryReader<T>(
       if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('CODEX_HISTORY_INVALID_CURSOR');
       const end = offset + CODEX_HISTORY_PAGE_SIZE;
       return {
-        turns: parseCodexHistoryTurns(legacyTurns.slice(offset, end)),
+        turns: visibleNativeHistoryTurns(parseCodexHistoryTurns(legacyTurns.slice(offset, end)), hiddenInputs),
         nextCursor: end < legacyTurns.length ? 'legacy:' + end : undefined,
       };
     });
