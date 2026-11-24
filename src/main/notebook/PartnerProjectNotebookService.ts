@@ -1,6 +1,7 @@
 import type { ProjectNotebook } from '../../shared/projectNotebook';
-import type { ProjectDomainStore } from '../project/ProjectDomainStore';
 import type { PartnerProfileStore } from '../partner/PartnerProfileStore';
+import type { ProjectDomainStore } from '../project/ProjectDomainStore';
+import type { ProjectNotebookToolInput } from '../runtime/AsteriumRuntimeTools';
 import { PartnerProjectNotebookStore } from './PartnerProjectNotebookStore';
 
 export class PartnerProjectNotebookService {
@@ -9,7 +10,7 @@ export class PartnerProjectNotebookService {
   constructor(
     private readonly profiles: Pick<PartnerProfileStore, 'partnerIds' | 'workMemoryDirectory'>,
     private readonly domain: Pick<ProjectDomainStore, 'getProject' | 'snapshot'>,
-  ) {}
+  ) { }
 
   async snapshotProject(projectId: string) {
     const notebooks: ProjectNotebook[] = [];
@@ -71,6 +72,28 @@ export class PartnerProjectNotebookService {
       .filter((project) => project.memberIds.includes(partnerId))
       .map((project) => ({ projectId: project.id, name: project.name, status: project.status }))
       .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async callTool(partnerId: string, studioProjectId: string | undefined, input: ProjectNotebookToolInput) {
+    if (input.action === 'list') {
+      if (studioProjectId) {
+        const project = await this.assertActiveMembership(partnerId, studioProjectId);
+        return JSON.stringify([{ projectId: project.id, name: project.name, status: project.status, current: true }], null, 2);
+      }
+      return JSON.stringify(await this.listAccessibleProjects(partnerId), null, 2);
+    }
+    const projectId = studioProjectId ?? input.projectId;
+    if (!projectId) throw new Error('PROJECT_NOTEBOOK_PROJECT_REQUIRED');
+    if (studioProjectId && input.projectId && input.projectId !== studioProjectId) throw new Error('PROJECT_NOTEBOOK_STUDIO_PROJECT_FIXED');
+    const project = await this.assertActiveMembership(partnerId, projectId);
+    const store = await this.notebookStore(partnerId);
+    if (input.action === 'read') {
+      const notebook = await store.get(projectId);
+      return JSON.stringify({ project: { projectId: project.id, name: project.name }, notebook: notebook ?? null, revision: notebook?.revision ?? 0 }, null, 2);
+    }
+    if (input.action === 'append') return JSON.stringify(await store.append({ projectId, projectName: project.name, content: input.content }), null, 2);
+    return JSON.stringify(await store.replace({ projectId, projectName: project.name, content: input.content, expectedRevision: input.expectedRevision }), null, 2);
+
   }
 
   notebookStore(partnerId: string) {

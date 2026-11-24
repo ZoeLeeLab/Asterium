@@ -1,10 +1,9 @@
 import { app, safeStorage, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
   AGENT_PROTOCOL_VERSION,
-  type ExistingThreadConnection,
   type ExistingThreadConnectionStatus,
   type ExistingThreadReplyEvent,
   type PartnerProfileSeed,
@@ -16,20 +15,16 @@ import { trimChatHistory } from '../shared/chatHistory';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE } from '../shared/codexThreadImport';
 import { DESKTOP_IPC as AGENT_IPC, DESKTOP_INVOKE_CHANNELS } from '../shared/desktopIpc';
-import { REVIEW_MARKDOWN_MAX_BYTES } from '../shared/existingPartnerReview';
-import type { MemorySourceAnchor } from '../shared/memoryArchive';
 import type { StudioPrepareTurnRequest, StudioRoomMetadata } from '../shared/studioRuntime';
 import { AdapterHost } from './AdapterHost';
 import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
 import { getCodexThreadLastTurnId, getCodexThreadLifecycles } from './adapters/CodexCliAdapter';
-import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
 import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
 import { ApiConnectionStore } from './api/ApiConnectionStore';
 import { ApiExtensionStore } from './api/ApiExtensionStore';
-import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
 import { createDefaultApiProviderRegistry } from './api/ApiProviderRegistry';
-import { createApiRuntimeConfiguration, isAttachmentCapabilities, resolveApiAttachmentCapabilities } from './api/ApiRuntimeConfiguration';
+import { createApiRuntimeConfiguration, isAttachmentCapabilities } from './api/ApiRuntimeConfiguration';
 import { compactApiSession } from './api/ApiSessionCompactor';
 import { confirmProfileReload } from './api/confirmProfileReload';
 import { McpConnectionManager } from './api/extensions/McpConnectionManager';
@@ -46,7 +41,7 @@ import { ConversationDeletionStore } from './conversation/ConversationDeletionSt
 import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
 import { SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { generateApiDiary, generateClaudeDiary, generateClaudeOneShot, generateCodexDelegation, generateCodexDiary, generateExistingDiary } from './diary/DiaryGenerators';
+import { generateApiDiary, generateClaudeDiary, generateCodexDiary, generateExistingDiary } from './diary/DiaryGenerators';
 import { PartnerDiaryCatalog } from './diary/PartnerDiaryCatalog';
 import { PartnerDiaryScheduler } from './diary/PartnerDiaryScheduler';
 import { PartnerDiaryService } from './diary/PartnerDiaryService';
@@ -136,24 +131,25 @@ import { ProjectWorkflowGenerationStore } from './project/ProjectWorkflowGenerat
 import { ProjectWorkflowStore } from './project/ProjectWorkflowStore';
 import { ProjectWorkflowTemplateStore } from './project/ProjectWorkflowTemplateStore';
 import { ProjectWorkspaceStore } from './project/ProjectWorkspaceStore';
-import { createAsteriumRuntimeTools, memoryToolAccess, projectNotebookToolAccess, type ProjectNotebookToolInput } from './runtime/AsteriumRuntimeTools';
 import { ContextHandoffService } from './runtime/ContextHandoffService';
-import { assertReadOnlyDelegation, delegationSystemPrompt, resolveDelegationAccess } from './runtime/DelegationAccess';
-import { DelegationConversationRuntime, delegationReportTools } from './runtime/DelegationConversationRuntime';
+import { DelegationConversationRuntime } from './runtime/DelegationConversationRuntime';
+import { createDelegationExecutor } from './runtime/DelegationExecutor';
 import { DelegationResultDelivery } from './runtime/DelegationResultDelivery';
-import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from './runtime/ExistingPartnerReview';
+import { createDelegationRuntimeBridge } from './runtime/DelegationRuntimeBridge';
+import { createDelegationToolHandler } from './runtime/DelegationToolHandler';
 import { createExistingThreadService } from './runtime/ExistingThreadService';
 import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
 import { createLegacyRunPath } from './runtime/LegacyRunPath';
 import { createLocalRuntimeResolver } from './runtime/LocalRuntimeResolver';
 import { createMessageRuntime } from './runtime/MessageRuntime';
 import { NativeProfileReloadError, confirmNativeProfileReload } from './runtime/NativeProfileReload';
-import { PartnerDelegation, delegationInput, delegationWaitInput, type DelegationBatch, type DelegationTask } from './runtime/PartnerDelegation';
+import { PartnerDelegation } from './runtime/PartnerDelegation';
 import { PartnerRuntimeFactory, localRuntimeAdapterKey } from './runtime/PartnerRuntimeFactory';
 import { PartnerRuntimePort } from './runtime/PartnerRuntimePort';
 import { RunCoordinator } from './runtime/RunCoordinator';
 import { createRuntimeEventBridge } from './runtime/RuntimeEventBridge';
 import { createRuntimeRunHooks } from './runtime/RuntimeRunHooks';
+import { createRuntimeToolBindings } from './runtime/RuntimeToolBindings';
 import { assembleSessionBootstrap } from './runtime/SessionBootstrapAssembler';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
 import { SessionBootstrapService } from './runtime/SessionBootstrapService';
@@ -373,148 +369,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const unsubscribeDelegationLease = writerLeases.subscribeAvailable(scope => {
     if (scope.kind === 'conversation') delegationHandles.delivery?.kick();
   });
-  const codexDelegationImageLimit = 10 * 1024 * 1024;
   function withDelegationChatPriority<T>(conversationId: string, start: () => Promise<T>) {
     return delegationHandles.delivery ? delegationHandles.delivery.withUserPriority(conversationId, start) : start();
-  }
-
-  async function executeDelegation(batch: DelegationBatch, task: DelegationTask, signal: AbortSignal) {
-    assertReadOnlyDelegation(task.access);
-    const partner = studioRuntimeCatalog.partner(task.targetPartnerId);
-    if (!partner?.available || (partner.runtime.kind !== 'api' && partner.runtime.kind !== 'local')) throw new Error('DELEGATION_TARGET_UNAVAILABLE');
-    if (await conversationDeletions.isDeleted(batch.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
-    const connection = partner.runtime.kind === 'api' ? await apiConnections.resolve(partner.partnerId, partner.runtime.connection) : undefined;
-    if (task.connectionFingerprint && task.connectionFingerprint !== delegationConnectionFingerprint(connection ?? partner.runtime)) throw new Error('DELEGATION_CONNECTION_CHANGED');
-    const capabilities = connection ? resolveApiAttachmentCapabilities(connection) : undefined;
-    const codex = partner.runtime.kind === 'local' && partner.runtime.adapterType === 'codex_cli' ? partner.runtime : undefined;
-    const imageLimit = codex ? codexDelegationImageLimit : capabilities?.maxImageBytes ?? 0;
-    const parts: ApiProviderContentPart[] = [{ type: 'text', text: task.instruction }];
-    let textLength = task.instruction.length;
-    for (const id of task.attachmentIds) {
-      const file = await messageAttachments.inspect(id, batch.conversationId);
-      if (!file.sends.some(send => send.messageId === batch.messageId)) throw new Error('DELEGATION_ATTACHMENT_UNAVAILABLE');
-      if (file.mediaType === 'image/png' || file.mediaType === 'image/jpeg') {
-        if ((!codex && (!capabilities?.supportsImageInput || capabilities.attachmentTransport !== 'native_multimodal' || !capabilities.acceptedMimeTypes.includes(file.mediaType))) || file.sizeBytes > imageLimit) throw new Error('DELEGATION_IMAGE_UNSUPPORTED');
-        const bytes = await messageAttachments.read(id, batch.conversationId);
-        verifyDelegationMaterial(task, id, bytes);
-        if (bytes.length > imageLimit) throw new Error('DELEGATION_IMAGE_UNSUPPORTED');
-        parts.push({ type: 'image', mediaType: file.mediaType, data: bytes.toString('base64') });
-      } else {
-        if (!/\.(txt|md)$/iu.test(file.name) || file.sizeBytes > 160_000) throw new Error('DELEGATION_ATTACHMENT_UNSUPPORTED');
-        const bytes = await messageAttachments.read(id, batch.conversationId);
-        verifyDelegationMaterial(task, id, bytes);
-        if (bytes.length > 160_000) throw new Error('DELEGATION_ATTACHMENT_UNSUPPORTED');
-        const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-        textLength += text.length;
-        if (textLength > 40_000) throw new Error('DELEGATION_TEXT_LIMIT');
-        parts.push({ type: 'text', text: JSON.stringify({ attachment: file.name, text }) });
-      }
-    }
-    const system = delegationSystemPrompt(partner.publicIdentity.displayName);
-    const plainText = parts.map(part => part.type === 'text' ? part.text : '').join('\n\n');
-    if (!connection) {
-      if (codex) {
-        const installation = await ensureCodexInstallation();
-        const runtime = resolveCodexRuntime(installation.runtimes, codex.codexRuntimeId, codex.codexRuntimeEnvironment);
-        if (!runtime?.loggedIn) throw new Error('DELEGATION_TARGET_UNAVAILABLE');
-        const cwd = await mkdtemp(path.join(app.getPath('temp'), 'asterium-delegation-'));
-        try {
-          const images: string[] = [];
-          for (const part of parts) {
-            if (part.type !== 'image') continue;
-            const file = path.join(cwd, `image-${images.length + 1}.${part.mediaType === 'image/png' ? 'png' : 'jpg'}`);
-            await writeFile(file, Buffer.from(part.data, 'base64'), { flag: 'wx' });
-            images.push(file);
-          }
-          if (await conversationDeletions.isDeleted(batch.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
-          signal.throwIfAborted();
-          return await generateCodexDelegation({ executablePath: runtime.executablePath, cwd, source: plainText, bootstrap: '', signal, model: partner.recentModel?.model }, system, images);
-        } finally {
-          await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-        }
-      }
-      const installation = await ensureClaudeInstallation();
-      if (!installation.executablePath || !installation.loggedIn) throw new Error('DELEGATION_TARGET_UNAVAILABLE');
-      signal.throwIfAborted();
-      if (await conversationDeletions.isDeleted(batch.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
-      const cwd = await mkdtemp(path.join(app.getPath('temp'), 'asterium-delegation-'));
-      try {
-        return await generateClaudeOneShot({ executablePath: installation.executablePath, cwd, source: plainText, bootstrap: '', signal, model: partner.recentModel?.model }, (await loadClaudeCliRuntime()).query, system, 20_000);
-      } finally {
-        await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {
-          console.warn('Claude delegation temporary directory cleanup failed.');
-        });
-      }
-    }
-    const provider = apiProviders.normalizeConnection(connection);
-    const options = await configuredApiOptions(connection);
-    signal.throwIfAborted();
-    if (await conversationDeletions.isDeleted(batch.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
-    const adapter = provider.definition.createAdapter({ ...options, endpoint: provider.endpoint, model: provider.model, thinkingMode: 'disabled' });
-    let output = '';
-    let finish = '';
-    for await (const event of adapter.stream({ signal, tools: [], messages: [{ role: 'system', content: system }, { role: 'user', content: parts.some(part => part.type === 'image') ? parts : plainText }] })) {
-      if (event.type === 'tool.delta') throw new Error('DELEGATION_TOOL_FORBIDDEN');
-      if (event.type === 'finish') finish = event.reason;
-      if (event.type === 'text.delta') output += event.text;
-      if (output.length > 20_000) throw new Error('DELEGATION_OUTPUT_INVALID');
-    }
-    if (!['stop', 'end_turn', 'stop_sequence', 'STOP'].includes(finish)) throw new Error('DELEGATION_OUTPUT_INVALID');
-    if (!output.trim()) throw new Error('DELEGATION_OUTPUT_INVALID');
-    return output;
-  }
-  function delegationConnectionFingerprint(connection: unknown) {
-    return createHash('sha256').update(JSON.stringify(connection)).digest('hex');
-  }
-  function verifyDelegationMaterial(task: DelegationTask, id: string, bytes: Buffer) {
-    if (task.materials?.find(material => material.id === id)?.sha256 !== createHash('sha256').update(bytes).digest('hex')) throw new Error('DELEGATION_ATTACHMENT_CHANGED');
-  }
-  function existingReviewConnection(partnerId: string) {
-    const current = diaryCatalog.current(partnerId);
-    return studioRuntimeCatalog.partner(partnerId)?.sourceMode === 'existing_thread'
-      && current?.identity.available && current.existing?.threadId ? current.existing : undefined;
-  }
-  function reviewConnectionFingerprint(connection: ExistingThreadConnection) {
-    return delegationConnectionFingerprint([normalizeCyberBossServiceUrl(connection.serviceUrl).origin, connection.credentialRef]);
-  }
-  async function reviewClient(connection: ExistingThreadConnection) {
-    const secret = await credentials.get(connection.credentialRef);
-    if (!secret) throw new Error('DELEGATION_REVIEW_UNAVAILABLE');
-    return new CyberBossBridgeClient({ serviceUrl: connection.serviceUrl, secret });
-  }
-  async function assertReviewThread(client: CyberBossBridgeClient, threadId: string, signal: AbortSignal) {
-    const capability = await client.reviewCapability(signal).catch(() => { throw new Error('DELEGATION_REVIEW_UNAVAILABLE'); });
-    signal.throwIfAborted();
-    if (capability.threadId !== threadId) throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
-  }
-  async function executeExistingReview(batch: DelegationBatch, task: DelegationTask, review: NonNullable<DelegationTask['review']>, signal: AbortSignal, lookupOnly: boolean) {
-    if (await conversationDeletions.isDeleted(batch.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
-    const connection = existingReviewConnection(task.targetPartnerId);
-    if (!connection || reviewConnectionFingerprint(connection) !== task.connectionFingerprint) {
-      throw new Error(lookupOnly ? 'DELEGATION_REVIEW_UNCERTAIN' : 'DELEGATION_CONNECTION_CHANGED');
-    }
-    const client = await reviewClient(connection).catch(() => { throw new Error(lookupOnly ? 'DELEGATION_REVIEW_UNCERTAIN' : 'DELEGATION_REVIEW_UNAVAILABLE'); });
-    const key = { requestId: review.requestId!, threadId: review.threadId };
-    if (lookupOnly) return runExistingPartnerReview(client, key, undefined, signal);
-    if (connection.threadId !== review.threadId) throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
-    const material = task.materials?.[0];
-    if (!material) throw new Error('DELEGATION_REVIEW_MARKDOWN_REQUIRED');
-    const bytes = task.reviewDraft
-      ? Buffer.from(task.reviewDraft.markdown, 'utf8')
-      : await messageAttachments.read(material.id, batch.conversationId);
-    verifyDelegationMaterial(task, material.id, bytes);
-    const file = describeReviewFile(material.name, bytes);
-    await assertReviewThread(client, review.threadId, signal);
-    if (task.access === 'write') {
-      const source = await singleChatMessages.getConversation(batch.conversationId);
-      if (!source || source.partnerId !== batch.partnerId || source.isArchived || source.isDisabled) throw new Error('DELEGATION_SOURCE_UNAVAILABLE');
-      resolveDelegationAccess('write', source);
-    }
-    if (await conversationDeletions.isDeleted(batch.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
-    const current = existingReviewConnection(task.targetPartnerId);
-    if (!current || reviewConnectionFingerprint(current) !== task.connectionFingerprint) throw new Error('DELEGATION_CONNECTION_CHANGED');
-    if (current.threadId !== review.threadId) throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
-    return runExistingPartnerReview(client, key, { message: review.message, file, bytes }, signal);
   }
   const configuredApiOptions = createApiRuntimeConfiguration(credentials);
   const contextHandoff = new ContextHandoffService(singleChatMessages, studioRooms, id => {
@@ -656,6 +512,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   });
   const sessionCommands = new SessionCommandService({ bindings: nativeBindings, catalog: studioRuntimeCatalog, messages: singleChatMessages, leases: writerLeases, compactions: sessionCompactions, reload: (request) => profileReloads.execute(request), isDeleted: (id) => conversationDeletions.isDeleted(id) });
   const diaryCatalog = new PartnerDiaryCatalog(studioRuntimeCatalog);
+  const { executeDelegation, existingReviewConnection, reviewConnectionFingerprint, reviewClient, assertReviewThread, executeExistingReview } = createDelegationExecutor({ apiConnections, apiProviders, configuredApiOptions, conversationDeletions, credentials, diaryCatalog, ensureClaudeInstallation, ensureCodexInstallation, messageAttachments, singleChatMessages, studioRuntimeCatalog, temporaryDirectory: () => app.getPath('temp') });
   const studioWakeControl = new StudioWakeControlService(() => path.join(app.getPath('userData'), 'studio-wake-settings.v1.json'), {
     autoConnect: restoreBackgroundServices,
     connection: (partnerId) => {
@@ -874,167 +731,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerAttachmentMaintenanceIpc(ipcMain, { messageAttachments, cancelDelegation, delegation }, requireSender);
   const conversationLifecycle = new ConversationLifecycleService({ cancelDelegation, writerLeases, conversationDeletions, delegation, diarySettings, diaryScheduler, memoryFallbackInventory });
   registerConversationHistoryIpc(ipcMain, { conversationLifecycle, conversationDeletions, singleChatHistory, singleChatMessages, nativeBindings, diarySettings, diaryScheduler, memoryFallbackInventory }, requireSender);
-  const currentMemorySource = async (command: SendMessageCommand): Promise<MemorySourceAnchor | undefined> => {
-    if (command.route?.scope === 'group') {
-      const route = command.route;
-      const room = await studioRooms.getRoom(route.roomId);
-      const triggerMessageId = room?.activeRound?.roundId === route.roundId
-        ? room.activeRound.triggerMessageId
-        : room?.messages.find((message) => message.roundId === route.roundId && message.authorType === 'user')?.messageId;
-      return triggerMessageId ? { kind: 'studio', roomId: route.roomId, messageId: triggerMessageId } : undefined;
-    }
-    return command.messageId ? { kind: 'single_chat', conversationId: command.conversationId, messageId: command.messageId } : undefined;
-  };
-  const runtimeToolsFor = (command: SendMessageCommand, memoryMode?: string) => {
-    const memoryAccess = memoryToolAccess(memoryMode, command.route);
-    const notebookAccess = projectNotebookToolAccess(command.route);
-    const memoryContext = async () => ({ partnerId: command.partnerId, currentSource: await currentMemorySource(command) });
-    const projectNotebook = async (input: ProjectNotebookToolInput) => {
-      const studioProjectId = command.route?.scope === 'group' ? command.runtimeContext?.conversation?.studio?.projectId : undefined;
-      if (input.action === 'list') {
-        if (studioProjectId) {
-          const project = await projectNotebooks.assertActiveMembership(command.partnerId, studioProjectId);
-          return JSON.stringify([{ projectId: project.id, name: project.name, status: project.status, current: true }], null, 2);
-        }
-        return JSON.stringify(await projectNotebooks.listAccessibleProjects(command.partnerId), null, 2);
-      }
-      const projectId = studioProjectId ?? input.projectId;
-      if (!projectId) throw new Error('PROJECT_NOTEBOOK_PROJECT_REQUIRED');
-      if (studioProjectId && input.projectId && input.projectId !== studioProjectId) throw new Error('PROJECT_NOTEBOOK_STUDIO_PROJECT_FIXED');
-      const project = await projectNotebooks.assertActiveMembership(command.partnerId, projectId);
-      const store = await projectNotebooks.notebookStore(command.partnerId);
-      if (input.action === 'read') {
-        const notebook = await store.get(projectId);
-        return JSON.stringify({ project: { projectId: project.id, name: project.name }, notebook: notebook ?? null, revision: notebook?.revision ?? 0 }, null, 2);
-      }
-      if (input.action === 'append') return JSON.stringify(await store.append({ projectId, projectName: project.name, content: input.content }), null, 2);
-      return JSON.stringify(await store.replace({ projectId, projectName: project.name, content: input.content, expectedRevision: input.expectedRevision }), null, 2);
-    };
-    const tools = createAsteriumRuntimeTools({
-    ...((!command.route || command.route.scope === 'single') && command.sourceMessage?.authorType === 'user' && !automationHandles.runtime?.runFor(command) ? {
-      delegation: async (tool: string, input: Record<string, unknown>, signal: AbortSignal, toolCallId?: string) => {
-        signal.throwIfAborted();
-        if (await conversationDeletions.isDeleted(command.conversationId)) throw new Error('DELEGATION_SOURCE_DELETED');
-        const owner = { conversationId: command.conversationId, partnerId: command.partnerId, turnId: command.clientMessageId, messageId: command.sourceMessage!.messageId };
-        if (tool === 'wait_delegate_tasks') return JSON.stringify(await delegation.wait(owner, delegationWaitInput.parse(input).batchId, signal));
-        const targets = studioRuntimeCatalog.allPartners().filter(partner => partner.partnerId !== owner.partnerId
-          && (partner.available || existingReviewConnection(partner.partnerId)));
-        if (tool === 'list_delegate_partners') {
-          const available = await Promise.all(targets.map(async partner => {
-            const identity = { id: partner.partnerId, name: partner.publicIdentity.displayName };
-            if (partner.sourceMode === 'existing_thread') {
-              const connection = existingReviewConnection(partner.partnerId);
-              if (!connection) return undefined;
-              try {
-                await assertReviewThread(await reviewClient(connection), connection.threadId, signal);
-                const canWrite = command.execution?.permissionMode !== 'read_only' && command.execution?.planMode !== 'plan';
-                return { ...identity, kind: 'existing_thread', materials: ['markdown_file'], accessModes: canWrite ? ['read', 'write'] : ['read'] };
-              } catch { return undefined; }
-            }
-            const codex = partner.runtime.kind === 'local' && partner.runtime.adapterType === 'codex_cli';
-            const images = codex || (partner.runtime.kind === 'api' && resolveApiAttachmentCapabilities(await apiConnections.resolve(partner.partnerId, partner.runtime.connection)).supportsImageInput);
-            return { ...identity, accessModes: ['read'], materials: images ? ['text', 'png', 'jpeg'] : ['text'], ...(codex ? { fileReadBoundary: 'host_read_access' } : {}) };
-          }));
-          signal.throwIfAborted();
-          return JSON.stringify(available.filter(Boolean));
-        }
-        if (tool !== 'delegate_tasks') throw new Error('DELEGATION_TOOL_FORBIDDEN');
-        const parsed = delegationInput.parse(input);
-        const attachmentIds = new Set(command.attachments?.map(attachment => attachment.id));
-        const requestId = toolCallId ?? createHash('sha256').update(JSON.stringify(parsed)).digest('hex');
-        const destination = await delegationHandles.conversation?.capture(command);
-        const batch = await delegation.submit(owner, requestId, parsed, async task => {
-          signal.throwIfAborted();
-          const target = targets.find(item => item.partnerId === task.targetPartnerId);
-          if (!target) throw new Error('DELEGATION_TARGET_UNAVAILABLE');
-          const access = resolveDelegationAccess(task.access, command.execution);
-          if (target.sourceMode === 'existing_thread') {
-            const connection = existingReviewConnection(target.partnerId);
-            if (!connection) throw new Error('DELEGATION_REVIEW_UNAVAILABLE');
-            if (parsed.tasks.length !== 1) throw new Error('DELEGATION_REVIEW_SINGLE_TARGET');
-            if (task.attachmentIds.length + Number(Boolean(task.reviewDraft)) + Number(Boolean(task.reviewArtifactId)) !== 1) throw new Error('DELEGATION_REVIEW_MARKDOWN_REQUIRED');
-            const id = task.reviewArtifactId ?? (task.reviewDraft ? 'review-draft' : task.attachmentIds[0]);
-            let reviewDraft = task.reviewDraft;
-            let file;
-            if (task.reviewArtifactId) {
-              const snapshot = await snapshotReviewArtifact(artifacts, task.reviewArtifactId, owner, signal);
-              file = snapshot.file;
-              reviewDraft = snapshot.draft;
-            } else if (reviewDraft) {
-              file = describeReviewFile(reviewDraft.name, Buffer.from(reviewDraft.markdown, 'utf8'));
-            } else {
-              if (!attachmentIds.has(id)) throw new Error('DELEGATION_ATTACHMENT_UNAVAILABLE');
-              const attachment = await messageAttachments.inspect(id, owner.conversationId);
-              if (!attachment.sends.some(send => send.messageId === owner.messageId)) throw new Error('DELEGATION_ATTACHMENT_UNAVAILABLE');
-              if (attachment.sizeBytes > REVIEW_MARKDOWN_MAX_BYTES) throw new Error('DELEGATION_REVIEW_FILE_SIZE');
-              file = describeReviewFile(attachment.name, await messageAttachments.read(id, owner.conversationId));
-            }
-            const sender = studioRuntimeCatalog.partner(owner.partnerId)?.publicIdentity.displayName ?? '伙伴';
-            const message = existingPartnerReviewMessage(sender, task.instruction, command.sourceMessage!.content, file.name, studioRuntimeCatalog.user().displayName || '用户', access);
-            signal.throwIfAborted();
-            return { materials: [{ id, name: file.name, sha256: file.sha256 }], connectionFingerprint: reviewConnectionFingerprint(connection), review: { threadId: connection.threadId, message }, reviewDraft };
-          }
-          assertReadOnlyDelegation(task.access);
-          if (task.reviewDraft || task.reviewArtifactId) throw new Error('DELEGATION_REVIEW_UNAVAILABLE');
-          const connection = target.runtime.kind === 'api' ? await apiConnections.resolve(target.partnerId, target.runtime.connection) : undefined;
-          const caps = connection ? resolveApiAttachmentCapabilities(connection) : undefined;
-          const materials = [];
-          for (const id of new Set(task.attachmentIds)) {
-            if (!attachmentIds.has(id)) throw new Error('DELEGATION_ATTACHMENT_UNAVAILABLE');
-            const file = await messageAttachments.inspect(id, owner.conversationId);
-            if (!file.sends.some(send => send.messageId === owner.messageId)) throw new Error('DELEGATION_ATTACHMENT_UNAVAILABLE');
-            if (file.mediaType === 'image/png' || file.mediaType === 'image/jpeg') {
-              const isCodex = target.runtime.kind === 'local' && target.runtime.adapterType === 'codex_cli';
-              const supported = isCodex ? file.sizeBytes <= codexDelegationImageLimit : caps?.supportsImageInput && caps.attachmentTransport === 'native_multimodal' && caps.acceptedMimeTypes.includes(file.mediaType) && file.sizeBytes <= caps.maxImageBytes;
-              if (!supported) throw new Error('DELEGATION_IMAGE_UNSUPPORTED');
-            } else if (!/\.(txt|md)$/iu.test(file.name) || file.sizeBytes > 160_000) throw new Error('DELEGATION_ATTACHMENT_UNSUPPORTED');
-            const bytes = await messageAttachments.read(id, owner.conversationId);
-            materials.push({ id, name: file.name, sha256: createHash('sha256').update(bytes).digest('hex') });
-          }
-          signal.throwIfAborted();
-          return { materials, connectionFingerprint: delegationConnectionFingerprint(connection ?? target.runtime) };
-        }, destination);
-        return JSON.stringify({ id: batch.id, tasks: batch.tasks.map(task => ({ id: task.id, targetPartnerId: task.targetPartnerId, status: task.status, reason: task.reason })) });
-      },
-    } : {}),
-    workspaceChangesAllowed: !automationHandles.runtime?.runFor(command),
-    automation: (input, signal) => automationAgentTools.call(input, {
-      partnerId: command.partnerId, conversationId: command.conversationId,
-      ownerKey: command.clientMessageId, signal,
-      permissionMode: command.execution?.permissionMode ?? 'manual',
-      automatic: Boolean(automationHandles.runtime?.runFor(command)), readOnly: command.execution?.permissionMode === 'read_only' || command.execution?.planMode === 'plan',
-      report: changed => automationHandles.runtime!.report(command, changed),
-    }),
-    partnerId: command.partnerId,
-    conversationId: command.conversationId,
-    permissionMode: command.execution?.permissionMode ?? 'manual',
-    planMode: command.execution?.planMode ?? 'default',
-    context: command.runtimeContext,
-    route: command.route,
-    ...(command.route?.scope === 'group' ? { mentionPartner: async ({ route, partnerId, targetPartnerId, label }: { route: Extract<NonNullable<SendMessageCommand['route']>, { scope: 'group' }>; partnerId: string; targetPartnerId: string; label: string }) => {
-      await studioRooms.mentionPartner({ ...route, partnerId, targetPartnerId, label,
-        externalTarget: studioRuntimeCatalog.partner(targetPartnerId)?.sourceMode === 'existing_thread' });
-    } } : {}),
-    workspaces: partnerWorkspaces,
-    artifacts,
-    attachments: messageAttachments,
-    ...projectTaskRuntimeRef.current?.toolOptions(command),
-    ...workflowGenerationRuntimeRef.current?.toolOptions(command),
-    ...(notebookAccess ? { projectNotebook } : {}),
-    ...(memoryAccess === 'none' ? {} : { memory: {
-      access: memoryAccess,
-      search: async (input: Parameters<PartnerMemoryToolService['search']>[1]) => JSON.stringify(await partnerMemoryTools.search(await memoryContext(), input), null, 2),
-      readSource: async (input: Parameters<PartnerMemoryToolService['readSource']>[1]) => JSON.stringify(await partnerMemoryTools.readSource(await memoryContext(), input), null, 2),
-      ...(memoryAccess === 'write' ? {
-        hold: async (input: Parameters<PartnerMemoryToolService['hold']>[1]) => JSON.stringify(await partnerMemoryTools.hold(await memoryContext(), input), null, 2),
-        comment: async (input: Parameters<PartnerMemoryToolService['comment']>[1]) => JSON.stringify(await partnerMemoryTools.comment(await memoryContext(), input), null, 2),
-        update: async (input: Parameters<PartnerMemoryToolService['update']>[1]) => JSON.stringify(await partnerMemoryTools.update(await memoryContext(), input), null, 2),
-      } : {}),
-    } }),
-    });
-    return delegationHandles.delivery?.owns(command) ? delegationReportTools(tools) : tools;
-  };
 
+  const delegationToolFor = createDelegationToolHandler({ apiConnections, artifacts, assertReviewThread, conversationDeletions, delegation, delegationHandles, existingReviewConnection, messageAttachments, reviewClient, reviewConnectionFingerprint, studioRuntimeCatalog });
+  const runtimeToolsFor = createRuntimeToolBindings({ automationAgentTools: () => automationAgentTools, automationHandles, artifacts, delegationHandles, delegationToolFor, messageAttachments, partnerMemoryTools, partnerWorkspaces, projectNotebooks, projectTaskRuntimeRef, studioRooms, studioRuntimeCatalog, workflowGenerationRuntimeRef });
   const { hooks, persistFirstSingleChatBinding, captureGuidanceSource, markAcceptedStudioSpeakingMode } = createRuntimeRunHooks({ automationHandles, checkAutomation: (run, owner) => checkAutomation(run, owner), delegation, delegationHandles, delivery, hydrateManagedRuntimeProfile, nativeBindings, notifyHandoffDelivered, projectChanges, projectTaskRuntimeRef, sendEvent, sessionBootstrapRecorder, singleChatHistory, singleChatMessages, studioOrchestration, studioRooms, transformRuntimeEvent, workflowGenerationRuntimeRef });
   const runCoordinator = new RunCoordinator(host, hooks, writerLeases);
   const { startAdapterRun } = createLegacyRunPath({ captureGuidanceSource, delivery, host, hydrateManagedRuntimeProfile, markAcceptedStudioSpeakingMode, nativeBindings, notifyHandoffDelivered, persistFirstSingleChatBinding, sendEvent, sessionBootstrapRecorder, studioOrchestration, studioRooms, transformRuntimeEvent, writerLeases });
@@ -1381,31 +1080,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     check: run => automationHandles.runtime!.check(run),
     execute: async (run, signal) => { try { return await automationHandles.runtime!.execute(run, signal); } finally { automationProjectLeases.get(run.id)?.release(); automationProjectLeases.delete(run.id); } },
   });
-  delegationHandles.conversation = new DelegationConversationRuntime({
-    binding: (partnerId, conversationId) => nativeBindings.getForScope(partnerId, 'single', conversationId),
-    source: id => singleChatMessages.getConversation(id), deleted: id => conversationDeletions.isDeleted(id),
-    partner: id => studioRuntimeCatalog.partner(id), leases: writerLeases,
-    workspaceSignature: async (partnerId, binding) => createHash('sha256').update(JSON.stringify({
-      workspace: await automationWorkspaceSignature(partnerId), imported: binding.importedCodexWorkspace,
-      runtime: studioRuntimeCatalog.partner(partnerId)?.runtime,
-    })).digest('hex'),
-    save: (conversationId, partnerId, message) => singleChatMessages.upsertMessage(conversationId, partnerId, message),
-  });
-  const resultConversation = delegationHandles.conversation;
-  delegationHandles.delivery = new DelegationResultDelivery(delegation, {
-    prepare: (batch, underLease) => resultConversation.prepare(batch, underLease),
-    start: async command => {
-      const partner = studioRuntimeCatalog.partner(command.partnerId);
-      if (!partner?.available || partner.runtime.kind === 'unsupported') throw new Error('DELEGATION_DELIVERY_DEFERRED');
-      if (partner.runtime.kind === 'api') return startApiRuntime({ connection: partner.runtime.connection, command }, true);
-      return startLocalRuntime({ adapterType: partner.runtime.adapterType, partnerId: command.partnerId,
-        partnerRootGrantId: partner.runtime.partnerRootGrantId, workspaceGrantIds: partner.runtime.workspaceGrantIds,
-        codexRuntimeId: partner.runtime.codexRuntimeId, codexRuntimeEnvironment: partner.runtime.codexRuntimeEnvironment, command }, true);
-    },
-    cancel: (command, receipt) => runCoordinator.cancel({ ...command, type: 'run.cancel', commandId: 'delegation-cancel:' + randomUUID(),
-      runId: receipt.runId, sessionId: receipt.sessionId, reason: '用户消息优先' }),
-    saveReply: (batch, event, text, completed) => resultConversation.saveReply(batch, event, text, completed),
-  });
+  const delegationRuntime = createDelegationRuntimeBridge({ nativeBindings, singleChatMessages, conversationDeletions, studioRuntimeCatalog, writerLeases, automationWorkspaceSignature: (partnerId, projectId) => automationWorkspaceSignature(partnerId, projectId), startApiRuntime, startLocalRuntime, runCoordinator, delegation });
+  delegationHandles.conversation = delegationRuntime.conversation;
+  delegationHandles.delivery = delegationRuntime.delivery;
+
   const delegationStartup = app.whenReady().then(() => {
     if (restoreBackgroundServices && !useLegacyRunPath) delegationHandles.delivery?.start();
   });

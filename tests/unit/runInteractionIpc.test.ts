@@ -14,6 +14,10 @@ import { AutomationConfirmations } from '../../src/main/automation/AutomationCon
 import { ApiConnectionStore } from '../../src/main/api/ApiConnectionStore';
 import { CredentialStore } from '../../src/main/security/CredentialStore';
 import { NativeThreadBindingStore } from '../../src/main/studio/NativeThreadBindingStore';
+import { StudioRuntimeCatalog } from '../../src/main/studio/StudioRuntimeCatalog';
+import { PartnerDiaryCatalog } from '../../src/main/diary/PartnerDiaryCatalog';
+import { CyberBossBridgeClient } from '../../src/main/adapters/CyberBossBridgeClient';
+import type { DelegationBatchView } from '../../src/main/runtime/PartnerDelegation';
 import { DESKTOP_IPC } from '../../src/shared/desktopIpc';
 import { AGENT_PROTOCOL_VERSION, type ResolveUserInputCommand, type SendGuidanceCommand, type SendGuidanceResult } from '../../src/shared/agentProtocol';
 import { MockAdapter } from '../helpers/MockAdapter';
@@ -202,6 +206,53 @@ it.each(['0', '1'])('preserves startup, idempotency, cancellation and release wi
       expect(release).toHaveBeenCalledWith(receipt.runId);
     });
   } finally { vi.unstubAllEnvs(); }
+});
+
+it.each([
+  { access: 'read', permissionMode: 'full', planMode: 'default', accepted: true },
+  { access: 'write', permissionMode: 'full', planMode: 'default', accepted: true },
+  { access: 'write', permissionMode: 'read_only', planMode: 'default', accepted: false },
+  { access: 'write', permissionMode: 'full', planMode: 'plan', accepted: false },
+] as const)('keeps composed delegation $access/$permissionMode/$planMode on v1 and rejects parent escalation', async row => {
+  await withRunInteraction(async invoke => {
+    vi.spyOn(ApiConnectionStore.prototype, 'resolve').mockResolvedValue(apiConnection);
+    vi.spyOn(CredentialStore.prototype, 'get').mockResolvedValue('fixture-secret');
+    vi.spyOn(SessionBootstrapService.prototype, 'prepare').mockResolvedValue(undefined);
+    vi.spyOn(RunCoordinator.prototype, 'start').mockResolvedValue({ runId: 'fixture-run', sessionId: 'fixture-session' });
+    const create = vi.spyOn(PartnerRuntimeFactory.prototype, 'createApi').mockReturnValue(new MockAdapter() as never);
+    const remote = { partnerId: 'fixture-remote', sourceMode: 'existing_thread', available: true, publicIdentity: { displayName: '合成接收伙伴' }, runtime: { kind: 'unsupported' } } as const;
+    vi.spyOn(StudioRuntimeCatalog.prototype, 'allPartners').mockReturnValue([remote] as never);
+    vi.spyOn(StudioRuntimeCatalog.prototype, 'partner').mockImplementation(id => id === remote.partnerId ? remote as never : undefined);
+    vi.spyOn(PartnerDiaryCatalog.prototype, 'current').mockReturnValue({ identity: { sourceMode: 'existing_thread', available: true }, existing: { serviceUrl: 'https://review.example.test', credentialRef: 'fixture-review', threadId: 'fixture-review-thread' } });
+    vi.spyOn(CyberBossBridgeClient.prototype, 'reviewCapability').mockResolvedValue({ version: 1, threadId: 'fixture-review-thread' });
+    const submit = vi.spyOn(CyberBossBridgeClient.prototype, 'submitReview').mockImplementation(async request => ({ version: 1, requestId: request.requestId, threadId: request.threadId, status: 'succeeded', result: '合成委派结果' }));
+    const request = apiRequest();
+    await invoke(DESKTOP_IPC.sendApiMessage, { ...request, command: { ...request.command, execution: { permissionMode: row.permissionMode, planMode: row.planMode },
+      sourceMessage: { messageId: 'fixture-user-message', authorType: 'user', authorId: 'fixture-user', content: '请处理这份合成方案。', createdAt: '12:00' } } });
+    const delegate = create.mock.calls[0][0].runtimeTools.delegation!;
+    const signal = new AbortController().signal;
+    const targets = JSON.parse(await delegate('list_delegate_partners', {}, signal));
+    expect(targets[0].accessModes).toEqual(row.accepted ? ['read', 'write'] : ['read']);
+    const dispatch = () => delegate('delegate_tasks', { tasks: [{ targetPartnerId: remote.partnerId, access: row.access, instruction: '处理合成方案。', reviewDraft: { name: 'proposal.md', markdown: '# Synthetic proposal' } }] }, signal, 'fixture-delegation-call');
+    if (row.planMode === 'plan') {
+      expect(dispatch).toThrow('DELEGATION_PLAN_MODE');
+      expect(await invoke(DESKTOP_IPC.delegationList, target.conversationId)).toEqual([]);
+      expect(submit).not.toHaveBeenCalled();
+      return;
+    }
+    await dispatch();
+    await vi.waitFor(async () => {
+      const batches = await invoke(DESKTOP_IPC.delegationList, target.conversationId) as DelegationBatchView[];
+      expect(batches[0].tasks[0]).toMatchObject(row.accepted ? { status: 'succeeded', result: '合成委派结果' } : { status: 'failed', reason: 'DELEGATION_ACCESS_DENIED' });
+    });
+    expect(submit).toHaveBeenCalledTimes(row.accepted ? 1 : 0);
+    if (row.accepted) {
+      const [metadata, bytes] = submit.mock.calls[0];
+      expect(Object.keys(metadata).sort()).toEqual(['file', 'message', 'requestId', 'threadId', 'version']);
+      expect(metadata.message).toContain(`本次权限：${row.access}`);
+      expect(Buffer.from(bytes).toString('utf8')).toBe('# Synthetic proposal');
+    }
+  });
 });
 
 it('keeps local runtime grant enforcement after validation and does not add a partner-id equality guard without a handoff', async () => {
