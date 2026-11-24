@@ -1,197 +1,193 @@
-import { registerExistingThreadIpc } from './ipc/existingThreadIpc';
-import { createExistingThreadService } from './runtime/ExistingThreadService';
-import { registerConversationHistoryIpc } from './ipc/conversationHistoryIpc';
-import { registerStudioWakeIpc } from './ipc/studioWakeIpc';
-import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
-import { registerAttachmentSelectionIpc, registerAttachmentAccessIpc, registerAttachmentMaintenanceIpc } from './ipc/attachmentIpc';
-import { registerStudioRoundCancellationIpc, registerStudioRoundIpc } from './ipc/studioRoundIpc';
-import { registerProjectTaskExecutionIpc } from './ipc/projectTaskExecutionIpc';
-import { registerNativeSingleBindingIpc, registerNativeSessionImportIpc, registerNativeSessionHistoryIpc, registerNativeSessionLifecycleIpc } from './ipc/nativeSessionIpc';
-import type { DesktopNotifications } from './settings/DesktopNotifications';
-import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
-import { validateProjectDirectory } from './settings/projectDirectory';
-import { trimChatHistory } from '../shared/chatHistory';
-import { AutomationScheduler } from './automation/AutomationScheduler';
-import { AutomationRuntime } from './automation/AutomationRuntime';
-import { automationPrompt } from './automation/automationPrompt';
-import { automationRunExpired } from '../shared/automationTime';
-import type { AutomationRun } from '../shared/automations';
-import { AutomationStore } from './automation/AutomationStore';
-import { AutomationService } from './automation/AutomationService';
-import { AutomationAgentTools } from './automation/AutomationAgentTools';
-import { AutomationConfirmations } from './automation/AutomationConfirmations';
-import type { AutomationTargetOption } from '../shared/automations';
-import { ProjectRunChangeRecorder } from './project/ProjectRunChangeRecorder';
-import { ProjectBrowserService } from './project/ProjectBrowserService';
-import { SessionProfileReloadService, profileReloadPrompt } from './runtime/SessionProfileReloadService';
-import { confirmProfileReload } from './api/confirmProfileReload';
-import { SessionCommandService } from './runtime/SessionCommandService';
-import { createHash, randomUUID } from 'node:crypto';
-import { DelegationResultDelivery } from './runtime/DelegationResultDelivery';
-import { DelegationConversationRuntime, delegationReportTools } from './runtime/DelegationConversationRuntime';
-import { PartnerDelegation, delegationInput, delegationWaitInput, type DelegationBatch, type DelegationTask } from './runtime/PartnerDelegation';
-import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from './runtime/ExistingPartnerReview';
-import { assertReadOnlyDelegation, delegationSystemPrompt, resolveDelegationAccess } from './runtime/DelegationAccess';
-import { REVIEW_MARKDOWN_MAX_BYTES } from '../shared/existingPartnerReview';
-import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
-import path from 'node:path';
-import { access, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { app, safeStorage, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
-import { AdapterHost } from './AdapterHost';
-import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
-import { sameCodexPath } from './adapters/codexSessionFile';
-import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE, type ImportedCodexWorkspace } from '../shared/codexThreadImport';
-import { detectClaudeCode, type ClaudeInstallation } from './adapters/ClaudeCodeAdapter';
-import { detectCodexCli, getCodexThreadLastTurnId, getCodexThreadLifecycles, type CodexInstallation } from './adapters/CodexCliAdapter';
-import type { PartnerAdapter } from './adapters/PartnerAdapter';
-import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
-import { BridgeCursorStore } from './security/BridgeCursorStore';
-import { WorkspaceGrantStore } from './security/WorkspaceGrantStore';
-import { ArtifactRegistry } from './security/ArtifactRegistry';
-import { ConversationAttachmentStore } from './security/ConversationAttachmentStore';
-import { StudioAttachments } from './studio/StudioAttachments';
-import type { AppUpdateService } from './settings/AppUpdateService';
-import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
-import { ApiConnectionStore } from './api/ApiConnectionStore';
-import { apiRequestSettingsSchema, apiModelSettingsSchema } from '../shared/apiConnections';
-import { ApiExtensionStore } from './api/ApiExtensionStore';
-import { McpConnectionManager } from './api/extensions/McpConnectionManager';
-import { McpManagementWorkspace } from './api/extensions/McpManagementWorkspace';
-import { ExecutionBackendRouter } from './execution/ExecutionBackendRouter';
-import { SandboxExtensionLaunchBackend } from './execution/SandboxExtensionLaunchBackend';
-import { WindowsSandboxProcess } from './execution/WindowsSandboxProcess';
-import { createDefaultApiProviderRegistry } from './api/ApiProviderRegistry';
-import { PartnerProfileStore } from './partner/PartnerProfileStore';
-import { PartnerProjectNotebookService } from './notebook/PartnerProjectNotebookService';
-import { ProjectWorkspaceStore } from './project/ProjectWorkspaceStore';
-import { ArtifactDeliveryService } from './project/ArtifactDeliveryService';
-import { ProjectService } from './project/ProjectService';
-import { ProjectLifecycleService } from './project/ProjectLifecycleService';
-import { ProjectTransactionStore } from './project/ProjectTransactionStore';
-import { ProjectMutationCoordinator } from './project/ProjectMutationCoordinator';
-import { ProjectDeletionStore } from './project/ProjectDeletionStore';
-import { ProjectExecutionPolicyStore } from './project/ProjectExecutionPolicyStore';
-import { ProjectDomainStore } from './project/ProjectDomainStore';
-import { ProjectTaskExecutionStore } from './project/ProjectTaskExecutionStore';
-import { ProjectTaskOrchestrator } from './project/ProjectTaskOrchestrator';
-import { ProjectTaskHandoffValidator } from './project/ProjectTaskHandoffValidator';
-import { ProjectTaskReviewValidator } from './project/ProjectTaskReviewValidator';
-import { ProjectTaskRuntime } from './project/ProjectTaskRuntime';
-import { ProjectWorkRoleStore } from './project/ProjectWorkRoleStore';
-import { ProjectWorkflowStore } from './project/ProjectWorkflowStore';
-import { ProjectWorkflowTemplateStore } from './project/ProjectWorkflowTemplateStore';
-import { ProjectWorkflowGenerationStore } from './project/ProjectWorkflowGenerationStore';
-import { ProjectWorkflowGenerationRuntime } from './project/ProjectWorkflowGenerationRuntime';
-import { ProjectFileDeliveryCoordinator } from './project/ProjectFileDeliveryCoordinator';
-import { ProjectFileStore } from './project/ProjectFileStore';
-import { ProjectFileDeletionService } from './project/ProjectFileDeletionService';
-import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
-import { ConversationDeletionService } from './conversation/ConversationDeletionService';
-import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
-import { PartnerMemoryService } from './memory/PartnerMemoryService';
-import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
-import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallback/MemoryFallbackInputs';
-import { MemoryFallbackSettingsStore } from './memory/fallback/MemoryFallbackSettingsStore';
-import { MemoryFallbackJobStore } from './memory/fallback/MemoryFallbackJobStore';
-import { MemoryFallbackInventory } from './memory/fallback/MemoryFallbackInventory';
-import { ContextHandoffService } from './runtime/ContextHandoffService';
-import { MemoryImportService } from './memory/MemoryImportService';
-import { MemoryConsolidation, createMemoryFallbackAdapter } from './memory/fallback/MemoryConsolidation';
-import { MemoryFallbackScheduler } from './memory/fallback/MemoryFallbackScheduler';
-import { PartnerDiaryCatalog } from './diary/PartnerDiaryCatalog';
-import { PartnerDiarySettingsStore } from './diary/PartnerDiarySettingsStore';
-import { PartnerDiaryService } from './diary/PartnerDiaryService';
-import { PartnerDiaryScheduler } from './diary/PartnerDiaryScheduler';
-import { generateApiDiary, generateClaudeDiary, generateClaudeOneShot, generateCodexDelegation, generateCodexDiary, generateExistingDiary } from './diary/DiaryGenerators';
-import { assembleSessionBootstrap } from './runtime/SessionBootstrapAssembler';
-import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
-import { PartnerMemoryBriefingService } from './memory/PartnerMemoryBriefingService';
-import { SessionBootstrapService } from './runtime/SessionBootstrapService';
-import { MemorySourceService } from './memory/MemorySourceService';
-import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
-import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
-import type { MemorySourceAnchor } from '../shared/memoryArchive';
-import { NativeThreadBindingStore } from './studio/NativeThreadBindingStore';
-import { StudioRoomStore } from './studio/StudioRoomStore';
-import { StudioNoteStore } from './studio/StudioNoteStore';
-import { PartnerWorkspaceStore } from './security/PartnerWorkspaceStore';
-import { assertCanonicalPathOutsideProtectedRoots } from './security/ProtectedPathPolicy';
-import { createAsteriumRuntimeTools, memoryToolAccess, projectNotebookToolAccess, type ProjectNotebookToolInput } from './runtime/AsteriumRuntimeTools';
-import { localRuntimeAdapterKey, PartnerRuntimeFactory } from './runtime/PartnerRuntimeFactory';
-import { PartnerRuntimePort } from './runtime/PartnerRuntimePort';
-import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
-import { StudioMcpAccessStore } from './studio/StudioMcpAccessStore';
-import { StudioMcpService } from './studio/StudioMcpService';
-import { StudioMcpHost } from './studio/StudioMcpHost';
-import { StudioWakeControlService } from './studio/StudioWakeControlService';
-import { StudioWakeEventStore } from './studio/StudioWakeEventStore';
-import { StudioWakeEvents } from './studio/StudioWakeEvents';
-import { RunCoordinator, sameEventRoute, streamFailureEvent, withCommandRoute } from './runtime/RunCoordinator';
-import { codexThreadInUseFailure } from '../shared/codexThreadInUse';
-import { WriterLeaseCoordinator } from './runtime/WriterLeaseCoordinator';
-import { SessionCompactionService } from './runtime/SessionCompactionService';
-import { compactApiSession } from './api/ApiSessionCompactor';
-import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
-import { confirmNativeProfileReload, NativeProfileReloadError } from './runtime/NativeProfileReload';
-import { StudioOrchestrator } from './studio/StudioOrchestrator';
-import { StudioRuntimeCatalog } from './studio/StudioRuntimeCatalog';
-import { PartnerProfileService } from './partner/PartnerProfileService';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import {
   AGENT_PROTOCOL_VERSION,
   type ApiPartnerConnection,
-  type PartnerProfileSeed,
-  type CodexRuntimeInfo,
-  type LocalThreadLifecycleRequest,
-  type MessageDeliveryEvent,
-  type PartnerWorkspaceState,
-  type PartnerEvent,
-  type SendMessageCommand,
-  type SendMessageReceipt,
-  type ExistingThreadConnection,
   type ExistingThreadChangedEvent,
-  type ExistingThreadReplyEvent,
+  type ExistingThreadConnection,
   type ExistingThreadConnectionStatus,
+  type ExistingThreadReplyEvent,
+  type MessageDeliveryEvent,
+  type PartnerEvent,
+  type PartnerProfileSeed,
+  type PartnerWorkspaceState,
+  type SendMessageCommand,
+  type SendMessageReceipt
 } from '../shared/agentProtocol';
-import type { StudioRoomMetadata, StudioPrepareTurnRequest } from '../shared/studioRuntime';
-import { registerApiConnectionsIpc, registerApiCredentialIpc, registerApiModelListIpc } from './ipc/apiConnectionsIpc';
+import { isPartnerEvent } from '../shared/agentProtocolValidation';
+import { apiModelSettingsSchema, apiRequestSettingsSchema } from '../shared/apiConnections';
+import { automationRunExpired } from '../shared/automationTime';
+import type { AutomationRun, AutomationTargetOption } from '../shared/automations';
+import { trimChatHistory } from '../shared/chatHistory';
+import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
+import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE } from '../shared/codexThreadImport';
+import { codexThreadInUseFailure } from '../shared/codexThreadInUse';
+import { DESKTOP_IPC as AGENT_IPC, DESKTOP_INVOKE_CHANNELS } from '../shared/desktopIpc';
+import { REVIEW_MARKDOWN_MAX_BYTES } from '../shared/existingPartnerReview';
+import type { MemorySourceAnchor } from '../shared/memoryArchive';
+import type { StudioPrepareTurnRequest, StudioRoomMetadata } from '../shared/studioRuntime';
+import { AdapterHost } from './AdapterHost';
+import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
+import { getCodexThreadLastTurnId, getCodexThreadLifecycles } from './adapters/CodexCliAdapter';
+import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
+import type { PartnerAdapter } from './adapters/PartnerAdapter';
+import { sameCodexPath } from './adapters/codexSessionFile';
+import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
+import { ApiConnectionStore } from './api/ApiConnectionStore';
+import { ApiExtensionStore } from './api/ApiExtensionStore';
+import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
+import { createDefaultApiProviderRegistry } from './api/ApiProviderRegistry';
+import { compactApiSession } from './api/ApiSessionCompactor';
+import { confirmProfileReload } from './api/confirmProfileReload';
+import { McpConnectionManager } from './api/extensions/McpConnectionManager';
+import { McpManagementWorkspace } from './api/extensions/McpManagementWorkspace';
+import { AutomationAgentTools } from './automation/AutomationAgentTools';
+import { AutomationConfirmations } from './automation/AutomationConfirmations';
+import { AutomationRuntime } from './automation/AutomationRuntime';
+import { AutomationScheduler } from './automation/AutomationScheduler';
+import { AutomationService } from './automation/AutomationService';
+import { AutomationStore } from './automation/AutomationStore';
+import { automationPrompt } from './automation/automationPrompt';
+import { ConversationDeletionService } from './conversation/ConversationDeletionService';
+import { ConversationDeletionStore } from './conversation/ConversationDeletionStore';
+import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
+import { SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
+import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
+import { generateApiDiary, generateClaudeDiary, generateClaudeOneShot, generateCodexDelegation, generateCodexDiary, generateExistingDiary } from './diary/DiaryGenerators';
+import { PartnerDiaryCatalog } from './diary/PartnerDiaryCatalog';
+import { PartnerDiaryScheduler } from './diary/PartnerDiaryScheduler';
+import { PartnerDiaryService } from './diary/PartnerDiaryService';
+import { PartnerDiarySettingsStore } from './diary/PartnerDiarySettingsStore';
+import { ExecutionBackendRouter } from './execution/ExecutionBackendRouter';
+import { SandboxExtensionLaunchBackend } from './execution/SandboxExtensionLaunchBackend';
+import { WindowsSandboxProcess } from './execution/WindowsSandboxProcess';
 import { registerApiConnectionProbeIpc } from './ipc/apiConnectionProbeIpc';
+import { registerApiConnectionsIpc, registerApiCredentialIpc, registerApiModelListIpc } from './ipc/apiConnectionsIpc';
 import { registerAppUpdateIpc } from './ipc/appUpdateIpc';
 import { registerArtifactIpc } from './ipc/artifactIpc';
+import { registerAttachmentAccessIpc, registerAttachmentMaintenanceIpc, registerAttachmentSelectionIpc } from './ipc/attachmentIpc';
 import { registerAutomationIpc } from './ipc/automationIpc';
+import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
+import { registerConversationHistoryIpc } from './ipc/conversationHistoryIpc';
 import { registerDelegationIpc } from './ipc/delegationIpc';
 import { registerDesktopNavigationIpc } from './ipc/desktopNavigationIpc';
+import { registerExistingThreadIpc } from './ipc/existingThreadIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
-import { registerStorageIpc } from './ipc/storageIpc';
-import { registerMemoryImportIpc } from './ipc/memoryImportIpc';
-import { registerPartnerDiaryIpc } from './ipc/partnerDiaryIpc';
-import { registerProjectFileOpenIpc, registerProjectFileQueryIpc, registerProjectFileDeletionIpc } from './ipc/projectFilesIpc';
-import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
-import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
-import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
-import { registerStudioRoomIpc, registerStudioRoomSyncIpc, registerStudioRoomMaintenanceIpc } from './ipc/studioRoomIpc';
-import { registerStudioMcpHostIpc, registerStudioMcpCredentialIpc } from './ipc/studioMcpIpc';
-import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
-import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
-import { registerProjectWorkflowQueryIpc, registerProjectWorkflowMutationIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
-import { registerProjectWorkflowGenerationIpc } from './ipc/projectWorkflowGenerationIpc';
-import { registerProjectWorkspaceCreationIpc, registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
-import { registerProjectLifecycleIpc, registerProjectManagementIpc } from './ipc/projectIpc';
-import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
-import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
-import { registerClaudeSessionImportIpc } from './ipc/claudeSessionImportIpc';
-import { registerPartnerProfileRefreshIpc, registerPartnerProfileIpc, registerUserProfileIpc, registerProfileDirectoryIpc } from './ipc/profileIpc';
-import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
-import { registerApiSessionDeletionIpc, registerSessionStatusIpc, registerSessionMaintenanceIpc } from './ipc/sessionIpc';
-import { registerApiMessageIpc, registerLocalMessageIpc, registerRunControlIpc, type ApiSendRequest, type LocalCliSendRequest } from './ipc/runInteractionIpc';
+import { registerCodexRuntimeQueryIpc, registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeIpc';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
-import { registerLocalRuntimeDetectionIpc, registerCodexRuntimeQueryIpc } from './ipc/localRuntimeIpc';
+import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
+import { registerMemoryImportIpc } from './ipc/memoryImportIpc';
+import { registerNativeSessionHistoryIpc, registerNativeSessionImportIpc, registerNativeSessionLifecycleIpc, registerNativeSingleBindingIpc } from './ipc/nativeSessionIpc';
+import { registerPartnerDiaryIpc } from './ipc/partnerDiaryIpc';
+import { registerPartnerWorkspaceIpc } from './ipc/partnerWorkspaceIpc';
+import { registerPartnerProfileIpc, registerPartnerProfileRefreshIpc, registerProfileDirectoryIpc, registerUserProfileIpc } from './ipc/profileIpc';
+import { registerProjectFileDeletionIpc, registerProjectFileOpenIpc, registerProjectFileQueryIpc } from './ipc/projectFilesIpc';
+import { registerProjectLifecycleIpc, registerProjectManagementIpc } from './ipc/projectIpc';
+import { registerProjectNotebookIpc } from './ipc/projectNotebookIpc';
+import { registerProjectRoleIpc } from './ipc/projectRoleIpc';
+import { registerProjectRunChangesIpc } from './ipc/projectRunChangesIpc';
+import { registerProjectTaskExecutionIpc } from './ipc/projectTaskExecutionIpc';
+import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
+import { registerProjectWorkflowGenerationIpc } from './ipc/projectWorkflowGenerationIpc';
+import { registerProjectWorkflowMutationIpc, registerProjectWorkflowQueryIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
+import { registerProjectWorkspaceCreationIpc, registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
+import { registerApiMessageIpc, registerLocalMessageIpc, registerRunControlIpc, type ApiSendRequest, type LocalCliSendRequest } from './ipc/runInteractionIpc';
+import { registerApiSessionDeletionIpc, registerSessionMaintenanceIpc, registerSessionStatusIpc } from './ipc/sessionIpc';
+import { registerStorageIpc } from './ipc/storageIpc';
+import { registerStudioMcpCredentialIpc, registerStudioMcpHostIpc } from './ipc/studioMcpIpc';
+import { registerStudioNoteIpc } from './ipc/studioNoteIpc';
+import { registerStudioRoomIpc, registerStudioRoomMaintenanceIpc, registerStudioRoomSyncIpc } from './ipc/studioRoomIpc';
+import { registerStudioRoundCancellationIpc, registerStudioRoundIpc } from './ipc/studioRoundIpc';
+import { registerStudioWakeIpc } from './ipc/studioWakeIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
-import { isPartnerEvent } from '../shared/agentProtocolValidation';
-import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
-import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
+import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
+import { MemoryImportService } from './memory/MemoryImportService';
+import { MemorySourceService } from './memory/MemorySourceService';
+import { PartnerMemoryBriefingService } from './memory/PartnerMemoryBriefingService';
+import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
+import { PartnerMemoryService } from './memory/PartnerMemoryService';
+import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
+import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
+import { MemoryConsolidation, createMemoryFallbackAdapter } from './memory/fallback/MemoryConsolidation';
+import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallback/MemoryFallbackInputs';
+import { MemoryFallbackInventory } from './memory/fallback/MemoryFallbackInventory';
+import { MemoryFallbackJobStore } from './memory/fallback/MemoryFallbackJobStore';
+import { MemoryFallbackScheduler } from './memory/fallback/MemoryFallbackScheduler';
+import { MemoryFallbackSettingsStore } from './memory/fallback/MemoryFallbackSettingsStore';
+import { PartnerProjectNotebookService } from './notebook/PartnerProjectNotebookService';
+import { PartnerProfileService } from './partner/PartnerProfileService';
+import { PartnerProfileStore } from './partner/PartnerProfileStore';
+import { ArtifactDeliveryService } from './project/ArtifactDeliveryService';
+import { ProjectBrowserService } from './project/ProjectBrowserService';
+import { ProjectDeletionStore } from './project/ProjectDeletionStore';
+import { ProjectDomainStore } from './project/ProjectDomainStore';
+import { ProjectExecutionPolicyStore } from './project/ProjectExecutionPolicyStore';
+import { ProjectFileDeletionService } from './project/ProjectFileDeletionService';
+import { ProjectFileDeliveryCoordinator } from './project/ProjectFileDeliveryCoordinator';
+import { ProjectFileStore } from './project/ProjectFileStore';
+import { ProjectLifecycleService } from './project/ProjectLifecycleService';
+import { ProjectMutationCoordinator } from './project/ProjectMutationCoordinator';
+import { ProjectRunChangeRecorder } from './project/ProjectRunChangeRecorder';
+import { ProjectService } from './project/ProjectService';
+import { ProjectTaskExecutionStore } from './project/ProjectTaskExecutionStore';
+import { ProjectTaskHandoffValidator } from './project/ProjectTaskHandoffValidator';
+import { ProjectTaskOrchestrator } from './project/ProjectTaskOrchestrator';
+import { ProjectTaskReviewValidator } from './project/ProjectTaskReviewValidator';
+import { ProjectTaskRuntime } from './project/ProjectTaskRuntime';
+import { ProjectTransactionStore } from './project/ProjectTransactionStore';
+import { ProjectWorkRoleStore } from './project/ProjectWorkRoleStore';
+import { ProjectWorkflowGenerationRuntime } from './project/ProjectWorkflowGenerationRuntime';
+import { ProjectWorkflowGenerationStore } from './project/ProjectWorkflowGenerationStore';
+import { ProjectWorkflowStore } from './project/ProjectWorkflowStore';
+import { ProjectWorkflowTemplateStore } from './project/ProjectWorkflowTemplateStore';
+import { ProjectWorkspaceStore } from './project/ProjectWorkspaceStore';
+import { createAsteriumRuntimeTools, memoryToolAccess, projectNotebookToolAccess, type ProjectNotebookToolInput } from './runtime/AsteriumRuntimeTools';
+import { ContextHandoffService } from './runtime/ContextHandoffService';
+import { assertReadOnlyDelegation, delegationSystemPrompt, resolveDelegationAccess } from './runtime/DelegationAccess';
+import { DelegationConversationRuntime, delegationReportTools } from './runtime/DelegationConversationRuntime';
+import { DelegationResultDelivery } from './runtime/DelegationResultDelivery';
+import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from './runtime/ExistingPartnerReview';
+import { createExistingThreadService } from './runtime/ExistingThreadService';
+import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
+import { createLocalRuntimeResolver, resolveProjectRuntimeRoot } from './runtime/LocalRuntimeResolver';
+import { NativeProfileReloadError, confirmNativeProfileReload } from './runtime/NativeProfileReload';
+import { PartnerDelegation, delegationInput, delegationWaitInput, type DelegationBatch, type DelegationTask } from './runtime/PartnerDelegation';
+import { PartnerRuntimeFactory, localRuntimeAdapterKey } from './runtime/PartnerRuntimeFactory';
+import { PartnerRuntimePort } from './runtime/PartnerRuntimePort';
+import { RunCoordinator, sameEventRoute, streamFailureEvent, withCommandRoute } from './runtime/RunCoordinator';
+import { assembleSessionBootstrap } from './runtime/SessionBootstrapAssembler';
+import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
+import { SessionBootstrapService } from './runtime/SessionBootstrapService';
+import { SessionCommandService } from './runtime/SessionCommandService';
+import { SessionCompactionService } from './runtime/SessionCompactionService';
+import { SessionProfileReloadService, profileReloadPrompt } from './runtime/SessionProfileReloadService';
+import { WriterLeaseCoordinator } from './runtime/WriterLeaseCoordinator';
+import { ArtifactRegistry } from './security/ArtifactRegistry';
+import { BridgeCursorStore } from './security/BridgeCursorStore';
+import { ConversationAttachmentStore } from './security/ConversationAttachmentStore';
+import { API_EXTENSION_CREDENTIAL_PREFIX, CredentialStore } from './security/CredentialStore';
+import { PartnerWorkspaceStore } from './security/PartnerWorkspaceStore';
+import { WorkspaceGrantStore } from './security/WorkspaceGrantStore';
+import type { AppUpdateService } from './settings/AppUpdateService';
+import type { DesktopNotifications } from './settings/DesktopNotifications';
+import { GeneralSettingsStore } from './settings/GeneralSettingsStore';
+import { validateProjectDirectory } from './settings/projectDirectory';
+import { NativeThreadBindingStore } from './studio/NativeThreadBindingStore';
+import { StudioAttachments } from './studio/StudioAttachments';
+import { StudioMcpAccessStore } from './studio/StudioMcpAccessStore';
+import { StudioMcpHost } from './studio/StudioMcpHost';
+import { StudioMcpService } from './studio/StudioMcpService';
+import { StudioNoteStore } from './studio/StudioNoteStore';
+import { StudioOrchestrator } from './studio/StudioOrchestrator';
+import { StudioRoomStore } from './studio/StudioRoomStore';
+import { StudioRuntimeCatalog } from './studio/StudioRuntimeCatalog';
+import { StudioWakeControlService } from './studio/StudioWakeControlService';
+import { StudioWakeEventStore } from './studio/StudioWakeEventStore';
+import { StudioWakeEvents } from './studio/StudioWakeEvents';
 
 export { AGENT_IPC };
 
@@ -381,6 +377,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     messages: singleChatMessages,
   });
   void conversationDeletions.recover().catch((error) => console.error('Failed to recover conversation deletion cleanup.', error));
+  const localRuntimeResolver = createLocalRuntimeResolver({ nativeBindings, singleChatHistory, conversationDeletions, workspaceGrants, grants, protectedRoots, userDataDirectory: () => app.getPath('userData') });
+  const { availableImportedDirectory, resolveSelectedCodexRuntime, resolveCodexDirectoryRuntime, resolveImportedCodexRuntime, importedCodexBinding, ensureCodexInstallation, resolveCodexLifecycleRuntime, resolveWorkspaceGrant, ensureClaudeInstallation, refreshCodexInstallation, refreshClaudeInstallation, currentCodexInstallation } = localRuntimeResolver;
   const apiProviders = createDefaultApiProviderRegistry();
   const delegationHandles: { delivery?: DelegationResultDelivery; conversation?: DelegationConversationRuntime } = {};
   const delegation = new PartnerDelegation(
@@ -692,8 +690,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     },
   });
   const sessionCommands = new SessionCommandService({ bindings: nativeBindings, catalog: studioRuntimeCatalog, messages: singleChatMessages, leases: writerLeases, compactions: sessionCompactions, reload: (request) => profileReloads.execute(request), isDeleted: (id) => conversationDeletions.isDeleted(id) });
-  let claudeInstallation: ClaudeInstallation | undefined;
-  let codexInstallation: CodexInstallation | undefined;
   const diaryCatalog = new PartnerDiaryCatalog(studioRuntimeCatalog);
   const studioWakeControl = new StudioWakeControlService(() => path.join(app.getPath('userData'), 'studio-wake-settings.v1.json'), {
     autoConnect: restoreBackgroundServices,
@@ -1342,77 +1338,10 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   }); };
   registerLocalRuntimeDetectionIpc(
     ipcMain,
-    async () => {
-      claudeInstallation = await detectClaudeCode();
-      return claudeInstallation;
-    },
-    async () => {
-      codexInstallation = await detectCodexCli();
-      return codexInstallation;
-    },
+    refreshClaudeInstallation,
+    refreshCodexInstallation,
     requireSender,
   );
-
-  async function availableImportedDirectory(directory: string, canonicalDirectory?: string) {
-    if (!path.isAbsolute(directory)) return undefined;
-    try {
-      const canonical = await realpath(directory);
-      if (canonicalDirectory && !sameCodexPath(canonical, canonicalDirectory)) return undefined;
-      if (!(await stat(canonical)).isDirectory()) return undefined;
-      await assertCanonicalPathOutsideProtectedRoots(canonical, [...protectedRoots, app.getPath('userData')]);
-      return canonical;
-    } catch {
-      return undefined;
-    }
-  }
-
-  async function resolveSelectedCodexRuntime(runtimeId?: string, environment?: CodexRuntimeInfo['environment']) {
-    let installation = await ensureCodexInstallation();
-    let runtime = resolveCodexRuntime(installation.runtimes, runtimeId, environment);
-    if (!runtime) {
-      codexInstallation = await detectCodexCli();
-      installation = codexInstallation;
-      runtime = resolveCodexRuntime(installation.runtimes, runtimeId, environment);
-    }
-    if (!runtime) throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
-    if (!runtime.loggedIn) throw new Error('CODEX_NOT_LOGGED_IN');
-    return runtime;
-  }
-
-  async function resolveCodexDirectoryRuntime(runtimeId?: string, environment?: CodexRuntimeInfo['environment'], codexHome?: string) {
-    const matches = (installation: CodexInstallation) => {
-      const runtimes = installation.runtimes.filter(runtime => !codexHome || sameCodexPath(runtime.codexHome, codexHome));
-      return resolveCodexRuntime(runtimes.filter(runtime => runtime.loggedIn), runtimeId, environment);
-    };
-    const hadCachedRuntimes = Boolean(codexInstallation?.runtimes.length);
-    let runtime = matches(await ensureCodexInstallation());
-    const stillInstalled = runtime && await access(runtime.executablePath).then(() => true, () => false);
-    if (!stillInstalled && hadCachedRuntimes) {
-      codexInstallation = await detectCodexCli();
-      runtime = matches(codexInstallation);
-    }
-    if (!runtime) throw new Error('找不到与伙伴配置相符且已登录的 Codex 运行时，请重新检测并选择。');
-    return runtime;
-  }
-
-  async function resolveImportedCodexRuntime(workspace: ImportedCodexWorkspace) {
-    const runtime = await resolveSelectedCodexRuntime(workspace.runtimeId, workspace.runtimeEnvironment);
-    if (!sameCodexPath(runtime.codexHome, workspace.codexHome)) throw new Error('CODEX_IMPORTED_HOME_CHANGED');
-    return runtime;
-  }
-
-  async function importedCodexBinding(partnerId: string, conversationId: string, threadId?: string) {
-    const binding = await nativeBindings.getForScope(partnerId, 'single', conversationId);
-    if (!binding?.importedCodexWorkspace) {
-      if ((await singleChatHistory.readMetadata(conversationId))?.importedCodexThread) {
-        throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
-      }
-      return undefined;
-    }
-    if (binding.state !== 'active' || (threadId !== undefined && binding.nativeThreadId !== threadId)
-      || await conversationDeletions.isDeleted(conversationId)) throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
-    return { binding, workspace: binding.importedCodexWorkspace };
-  }
 
   registerNativeSessionImportIpc(ipcMain, {
     nativeBindings, singleChatHistory, conversationDeletions, studioRuntimeCatalog, partnerProfiles, writerLeases,
@@ -1430,12 +1359,9 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     resolveImportedCodexRuntime,
     availableImportedDirectory,
     resolveCodexLifecycleRuntime,
-    currentCodexInstallation: () => codexInstallation,
+    currentCodexInstallation,
     ensureCodexInstallation,
-    refreshCodexInstallation: async () => {
-      codexInstallation = await detectCodexCli();
-      return codexInstallation;
-    },
+    refreshCodexInstallation,
   }, requireSender);
 
   registerNativeSessionLifecycleIpc(ipcMain, {
@@ -1729,46 +1655,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
       // This bookkeeping must not fail an accepted Studio turn. If it cannot
       // be persisted, the next turn safely repeats the mode notice once.
     }
-  }
-
-  async function ensureCodexInstallation() {
-    if (!codexInstallation?.runtimes.length) codexInstallation = await detectCodexCli();
-    return codexInstallation;
-  }
-
-  async function resolveCodexLifecycleRuntime(value: Pick<LocalThreadLifecycleRequest, 'partnerRootGrantId' | 'codexRuntimeId' | 'codexRuntimeEnvironment'>) {
-    if (!value.partnerRootGrantId) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
-    const workingDirectory = await resolveWorkspaceGrant(value.partnerRootGrantId);
-    if (!workingDirectory) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
-    let installation = await ensureCodexInstallation();
-    let runtime = resolveCodexRuntime(installation.runtimes, value.codexRuntimeId, value.codexRuntimeEnvironment);
-    if (!runtime) {
-      codexInstallation = await detectCodexCli();
-      installation = codexInstallation;
-      runtime = resolveCodexRuntime(installation.runtimes, value.codexRuntimeId, value.codexRuntimeEnvironment);
-    }
-    if (!runtime) throw new Error('CODEX_RUNTIME_SELECTION_REQUIRED');
-    if (!runtime.loggedIn) throw new Error('CODEX_NOT_LOGGED_IN');
-    return { runtime, workingDirectory };
-  }
-
-  async function resolveWorkspaceGrant(grantId: string) {
-    const current = grants.get(grantId);
-    if (current) {
-      await assertCanonicalPathOutsideProtectedRoots(current, protectedRoots);
-      return current;
-    }
-    const restored = await workspaceGrants.get(grantId);
-    if (restored) {
-      await assertCanonicalPathOutsideProtectedRoots(restored, protectedRoots);
-      grants.set(grantId, restored);
-    }
-    return restored;
-  }
-
-  async function ensureClaudeInstallation() {
-    if (!claudeInstallation?.executablePath || !claudeInstallation.loggedIn) claudeInstallation = await detectClaudeCode();
-    return claudeInstallation;
   }
 
   async function startAdapterRun(adapter: PartnerAdapter, command: SendMessageCommand, disposeAfter = false, artifactBaseDirectory?: string, validateBeforeStart?: () => Promise<void>) {
@@ -2148,14 +2034,4 @@ function archivedMarkdownFileName(name: string, suffix: string) {
   const withoutControlCharacters = [...name].map((character) => character.charCodeAt(0) < 32 ? '_' : character).join('');
   const safeName = withoutControlCharacters.replace(/[<>:"/\\|?*]/g, '_').trim().slice(0, 120) || '项目';
   return `${safeName}-${suffix}.md`;
-}
-
-
-
-async function resolveProjectRuntimeRoot(rootPath: string, protectedRoots: readonly string[]) {
-  const resolved = path.resolve(rootPath);
-  const value = await stat(resolved).catch(() => undefined);
-  if (!value?.isDirectory()) throw new Error('PROJECT_WORKSPACE_NOT_READY');
-  await assertCanonicalPathOutsideProtectedRoots(resolved, protectedRoots);
-  return realpath(resolved);
 }
