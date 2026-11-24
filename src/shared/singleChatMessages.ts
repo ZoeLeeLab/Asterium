@@ -3,6 +3,8 @@ import type { PermissionMode, PlanMode } from './agentProtocol';
 export interface SingleChatIndexedMessage {
   messageId: string;
   automationRunId?: string;
+  /** Main-owned continuation reply, preserved when the renderer resyncs. */
+  delegationBatchId?: string;
   authorType: 'user' | 'partner';
   authorId: string;
   content: string;

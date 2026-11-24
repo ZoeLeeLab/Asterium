@@ -42,6 +42,9 @@ export interface SingleChatCheckpoint {
 
 /** Activation is the directory rename. Once that directory exists, legacy readers are never called again. */
 export class SingleChatHistoryStore {
+  // Protect Main-saved replies from a renderer checkpoint still draining an
+  // earlier text delta. This is bounded to recent autonomous reports.
+  private readonly delegationReplies = new Map<string, Message>();
   private mutation: Promise<unknown> = Promise.resolve();
   private readonly logs = new Map<string, ReturnType<typeof replay>>();
   private profileCache?: SingleChatProfile;
@@ -319,10 +322,14 @@ export class SingleChatHistoryStore {
         ? current.messages.get(message.id)
         : await this.withIndex(manifest.generation, index => index.message(conversationId, message.id))
           .catch(async () => (await this.readLog(conversationId)).messages.get(message.id));
-      if (existing && !message.automation) return true;
+      if (existing && !message.automation && !message.delegationBatchId) return true;
       await this.append(conversationId, current, {
-        type: 'checkpoint', upsert: [{ ...existing, ...message, automation: existing?.automation ?? message.automation }], remove: [],
+        type: 'checkpoint', upsert: [{ ...existing, ...message, ...(message.delegationBatchId ? { timeline: undefined } : {}), automation: existing?.automation ?? message.automation }], remove: [],
       });
+      if (message.delegationBatchId) {
+        this.delegationReplies.set(conversationId + '\0' + message.id, structuredClone(message));
+        while (this.delegationReplies.size > 64) this.delegationReplies.delete(this.delegationReplies.keys().next().value!);
+      }
       return true;
     });
   }
@@ -440,6 +447,12 @@ export class SingleChatHistoryStore {
 
   private async append(conversationId: string, log: LogTip, event: Extract<HistoryEvent, { type: 'checkpoint' }>) {
     const target = eventPath(this.root, conversationId);
+    event = { ...event, upsert: event.upsert.map(message => {
+      const saved = this.delegationReplies.get(conversationId + '\0' + message.id);
+      if (!saved) return message;
+      return { ...message, ...saved, timeline: message.content === saved.content ? message.timeline : undefined,
+        runState: saved.runState, isStreaming: false };
+    }) };
     event = { ...event, upsert: await separateToolOutputs(path.dirname(target), event.upsert),
       metadata: event.metadata && withoutDeliveryState(event.metadata) };
     const serialized = JSON.stringify(event) + '\n';

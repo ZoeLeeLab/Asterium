@@ -30,6 +30,16 @@ const snapshot = {
 };
 
 describe('SingleChatMessageStore', () => {
+  it('keeps a Main-owned delegation reply when an older renderer snapshot arrives', async () => {
+    const { store } = await setup();
+    await store.sync([snapshot]);
+    await store.upsertMessage(snapshot.conversationId, snapshot.partnerId, {
+      messageId: 'assistant-fixture-report', delegationBatchId: 'fixture-batch', authorType: 'partner', authorId: snapshot.partnerId,
+      content: '合成委派汇报', createdAt: '10:04',
+    });
+    await store.sync([snapshot]);
+    expect((await store.getConversation(snapshot.conversationId))?.messages.at(-1)).toMatchObject({ messageId: 'assistant-fixture-report', content: '合成委派汇报' });
+  });
   it('persists stable visible message IDs and resolves a bounded context window after restart', async () => {
     const value = await setup();
     await value.store.sync([snapshot]);

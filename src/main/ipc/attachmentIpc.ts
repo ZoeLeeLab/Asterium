@@ -144,9 +144,9 @@ export function registerAttachmentAccessIpc(
 
 export function registerAttachmentMaintenanceIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  { messageAttachments, summaryRuns, delegation }: {
+  { messageAttachments, cancelDelegation, delegation }: {
     messageAttachments: Pick<ConversationAttachmentStore, 'deleteConversation' | 'previewSnapshotCleanup' | 'clearSnapshots'>;
-    summaryRuns: Pick<ReadonlyMap<string, AbortController>, 'get'>;
+    cancelDelegation: (conversationId: string) => Promise<boolean>;
     delegation: Pick<PartnerDelegation, 'remove'>;
   },
   requireSender: (event: IpcMainInvokeEvent) => BrowserWindow,
@@ -155,7 +155,7 @@ export function registerAttachmentMaintenanceIpc(
     requireSender(event);
     if (typeof value !== 'string' || !value) throw new Error('INVALID_CONVERSATION_ID');
     await messageAttachments.deleteConversation(value);
-    summaryRuns.get(value)?.abort();
+    await cancelDelegation(value);
     await delegation.remove(value);
   });
   ipcMain.handle(AGENT_IPC.attachmentPreviewSnapshotCleanup, async (event) => {

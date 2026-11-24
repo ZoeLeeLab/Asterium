@@ -25,6 +25,21 @@ function logPath(profile: string, id: string) {
 }
 
 describe('single chat migration activation', () => {
+  it('persists a complete delegation report without the renderer and ignores a late partial checkpoint', async () => {
+    const profile = path.join(autoTestOutput(), 'delegation-report-history');
+    const store = new SingleChatHistoryStore(profile);
+    const manifest = await store.initialize(async () => ({ conversations: [chat('fixture-report')], deletedConversationIds: [] }));
+    const partial: Message = { ...message('assistant-fixture-report', '合成'), runId: 'fixture-report', runState: 'running', isStreaming: true };
+    await store.write({ generation: manifest.generation, changes: [{ conversationId: 'fixture-report', upsert: [partial], remove: [] }] });
+    await store.upsertManagedMessage('fixture-report', 'fixture-partner', { ...partial, content: '合成完整汇报',
+      delegationBatchId: 'fixture-batch', runState: 'completed', isStreaming: false, completedAt: time });
+    await store.write({ generation: manifest.generation, changes: [{ conversationId: 'fixture-report', upsert: [partial], remove: [] }] });
+    await store.flush();
+    const restarted = new SingleChatHistoryStore(profile);
+    const result = await restarted.readConversation('fixture-report');
+    expect(result?.conversation.messages.at(-1)).toMatchObject({ content: '合成完整汇报', delegationBatchId: 'fixture-batch', runState: 'completed', isStreaming: false });
+    await restarted.flush();
+  });
   it('clears superseded delivery lists while preserving messages, current metadata, the log tail and backups', async () => {
     const profile = path.join(autoTestOutput(), 'snapshot-cleanup');
     const store = new SingleChatHistoryStore(profile);

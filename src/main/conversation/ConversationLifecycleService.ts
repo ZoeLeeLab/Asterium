@@ -7,7 +7,7 @@ import type { WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
 import type { ConversationDeletionService } from './ConversationDeletionService';
 
 interface ConversationLifecycleOptions {
-  summaryRuns: Pick<ReadonlyMap<string, AbortController>, 'get'>;
+  cancelDelegation: (conversationId: string) => Promise<boolean>;
   writerLeases: Pick<WriterLeaseCoordinator, 'acquire' | 'tryAcquire'>;
   conversationDeletions: Pick<ConversationDeletionService, 'delete'>;
   delegation: Pick<PartnerDelegation, 'remove'>;
@@ -21,11 +21,10 @@ export class ConversationLifecycleService {
   constructor(private readonly options: ConversationLifecycleOptions) {}
 
   async delete(request: ConversationDeleteRequest) {
-    const { summaryRuns, writerLeases, conversationDeletions, delegation, diarySettings, diaryScheduler, memoryFallbackInventory } = this.options;
+    const { cancelDelegation, writerLeases, conversationDeletions, delegation, diarySettings, diaryScheduler, memoryFallbackInventory } = this.options;
     const scope = { kind: 'conversation' as const, partnerId: request.partnerId, conversationId: request.conversationId };
-    const summary = summaryRuns.get(request.conversationId);
-    summary?.abort();
-    const lease = summary
+    const report = await cancelDelegation(request.conversationId);
+    const lease = report
       ? await writerLeases.acquire(scope, `delete:${request.conversationId}`)
       : writerLeases.tryAcquire(scope, `delete:${request.conversationId}`);
     if (!lease) throw new Error('COMPACT_CONVERSATION_BUSY');

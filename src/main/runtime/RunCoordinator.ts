@@ -45,6 +45,8 @@ export interface RunReleasedContext {
 }
 
 export interface StartRunOptions {
+  /** Internal background work yields immediately to an existing writer. */
+  waitForWriter?: boolean;
   disposeAfter?: boolean;
   artifactBaseDirectory?: string;
   validateBeforeStart?: () => Promise<void>;
@@ -74,8 +76,14 @@ export class RunCoordinator {
   }
 
   async start(adapter: PartnerAdapter, command: SendMessageCommand, options: StartRunOptions = {}): Promise<SendMessageReceipt> {
-    if (/^(compact|reload):/.test(this.writerLeases.ownerFor(conversationWriterScope(command)) ?? '')) throw new Error('COMPACT_CONVERSATION_BUSY');
-    const lease = await this.writerLeases.acquire(conversationWriterScope(command), `runtime:${command.commandId}`);
+    if (options.waitForWriter !== false && /^(compact|reload):/.test(this.writerLeases.ownerFor(conversationWriterScope(command)) ?? '')) throw new Error('COMPACT_CONVERSATION_BUSY');
+    const lease = options.waitForWriter === false
+      ? this.writerLeases.tryAcquire(conversationWriterScope(command), `runtime:${command.commandId}`)
+      : await this.writerLeases.acquire(conversationWriterScope(command), `runtime:${command.commandId}`);
+    if (!lease) {
+      if (options.disposeAfter) await adapter.dispose?.();
+      throw new Error('RUNTIME_WRITER_BUSY');
+    }
     let iterator: AsyncIterator<PartnerEvent> | undefined;
     let boundRunId: string | undefined;
     try {

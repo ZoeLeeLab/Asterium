@@ -28,6 +28,7 @@ export interface MessageQuote {
 }
 
 export interface Message {
+  delegationBatchId?: string;
   automation?: { automationId: string; runId: string; name: string };
   id: string;
   authorId: string;

@@ -13,7 +13,7 @@ export function projectSingleChat(conversation: Conversation, profile: SingleCha
     isArchived: Boolean(conversation.isArchived), isDisabled: Boolean(conversation.isDisabled),
     apiSessionHistoryEnabled: partner?.sourceMode === 'api_partner' ? Boolean(partner.apiSessionHistoryEnabled) : undefined,
     messages: conversation.messages.filter(message => !isPendingAssistant(message)).map(message => ({
-      messageId: message.id, automationRunId: message.automation?.runId,
+      messageId: message.id, automationRunId: message.automation?.runId, delegationBatchId: message.delegationBatchId,
       authorType: isAsteriumUser(message.authorId) ? 'user' : 'partner', authorId: message.authorId,
       content: message.content, createdAt: message.createdAt, occurredAt: message.occurredAt, completedAt: message.completedAt,
       fallbackEligible: !message.error && (!message.runState || message.runState === 'completed') && (!message.status || message.status === 'delivered'),
@@ -29,6 +29,8 @@ export function fromIndexedMessage(message: SingleChatIndexedMessage): Message {
   return {
     id: message.messageId, authorId: message.authorId, content: message.content, createdAt: message.createdAt,
     occurredAt: message.occurredAt, completedAt: message.completedAt,
+    ...(message.delegationBatchId ? { delegationBatchId: message.delegationBatchId, runId: message.messageId.startsWith('assistant-') ? message.messageId.slice('assistant-'.length) : undefined,
+      runState: message.fallbackEligible === false ? 'failed' as const : 'completed' as const, isStreaming: false } : {}),
     ...(message.automationRunId ? { automation: { automationId: '', runId: message.automationRunId, name: '自动化' } } : {}),
     ...(message.fallbackEligible === false ? { status: 'failed' as const } : { status: 'delivered' as const }),
   };

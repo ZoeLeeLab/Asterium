@@ -6,10 +6,10 @@ import { WriterLeaseCoordinator } from '../../src/main/runtime/WriterLeaseCoordi
 const request = { partnerId: 'fixture-partner', conversationId: 'fixture-chat', source: 'api_partner' as const };
 const scope = { kind: 'conversation' as const, partnerId: request.partnerId, conversationId: request.conversationId };
 function fixture() {
-  const trace: string[] = [], summaryRuns = new Map<string, AbortController>(), writerLeases = new WriterLeaseCoordinator();
+  const trace: string[] = [], writerLeases = new WriterLeaseCoordinator();
   const receipt = { conversationId: request.conversationId, cleanupPending: true };
   const options = {
-    summaryRuns, writerLeases,
+    cancelDelegation: vi.fn(async (_conversationId: string) => false), writerLeases,
     conversationDeletions: { delete: vi.fn(async () => { trace.push('delete'); expect(writerLeases.ownerFor(scope)).toBe('delete:' + request.conversationId); return receipt; }) },
     delegation: { remove: vi.fn(async () => { trace.push('delegation'); expect(writerLeases.ownerFor(scope)).toBe('delete:' + request.conversationId); }) },
     diarySettings: { reconcileSources: vi.fn(async () => { trace.push('diary'); expect(writerLeases.ownerFor(scope)).toBeUndefined(); }) },
@@ -20,20 +20,23 @@ function fixture() {
   return { service, options, trace, receipt };
 }
 
-it('uses the live summary map, aborts before waiting, and retains the lease through deletion and delegation only', async () => {
-  const { service, options, trace, receipt } = fixture(), summary = new AbortController();
-  options.summaryRuns.set(request.conversationId, summary);
-  summary.signal.addEventListener('abort', () => trace.push('abort'));
+it('awaits report cancellation before waiting for its writer and retains the lease through deletion and delegation only', async () => {
+  const { service, options, trace, receipt } = fixture();
+  let finishCancel!: () => void;
+  options.cancelDelegation.mockImplementationOnce(async () => {
+    trace.push('cancel'); await new Promise<void>(resolve => { finishCancel = resolve; }); return true;
+  });
   const held = options.writerLeases.tryAcquire(scope, 'fixture-summary-owner')!;
   const acquire = vi.spyOn(options.writerLeases, 'acquire');
   const deletion = service.delete(request);
-  expect(summary.signal.aborted).toBe(true); expect(trace).toEqual(['abort']);
+  expect(options.cancelDelegation).toHaveBeenCalledExactlyOnceWith(request.conversationId); expect(trace).toEqual(['cancel']);
+  expect(acquire).not.toHaveBeenCalled();
   expect(options.conversationDeletions.delete).not.toHaveBeenCalled();
   expect(options.writerLeases.ownerFor(scope)).toBe('fixture-summary-owner');
-  held.release();
+  finishCancel(); await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(1)); held.release();
   await expect(deletion).resolves.toBe(receipt);
   expect(acquire).toHaveBeenCalledExactlyOnceWith(scope, 'delete:' + request.conversationId);
-  expect(trace).toEqual(['abort', 'delete', 'delegation', 'diary', 'schedule', 'memory']);
+  expect(trace).toEqual(['cancel', 'delete', 'delegation', 'diary', 'schedule', 'memory']);
   expect(options.writerLeases.ownerFor(scope)).toBeUndefined();
 });
 
@@ -44,10 +47,18 @@ it('does not wait or touch any resource when another writer holds the scope with
   finally { held.release(); }
 });
 
-it('preserves acquire failures after abort without cleaning resources or releasing an unacquired lease', async () => {
-  const { service, options, trace } = fixture(), summary = new AbortController(), failure = new Error('SYNTHETIC_ACQUIRE_FAILURE');
-  options.summaryRuns.set(request.conversationId, summary); vi.spyOn(options.writerLeases, 'acquire').mockRejectedValueOnce(failure);
-  await expect(service.delete(request)).rejects.toBe(failure); expect(summary.signal.aborted).toBe(true); expect(trace).toEqual([]); expect(options.writerLeases.ownerFor(scope)).toBeUndefined();
+it('preserves acquire failures after cancellation without cleaning resources or releasing an unacquired lease', async () => {
+  const { service, options, trace } = fixture(), failure = new Error('SYNTHETIC_ACQUIRE_FAILURE');
+  options.cancelDelegation.mockResolvedValueOnce(true); vi.spyOn(options.writerLeases, 'acquire').mockRejectedValueOnce(failure);
+  await expect(service.delete(request)).rejects.toBe(failure); expect(trace).toEqual([]); expect(options.writerLeases.ownerFor(scope)).toBeUndefined();
+});
+
+it('preserves a cancellation failure without deleting data or acquiring a writer', async () => {
+  const { service, options, trace } = fixture(), failure = new Error('SYNTHETIC_CANCEL_FAILURE');
+  options.cancelDelegation.mockRejectedValueOnce(failure);
+  const acquire = vi.spyOn(options.writerLeases, 'acquire'), tryAcquire = vi.spyOn(options.writerLeases, 'tryAcquire');
+  await expect(service.delete(request)).rejects.toBe(failure);
+  expect(acquire).not.toHaveBeenCalled(); expect(tryAcquire).not.toHaveBeenCalled(); expect(trace).toEqual([]);
 });
 
 it.each(['delete', 'delegation', 'diary', 'schedule', 'memory'] as const)('releases once and preserves failure propagation at %s', async stage => {
