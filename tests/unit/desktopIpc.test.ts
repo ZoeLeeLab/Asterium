@@ -58,4 +58,13 @@ describe('desktop IPC contract', () => {
     expect([...channels].sort()).toEqual([...DESKTOP_INVOKE_CHANNELS].sort());
     expect(sources[0].source).toContain('for (const channel of DESKTOP_INVOKE_CHANNELS) ipcMain.removeHandler(channel);');
   });
+
+  it('keeps Wake in one domain module at its original registration and shutdown positions', async () => {
+    const sources = await handlerSources();
+    const main = sources[0].source;
+    expect(handledKeys(sources.find(item => item.file === 'studioWakeIpc.ts')!.source))
+      .toEqual(['studioWakeStatus', 'studioWakeConfigure', 'studioWakeControl']);
+    expect(main).toMatch(/registerStudioRoundCancellationIpc\([^;]+;\s+registerStudioWakeIpc\(ipcMain, studioWakeControl, requireSender\);\s+registerStudioMcpHostIpc\(/);
+    expect(main).toMatch(/await studioWakeControl\.dispose\(\);\s+await studioMcpStartup;\s+await studioMcpHost\.dispose\(\);\s+await studioWakeEvents\.dispose\(\);/);
+  });
 });

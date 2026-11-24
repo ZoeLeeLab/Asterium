@@ -1,4 +1,5 @@
 import { registerConversationHistoryIpc } from './ipc/conversationHistoryIpc';
+import { registerStudioWakeIpc } from './ipc/studioWakeIpc';
 import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
 import { registerAttachmentSelectionIpc, registerAttachmentAccessIpc, registerAttachmentMaintenanceIpc } from './ipc/attachmentIpc';
 import { registerStudioRoundCancellationIpc, registerStudioRoundIpc } from './ipc/studioRoundIpc';
@@ -969,18 +970,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerStudioRoundCancellationIpc(ipcMain, { studioOrchestration, studioRooms }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.studioWakeStatus, async (event) => {
-    requireSender(event); return studioWakeControl.status();
-  });
-  ipcMain.handle(AGENT_IPC.studioWakeConfigure, async (event, value: unknown) => {
-    requireSender(event); return studioWakeControl.configure(value as import('../shared/studioWakeControl').StudioWakeBinding);
-  });
-  ipcMain.handle(AGENT_IPC.studioWakeControl, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || typeof value.action !== 'string'
-      || (value.triggerId !== undefined && typeof value.triggerId !== 'string')) throw new Error('STUDIO_WAKE_CONTROL_INVALID');
-    return studioWakeControl.control(value.partnerId, value.action as import('../shared/studioWakeControl').StudioWakeAction, value.triggerId as string | undefined);
-  });
+  registerStudioWakeIpc(ipcMain, studioWakeControl, requireSender);
 
   registerStudioMcpHostIpc(ipcMain, { studioMcpHost, studioMcpStartup, wakeReadinessChanged }, requireSender);
   registerStudioMcpCredentialIpc(ipcMain, { projectCoordinator, studioRuntimeCatalog, studioMcpAccess, studioMcpHost, wakeReadinessChanged }, requireSender);

@@ -28,7 +28,7 @@
 | 六 | 任务执行 → 工作室轮次 → 消息运行 | 16 | 44 | 源码三组已完成；累计 Windows 验收结果独立留档 |
 | 七 A | 聊天附件 | 18 | 26 | 源码迁移完成；累计 Windows 实机验收结果独立留档 |
 | 七 B | 单聊历史 → 项目文件删除 → 房间删除与上传重试 | 15 | 11 | 源码三组已完成；累计全量与 Windows 验收独立留档 |
-| 八 | Wake → CyberBoss | 11 | 0 | 未开始 |
+| 八 | Wake → CyberBoss | 11 | 0 | Wake 三入口迁移；主文件剩 8 个 CyberBoss 入口，后续单独处理 |
 
 每组先补现状测试、原样迁移，默认全量与静态检查通过后独立本地提交。需要先整理 Service 的组，将服务协调抽取与 IPC 迁移分开提交；不改变数据格式、路径、界面、Preload、频道字符串、业务规则、调用顺序或退出清理。每阶段完成后做累计 Windows 实机冒烟并停下汇报。推送、合并与打包另行授权。
 
@@ -106,9 +106,9 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `studioRetryProjectUploads` | `asterium:studio:retry-project-uploads` | `studioRoomIpc.ts` | `studioRoomIpc.ts` |
 | `studioRemoveRoom` | `asterium:studio:remove-room` | `studioRoomIpc.ts` | `studioRoomIpc.ts` |
 | `studioCancelRound` | `asterium:studio:cancel-round` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
-| `studioWakeStatus` | `asterium:studio-wake:status` | `studioWakeIpc.ts` | `agentIpc.ts` |
-| `studioWakeConfigure` | `asterium:studio-wake:configure` | `studioWakeIpc.ts` | `agentIpc.ts` |
-| `studioWakeControl` | `asterium:studio-wake:control` | `studioWakeIpc.ts` | `agentIpc.ts` |
+| `studioWakeStatus` | `asterium:studio-wake:status` | `studioWakeIpc.ts` | `studioWakeIpc.ts` |
+| `studioWakeConfigure` | `asterium:studio-wake:configure` | `studioWakeIpc.ts` | `studioWakeIpc.ts` |
+| `studioWakeControl` | `asterium:studio-wake:control` | `studioWakeIpc.ts` | `studioWakeIpc.ts` |
 | `studioStartRound` | `asterium:studio:start-round` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
 | `studioPrepareTurn` | `asterium:studio:prepare-turn` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
 | `studioFailTurn` | `asterium:studio:fail-turn` | `studioRoundIpc.ts` | `studioRoundIpc.ts` |
