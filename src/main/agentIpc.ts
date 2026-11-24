@@ -1,4 +1,7 @@
+import { registerExistingThreadIpc } from './ipc/existingThreadIpc';
+import { createExistingThreadService } from './runtime/ExistingThreadService';
 import { registerConversationHistoryIpc } from './ipc/conversationHistoryIpc';
+import { registerStudioWakeIpc } from './ipc/studioWakeIpc';
 import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
 import { registerAttachmentSelectionIpc, registerAttachmentAccessIpc, registerAttachmentMaintenanceIpc } from './ipc/attachmentIpc';
 import { registerStudioRoundCancellationIpc, registerStudioRoundIpc } from './ipc/studioRoundIpc';
@@ -183,7 +186,7 @@ import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerLocalRuntimeDetectionIpc, registerCodexRuntimeQueryIpc } from './ipc/localRuntimeIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
-import { assertAgentCommand, isPartnerEvent } from '../shared/agentProtocolValidation';
+import { isPartnerEvent } from '../shared/agentProtocolValidation';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { DESKTOP_INVOKE_CHANNELS, DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
 
@@ -195,16 +198,6 @@ const BRAVE_SEARCH_CREDENTIAL_REF = 'asterium-web-search-brave';
 
 
 
-
-interface ExistingThreadSendRequest {
-  connection: ExistingThreadConnection;
-  command: SendMessageCommand;
-}
-
-interface ExistingThreadWatchRequest {
-  partnerId: string;
-  connection: ExistingThreadConnection;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -969,18 +962,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerStudioRoundCancellationIpc(ipcMain, { studioOrchestration, studioRooms }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.studioWakeStatus, async (event) => {
-    requireSender(event); return studioWakeControl.status();
-  });
-  ipcMain.handle(AGENT_IPC.studioWakeConfigure, async (event, value: unknown) => {
-    requireSender(event); return studioWakeControl.configure(value as import('../shared/studioWakeControl').StudioWakeBinding);
-  });
-  ipcMain.handle(AGENT_IPC.studioWakeControl, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || typeof value.action !== 'string'
-      || (value.triggerId !== undefined && typeof value.triggerId !== 'string')) throw new Error('STUDIO_WAKE_CONTROL_INVALID');
-    return studioWakeControl.control(value.partnerId, value.action as import('../shared/studioWakeControl').StudioWakeAction, value.triggerId as string | undefined);
-  });
+  registerStudioWakeIpc(ipcMain, studioWakeControl, requireSender);
 
   registerStudioMcpHostIpc(ipcMain, { studioMcpHost, studioMcpStartup, wakeReadinessChanged }, requireSender);
   registerStudioMcpCredentialIpc(ipcMain, { projectCoordinator, studioRuntimeCatalog, studioMcpAccess, studioMcpHost, wakeReadinessChanged }, requireSender);
@@ -1378,15 +1360,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     reason: change.reason,
     occurredAt: new Date().toISOString(),
   }); };
-  const existingThreadStatus = (connection: ExistingThreadConnection, session: { threadId?: string; workspaceRoot?: string }): ExistingThreadConnectionStatus => ({
-    credentialRef: connection.credentialRef,
-    configured: true,
-    masked: '••••••••',
-    authenticated: true,
-    threadId: session.threadId ?? connection.threadId,
-    ...(session.workspaceRoot ? { workspaceRoot: session.workspaceRoot } : {}),
-    capabilities: { streamingText: true, cancellation: false, toolEvents: false, fileEvents: false, reconnect: true },
-  });
   registerLocalRuntimeDetectionIpc(
     ipcMain,
     async () => {
@@ -1542,137 +1515,25 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerApiModelListIpc(ipcMain, { apiProviders, apiConnections, credentials, configuredApiOptions }, requireSender);
 
-  ipcMain.handle(AGENT_IPC.saveBridgeCredential, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.secret !== 'string' || !value.secret) throw new Error('INVALID_CREDENTIAL_REQUEST');
-    const credentialRef = await credentials.save(value.secret);
-    return { credentialRef, configured: true, masked: '••••••••' };
+  const existingThreads = createExistingThreadService({
+    credentials, bridgeCursors, existingThreadWatches, messageAttachments, protectedRoots, hydrateManagedRuntimeProfile,
+    runCoordinator, runtimeFactory, sendExistingThreadChanged,
+    startRun: (adapter, command) => useLegacyRunPath ? startAdapterRun(adapter, command) : runCoordinator.start(adapter, command),
+    onReply: (command, threadId, reply) => {
+      const window = getWindow();
+      if (!window || window.isDestroyed()) return;
+      window.webContents.send(AGENT_IPC.event, {
+        type: 'existing_thread.reply',
+        partnerId: command.partnerId,
+        conversationId: command.conversationId,
+        threadId,
+        eventId: reply.id,
+        occurredAt: Number.isFinite(Date.parse(reply.createdAt)) ? reply.createdAt : new Date().toISOString(),
+        text: reply.text,
+      } satisfies ExistingThreadReplyEvent);
+    },
   });
-
-  ipcMain.handle(AGENT_IPC.bridgeCredentialStatus, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.credentialRef !== 'string' || !value.credentialRef) throw new Error('INVALID_CREDENTIAL_REQUEST');
-    const configured = await credentials.has(value.credentialRef);
-    return { credentialRef: value.credentialRef, configured, masked: configured ? '••••••••' : '' };
-  });
-
-  ipcMain.handle(AGENT_IPC.deleteBridgeCredential, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.credentialRef !== 'string' || !value.credentialRef) throw new Error('INVALID_CREDENTIAL_REQUEST');
-    await credentials.delete(value.credentialRef);
-  });
-
-  ipcMain.handle(AGENT_IPC.testExistingThread, async (event, value: unknown) => {
-    requireSender(event);
-    const connection = assertExistingThreadConnection(value, true);
-    const secret = await credentials.get(connection.credentialRef);
-    if (!secret) throw new Error('CYBERBOSS_CREDENTIAL_REQUIRED');
-    const client = new CyberBossBridgeClient({ serviceUrl: connection.serviceUrl, secret });
-    const session = await client.checkSession();
-    if (!session.threadId) throw new Error('CYBERBOSS_THREAD_ID_REQUIRED');
-    return {
-      credentialRef: connection.credentialRef,
-      configured: true,
-      masked: '••••••••',
-      authenticated: true,
-      threadId: session.threadId,
-      ...(session.workspaceRoot ? { workspaceRoot: session.workspaceRoot } : {}),
-        capabilities: { streamingText: true, cancellation: false, toolEvents: false, fileEvents: false, reconnect: true },
-    } satisfies ExistingThreadConnectionStatus;
-  });
-
-  ipcMain.handle(AGENT_IPC.watchExistingThread, async (event, value: unknown) => {
-    requireSender(event);
-    const request = assertExistingThreadWatchRequest(value);
-    const signature = JSON.stringify(request.connection);
-    try {
-      return await existingThreadWatches.watch(request.partnerId, signature, async (signal) => {
-        const secret = await credentials.get(request.connection.credentialRef);
-        if (signal.aborted) throw new Error('EXISTING_THREAD_WATCH_ABORTED');
-        if (!secret) throw new Error('CYBERBOSS_CREDENTIAL_REQUIRED');
-        const cursorKey = `${request.partnerId}:watch`;
-        const initialLastEventId = await bridgeCursors.get(cursorKey);
-        if (signal.aborted) throw new Error('EXISTING_THREAD_WATCH_ABORTED');
-        const client = new CyberBossBridgeClient({
-          serviceUrl: request.connection.serviceUrl,
-          secret,
-          initialLastEventId,
-          onLastEventId: (eventId) => { void bridgeCursors.set(cursorKey, eventId); },
-        });
-        const session = await client.checkSession();
-        if (signal.aborted) throw new Error('EXISTING_THREAD_WATCH_ABORTED');
-        if (session.threadId && session.workspaceRoot && (session.threadId !== request.connection.threadId || session.workspaceRoot !== request.connection.workspaceRoot)) sendExistingThreadChanged(request.partnerId, {
-          threadId: session.threadId,
-          previousThreadId: session.threadId === request.connection.threadId ? undefined : request.connection.threadId,
-          workspaceRoot: session.workspaceRoot,
-          reason: 'session_sync',
-        });
-        void (async () => {
-          try {
-            for await (const incoming of client.events(signal)) {
-              if (incoming.event !== 'thread_changed') continue;
-              sendExistingThreadChanged(request.partnerId, incoming);
-            }
-          } catch {
-            // The next renderer watch or application restart will re-authenticate.
-          } finally {
-            existingThreadWatches.release(request.partnerId, signal);
-          }
-        })();
-        return existingThreadStatus(request.connection, session);
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message === 'EXISTING_THREAD_WATCH_ABORTED') return existingThreadStatus(request.connection, {});
-      throw error;
-    }
-  });
-
-  ipcMain.handle(AGENT_IPC.stopExistingThreadWatch, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId) throw new Error('INVALID_EXISTING_THREAD_WATCH_REQUEST');
-    existingThreadWatches.stop(value.partnerId);
-  });
-
-  ipcMain.handle(AGENT_IPC.getExistingThreadFileCapabilities, async (event, value: unknown) => {
-    requireSender(event);
-    const connection = assertExistingThreadConnection(value);
-    const secret = await credentials.get(connection.credentialRef);
-    if (!secret) throw new Error('CYBERBOSS_CREDENTIAL_REQUIRED');
-    return new CyberBossBridgeClient({ serviceUrl: connection.serviceUrl, secret }).chatFileCapabilities();
-  });
-
-  ipcMain.handle(AGENT_IPC.sendExistingThreadMessage, async (event, value: unknown) => {
-    requireSender(event);
-    if (!isRecord(value) || !isRecord(value.connection) || !isRecord(value.command)) throw new Error('INVALID_EXISTING_THREAD_SEND_REQUEST');
-    const request = value as unknown as ExistingThreadSendRequest;
-    const connection = assertExistingThreadConnection(request.connection);
-    assertAgentCommand(request.command);
-    if (request.command.type !== 'message.send' || request.command.connectionSource !== 'existing_thread') throw new Error('INVALID_EXISTING_THREAD_SEND_COMMAND');
-    request.command = await messageAttachments.prepareSend(request.command, protectedRoots);
-    await hydrateManagedRuntimeProfile(request.command);
-    const fingerprint = JSON.stringify({ connection, command: request.command });
-    return runCoordinator.runIdempotent(request.command.clientMessageId, fingerprint, async () => {
-      const adapter = await runtimeFactory.getExisting({
-        partnerId: request.command.partnerId,
-        credentialRef: connection.credentialRef,
-        serviceUrl: connection.serviceUrl,
-        threadId: connection.threadId,
-      }, (command, threadId, reply) => {
-        const window = getWindow();
-        if (!window || window.isDestroyed()) return;
-        window.webContents.send(AGENT_IPC.event, {
-          type: 'existing_thread.reply',
-          partnerId: command.partnerId,
-          conversationId: command.conversationId,
-          threadId,
-          eventId: reply.id,
-          occurredAt: Number.isFinite(Date.parse(reply.createdAt)) ? reply.createdAt : new Date().toISOString(),
-          text: reply.text,
-        } satisfies ExistingThreadReplyEvent);
-      });
-      return useLegacyRunPath ? startAdapterRun(adapter, request.command) : runCoordinator.start(adapter, request.command);
-    });
-  });
+  registerExistingThreadIpc(ipcMain, credentials, existingThreads, requireSender);
 
   registerLocalMessageIpc(ipcMain, { contextHandoff, withDelegationChatPriority, startLocalRuntime }, requireSender);
 
@@ -2280,24 +2141,4 @@ async function resolveProjectRuntimeRoot(rootPath: string, protectedRoots: reado
   if (!value?.isDirectory()) throw new Error('PROJECT_WORKSPACE_NOT_READY');
   await assertCanonicalPathOutsideProtectedRoots(resolved, protectedRoots);
   return realpath(resolved);
-}
-
-
-
-function assertExistingThreadConnection(value: unknown, allowEmptyThreadId = false): ExistingThreadConnection {
-  if (!isRecord(value) || typeof value.serviceUrl !== 'string' || typeof value.threadId !== 'string' || typeof value.credentialRef !== 'string' || !value.credentialRef) throw new Error('INVALID_EXISTING_THREAD_CONNECTION');
-  if (value.workspaceRoot !== undefined && typeof value.workspaceRoot !== 'string') throw new Error('INVALID_EXISTING_THREAD_CONNECTION');
-  normalizeCyberBossServiceUrl(value.serviceUrl);
-  const threadId = value.threadId.trim();
-  if ((!threadId && !allowEmptyThreadId) || (threadId && !isSafeExistingThreadId(threadId))) throw new Error('INVALID_CYBERBOSS_THREAD_ID');
-  return value as unknown as ExistingThreadConnection;
-}
-
-function assertExistingThreadWatchRequest(value: unknown): ExistingThreadWatchRequest {
-  if (!isRecord(value) || typeof value.partnerId !== 'string' || !value.partnerId || !isRecord(value.connection)) throw new Error('INVALID_EXISTING_THREAD_WATCH_REQUEST');
-  return { partnerId: value.partnerId, connection: assertExistingThreadConnection(value.connection) };
-}
-
-function isSafeExistingThreadId(value: string) {
-  return /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(value.trim());
 }
