@@ -11,6 +11,7 @@ import { SingleChatHistoryStore } from '../../src/main/conversation/SingleChatHi
 import { ConversationDeletionStore } from '../../src/main/conversation/ConversationDeletionStore';
 import { ConversationDeletionService } from '../../src/main/conversation/ConversationDeletionService';
 import { WriterLeaseCoordinator } from '../../src/main/runtime/WriterLeaseCoordinator';
+import { PartnerDelegation } from '../../src/main/runtime/PartnerDelegation';
 import { DESKTOP_IPC } from '../../src/shared/desktopIpc';
 import type { CodexThreadDirectoryPreview } from '../../src/shared/codexThreadImport';
 import type { CodexHistorySearchPage } from '../../src/shared/codexHistory';
@@ -116,11 +117,28 @@ it('uses the bound runtime for history, forwards cursor/turn requests and rechec
     await invoke(DESKTOP_IPC.nativeSyncSingleBindings, [{ partnerId, conversationId, nativeThreadId: threadId, source: 'local_cli' }]);
     const request = { partnerId, conversationId, threadId, partnerRootGrantId, codexRuntimeId: runtime().runtimeId, cursor: 'fixture-cursor' };
     await expect(invoke(DESKTOP_IPC.readCodexHistory, { ...request, codexRuntimeId: undefined })).rejects.toThrow('CODEX_RUNTIME_SELECTION_REQUIRED'); expect(state.read).not.toHaveBeenCalled();
-    await expect(invoke(DESKTOP_IPC.readCodexHistory, request)).resolves.toBe(page); expect(state.read).toHaveBeenCalledExactlyOnceWith(process.execPath, state.cwd, threadId, request.cursor);
-    await expect(invoke(DESKTOP_IPC.readCodexHistory, { ...request, aroundTurnId: 'fixture-turn' })).resolves.toBe(page); expect(state.locate).toHaveBeenCalledExactlyOnceWith(process.execPath, state.cwd, threadId, 'fixture-turn', request.cursor);
+    const hidden = { userMessageIds: new Set(), turnIds: new Set() };
+    await expect(invoke(DESKTOP_IPC.readCodexHistory, request)).resolves.toBe(page); expect(state.read).toHaveBeenCalledExactlyOnceWith(process.execPath, state.cwd, threadId, request.cursor, undefined, hidden);
+    await expect(invoke(DESKTOP_IPC.readCodexHistory, { ...request, aroundTurnId: 'fixture-turn' })).resolves.toBe(page); expect(state.locate).toHaveBeenCalledExactlyOnceWith(process.execPath, state.cwd, threadId, 'fixture-turn', request.cursor, undefined, hidden);
     const binding = (await bindings.getForScope(partnerId, 'single', conversationId))!;
     state.read.mockImplementationOnce(async () => { await bindings.invalidate(binding.bindingId); return page; });
     await expect(invoke(DESKTOP_IPC.readCodexHistory, request)).rejects.toThrow('CODEX_HISTORY_BINDING_UNAVAILABLE');
+  });
+});
+
+it('uses Main-owned delegation identities for history and search, ignoring forged renderer visibility fields', async () => {
+  await withNative(async ({ invoke, grant }) => {
+    const partnerRootGrantId = await grant();
+    await invoke(DESKTOP_IPC.nativeSyncSingleBindings, [{ partnerId, conversationId, nativeThreadId: threadId, source: 'local_cli' }]);
+    const hidden = { userMessageIds: new Set(['fixture-main-input']), turnIds: new Set(['fixture-main-turn']) };
+    const provenance = vi.spyOn(PartnerDelegation.prototype, 'hiddenHistoryInputs').mockResolvedValue(hidden);
+    const request = { partnerId, conversationId, threadId, partnerRootGrantId, codexRuntimeId: runtime().runtimeId,
+      hiddenInputs: { userMessageIds: ['fixture-forged-user-input'], turnIds: ['fixture-forged-turn'] } };
+    await invoke(DESKTOP_IPC.readCodexHistory, request);
+    expect(state.read).toHaveBeenLastCalledWith(process.execPath, state.cwd, threadId, undefined, undefined, hidden);
+    await invoke(DESKTOP_IPC.searchCodexHistory, { ...request, query: '合成查询' });
+    expect(state.search.mock.calls.at(-1)?.[5]).toBe(hidden);
+    expect(provenance.mock.calls).toEqual([[conversationId, partnerId, threadId], [conversationId, partnerId, threadId]]);
   });
 });
 

@@ -104,7 +104,11 @@ export class DelegationResultDelivery {
     if (active.receipt && active.receipt.runId !== event.runId) throw new Error('DELEGATION_DELIVERY_RUN_MISMATCH');
     if (event.sequence <= active.lastSequence) return;
     active.lastSequence = event.sequence;
-    if (event.type === 'session.bound') active.receipt = { runId: event.runId, sessionId: event.sessionId };
+    if (event.type === 'session.bound') {
+      active.receipt = { runId: event.runId, sessionId: event.sessionId };
+      // Persist the native turn before later history refreshes or a restart.
+      await this.store.transitionDelivery(batch.id, ['starting'], { runId: event.runId });
+    }
     if (event.type === 'message.accepted') {
       active.accepted = true;
       await this.store.transitionDelivery(batch.id, ['starting'], { state: 'accepted', runId: event.runId, acceptedAt: event.occurredAt });

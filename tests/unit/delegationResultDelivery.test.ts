@@ -105,6 +105,34 @@ it('queues while the parent is busy and retries only before submission when the 
   expect((await f.raw()).delivery?.state).toBe('starting');
 });
 
+it('records hidden history provenance at native binding and scopes it to the original partner and thread after restart', async () => {
+  const f = await fixture(); await f.delivery.tick();
+  const command = f.start.mock.calls[0][0];
+  await f.delivery.observe(event(command, 'session.bound'));
+  expect((await f.raw()).delivery).toMatchObject({ state: 'starting', runId: 'fixture-run' });
+  await f.delivery.close(); f.store.close();
+  const recovered = new PartnerDelegation(f.file, vi.fn());
+  cleanups.push(async () => { recovered.close(); });
+  const hidden = await recovered.hiddenHistoryInputs(owner.conversationId, owner.partnerId, 'fixture-native-session');
+  expect([...hidden.turnIds]).toEqual(['fixture-run']); expect([...hidden.userMessageIds]).toEqual([command.clientMessageId]);
+  for (const [chat, partner, session] of [
+    ['fixture-other', owner.partnerId, 'fixture-native-session'], [owner.conversationId, 'fixture-other', 'fixture-native-session'], [owner.conversationId, owner.partnerId, 'fixture-other'],
+  ]) expect([...(await recovered.hiddenHistoryInputs(chat, partner, session)).turnIds]).toEqual([]);
+});
+
+it('retains internal message identities from older delivery attempts when the user retries a failed child task', async () => {
+  const f = await fixture(); await f.delivery.close(); f.store.close();
+  const record = await f.raw(); record.delivery!.state = 'completed'; record.delivery!.runId = 'fixture-old-report'; record.summaryState = 'done';
+  record.tasks[0].status = 'failed'; delete record.tasks[0].result;
+  await writeFile(f.file, JSON.stringify({ version: 1, batches: [record] }));
+  const recovered = new PartnerDelegation(f.file, async () => '合成重试结果');
+  cleanups.push(async () => { recovered.close(); });
+  await recovered.control(owner.conversationId, record.tasks[0].id, 'retry');
+  const hidden = await recovered.hiddenHistoryInputs(owner.conversationId, owner.partnerId, 'fixture-native-session');
+  expect(hidden.turnIds.has('fixture-old-report')).toBe(true);
+  expect(hidden.userMessageIds.has(record.delivery!.clientMessageId)).toBe(true);
+});
+
 it('lets a real user cancel a report without resending already accepted feedback', async () => {
   const f = await fixture(); await f.delivery.tick();
   const command = f.start.mock.calls[0][0];

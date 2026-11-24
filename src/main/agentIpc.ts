@@ -1420,7 +1420,7 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   }, requireSender);
 
   registerNativeSessionHistoryIpc(ipcMain, {
-    nativeBindings, conversationDeletions, partnerWorkspaces, importedCodexBinding,
+    nativeBindings, conversationDeletions, partnerWorkspaces, importedCodexBinding, delegation,
     resolveImportedCodexRuntime, resolveCodexLifecycleRuntime,
   }, requireSender);
 

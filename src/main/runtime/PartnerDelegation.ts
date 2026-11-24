@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AtomicJsonStore, type AtomicJsonStorePath } from '../storage/AtomicJsonStore';
 import { REVIEW_MARKDOWN_MAX_BYTES, REVIEW_RESULT_MAX_CHARACTERS, reviewFileNameSchema } from '../../shared/existingPartnerReview';
 import { delegationAccessSchema } from '../../shared/delegationAccess';
+import type { NativeHistoryHiddenInputs } from '../conversation/NativeHistoryVisibility';
 
 const taskInput = z.object({
   targetPartnerId: z.string().min(1).max(200),
@@ -43,6 +44,7 @@ const resultDelivery = z.object({
   destination,
   state: z.enum(['pending', 'starting', 'accepted', 'completed', 'interrupted', 'uncertain', 'blocked']),
   clientMessageId: z.string(), runId: z.string().optional(), acceptedAt: z.string().optional(),
+  previousInputs: z.array(z.object({ clientMessageId: z.string(), runId: z.string().optional() })).optional(),
 });
 const batchRecord = z.object({
   id: z.uuid(), conversationId: z.string(), partnerId: z.string(),
@@ -283,6 +285,21 @@ export class PartnerDelegation {
       && !batch.summaryState && canSummarize(batch));
   }
 
+  async hiddenHistoryInputs(conversationId: string, partnerId: string, sessionId: string): Promise<NativeHistoryHiddenInputs> {
+    await this.ready;
+    const userMessageIds = new Set<string>(), turnIds = new Set<string>();
+    for (const batch of (await this.store.read()).batches) {
+      const delivery = batch.delivery;
+      if (batch.conversationId !== conversationId || batch.partnerId !== partnerId
+        || delivery?.destination.source !== 'local_cli' || delivery.destination.sessionId !== sessionId) continue;
+      for (const input of [...(delivery.previousInputs ?? []), delivery]) {
+        userMessageIds.add(input.clientMessageId);
+        if (input.runId) turnIds.add(input.runId);
+      }
+    }
+    return { userMessageIds, turnIds };
+  }
+
   async recoverReviews() {
     await this.ready;
     const conversations = new Set((await this.store.read()).batches
@@ -328,7 +345,8 @@ export class PartnerDelegation {
         delete task.result;
         if (batch) {
           delete batch.summaryState; delete batch.summary; delete batch.summaryTurnId;
-          if (batch.delivery) batch.delivery = { destination: batch.delivery.destination, state: 'pending', clientMessageId: `delegation-result:${batch.id}:${randomUUID()}` };
+          if (batch.delivery) batch.delivery = { destination: batch.delivery.destination, state: 'pending', clientMessageId: `delegation-result:${batch.id}:${randomUUID()}`,
+            previousInputs: [...(batch.delivery.previousInputs ?? []), { clientMessageId: batch.delivery.clientMessageId, runId: batch.delivery.runId }] };
         }
       }
       await this.store.writeNow(data);
