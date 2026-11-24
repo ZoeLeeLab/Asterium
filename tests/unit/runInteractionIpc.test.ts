@@ -44,7 +44,7 @@ const input: ResolveUserInputCommand = {
   requestId: 'fixture-request', answers: { 'fixture-question': ['合成选项'] }, customAnswers: { 'fixture-other': '合成回答' },
 };
 
-async function withRunInteraction(run: (invoke: (channel: string, value: unknown, caller?: object) => Promise<unknown>) => Promise<void>) {
+async function withRunInteraction(run: (invoke: (channel: string, value: unknown, caller?: object) => Promise<unknown>, sent: unknown[][]) => Promise<void>) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'asterium-run-interaction-ipc-'));
   electron.userData = root;
   const sender = { send: vi.fn() };
@@ -72,7 +72,7 @@ async function withRunInteraction(run: (invoke: (channel: string, value: unknown
       restoreBackgroundServices: false, mcpPort: 0,
     } });
     try {
-      await run(invoke);
+      await run(invoke, sender.send.mock.calls);
     } finally {
       await dispose();
     }
@@ -175,6 +175,33 @@ it('returns the API runtime receipt through the existing factory and coordinator
     expect(create).toHaveBeenCalledTimes(1); expect(create.mock.calls[0][0]).toMatchObject({ provider: 'openai', endpoint: apiConnection.endpoint + '/chat/completions', model: apiConnection.model, apiKey: 'fixture-secret' });
     expect(start).toHaveBeenCalledExactlyOnceWith(adapter, create.mock.calls[0][0].command, { disposeAfter: true, artifactBaseDirectory: undefined, waitForWriter: true });
   });
+});
+
+it.each(['0', '1'])('preserves startup, idempotency, cancellation and release with legacy flag %s', async legacy => {
+  vi.stubEnv('ASTERIUM_USE_LEGACY_RUN_PATH', legacy);
+  try {
+    await withRunInteraction(async (invoke, sent) => {
+      vi.spyOn(ApiConnectionStore.prototype, 'resolve').mockResolvedValue(apiConnection);
+      vi.spyOn(CredentialStore.prototype, 'get').mockResolvedValue('fixture-secret');
+      vi.spyOn(SessionBootstrapService.prototype, 'prepare').mockResolvedValue(undefined);
+      const adapter = new MockAdapter('cancel'), dispose = vi.fn(async () => undefined);
+      const create = vi.spyOn(PartnerRuntimeFactory.prototype, 'createApi').mockReturnValue(Object.assign(adapter, { dispose }) as never);
+      const modern = vi.spyOn(RunCoordinator.prototype, 'start');
+      const release = vi.spyOn(AdapterHost.prototype, 'releaseRun');
+      const request = apiRequest();
+      const receipt = await invoke(DESKTOP_IPC.sendApiMessage, request) as { runId: string; sessionId: string };
+      await expect(invoke(DESKTOP_IPC.sendApiMessage, apiRequest())).resolves.toEqual(receipt);
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(adapter.executionCount.get(sendCommand.clientMessageId)).toBe(1);
+      expect(modern).toHaveBeenCalledTimes(legacy === '1' ? 0 : 1);
+      const cancel = vi.spyOn(adapter, 'cancel');
+      await vi.waitFor(() => expect(sent.some(([channel, event]) => channel === DESKTOP_IPC.event && (event as { type?: string })?.type === 'text.delta')).toBe(true));
+      await invoke(DESKTOP_IPC.cancelRun, { ...cancelCommand, connectionSource: 'api_partner', ...receipt });
+      expect(cancel).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(dispose).toHaveBeenCalledTimes(1));
+      expect(release).toHaveBeenCalledWith(receipt.runId);
+    });
+  } finally { vi.unstubAllEnvs(); }
 });
 
 it('keeps local runtime grant enforcement after validation and does not add a partner-id equality guard without a handoff', async () => {

@@ -4,26 +4,17 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   AGENT_PROTOCOL_VERSION,
-  type ApiPartnerConnection,
-  type ExistingThreadChangedEvent,
   type ExistingThreadConnection,
   type ExistingThreadConnectionStatus,
   type ExistingThreadReplyEvent,
-  type MessageDeliveryEvent,
-  type PartnerEvent,
   type PartnerProfileSeed,
   type PartnerWorkspaceState,
-  type SendMessageCommand,
-  type SendMessageReceipt
+  type SendMessageCommand
 } from '../shared/agentProtocol';
-import { isPartnerEvent } from '../shared/agentProtocolValidation';
-import { apiModelSettingsSchema, apiRequestSettingsSchema } from '../shared/apiConnections';
-import { automationRunExpired } from '../shared/automationTime';
 import type { AutomationRun, AutomationTargetOption } from '../shared/automations';
 import { trimChatHistory } from '../shared/chatHistory';
 import { resolveCodexRuntime } from '../shared/codexRuntimeSelection';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE } from '../shared/codexThreadImport';
-import { codexThreadInUseFailure } from '../shared/codexThreadInUse';
 import { DESKTOP_IPC as AGENT_IPC, DESKTOP_INVOKE_CHANNELS } from '../shared/desktopIpc';
 import { REVIEW_MARKDOWN_MAX_BYTES } from '../shared/existingPartnerReview';
 import type { MemorySourceAnchor } from '../shared/memoryArchive';
@@ -33,12 +24,12 @@ import { loadClaudeCliRuntime } from './adapters/ClaudeCodeAdapter';
 import { getCodexThreadLastTurnId, getCodexThreadLifecycles } from './adapters/CodexCliAdapter';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from './adapters/CyberBossBridgeClient';
 import type { PartnerAdapter } from './adapters/PartnerAdapter';
-import { sameCodexPath } from './adapters/codexSessionFile';
 import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
 import { ApiConnectionStore } from './api/ApiConnectionStore';
 import { ApiExtensionStore } from './api/ApiExtensionStore';
 import type { ApiProviderContentPart } from './api/ApiProviderAdapter';
 import { createDefaultApiProviderRegistry } from './api/ApiProviderRegistry';
+import { createApiRuntimeConfiguration, isAttachmentCapabilities, resolveApiAttachmentCapabilities } from './api/ApiRuntimeConfiguration';
 import { compactApiSession } from './api/ApiSessionCompactor';
 import { confirmProfileReload } from './api/confirmProfileReload';
 import { McpConnectionManager } from './api/extensions/McpConnectionManager';
@@ -95,7 +86,7 @@ import { registerProjectTaskIpc } from './ipc/projectTaskIpc';
 import { registerProjectWorkflowGenerationIpc } from './ipc/projectWorkflowGenerationIpc';
 import { registerProjectWorkflowMutationIpc, registerProjectWorkflowQueryIpc, registerProjectWorkflowTemplateIpc } from './ipc/projectWorkflowIpc';
 import { registerProjectWorkspaceCreationIpc, registerProjectWorkspaceIpc } from './ipc/projectWorkspaceIpc';
-import { registerApiMessageIpc, registerLocalMessageIpc, registerRunControlIpc, type ApiSendRequest, type LocalCliSendRequest } from './ipc/runInteractionIpc';
+import { registerApiMessageIpc, registerLocalMessageIpc, registerRunControlIpc } from './ipc/runInteractionIpc';
 import { registerApiSessionDeletionIpc, registerSessionMaintenanceIpc, registerSessionStatusIpc } from './ipc/sessionIpc';
 import { registerStorageIpc } from './ipc/storageIpc';
 import { registerStudioMcpCredentialIpc, registerStudioMcpHostIpc } from './ipc/studioMcpIpc';
@@ -153,12 +144,16 @@ import { DelegationResultDelivery } from './runtime/DelegationResultDelivery';
 import { describeReviewFile, existingPartnerReviewMessage, runExistingPartnerReview, snapshotReviewArtifact } from './runtime/ExistingPartnerReview';
 import { createExistingThreadService } from './runtime/ExistingThreadService';
 import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
-import { createLocalRuntimeResolver, resolveProjectRuntimeRoot } from './runtime/LocalRuntimeResolver';
+import { createLegacyRunPath } from './runtime/LegacyRunPath';
+import { createLocalRuntimeResolver } from './runtime/LocalRuntimeResolver';
+import { createMessageRuntime } from './runtime/MessageRuntime';
 import { NativeProfileReloadError, confirmNativeProfileReload } from './runtime/NativeProfileReload';
 import { PartnerDelegation, delegationInput, delegationWaitInput, type DelegationBatch, type DelegationTask } from './runtime/PartnerDelegation';
 import { PartnerRuntimeFactory, localRuntimeAdapterKey } from './runtime/PartnerRuntimeFactory';
 import { PartnerRuntimePort } from './runtime/PartnerRuntimePort';
-import { RunCoordinator, sameEventRoute, streamFailureEvent, withCommandRoute } from './runtime/RunCoordinator';
+import { RunCoordinator } from './runtime/RunCoordinator';
+import { createRuntimeEventBridge } from './runtime/RuntimeEventBridge';
+import { createRuntimeRunHooks } from './runtime/RuntimeRunHooks';
 import { assembleSessionBootstrap } from './runtime/SessionBootstrapAssembler';
 import { SessionBootstrapRecorder } from './runtime/SessionBootstrapRecorder';
 import { SessionBootstrapService } from './runtime/SessionBootstrapService';
@@ -191,24 +186,11 @@ import { StudioWakeEvents } from './studio/StudioWakeEvents';
 
 export { AGENT_IPC };
 
-
 const BRAVE_SEARCH_CREDENTIAL_REF = 'asterium-web-search-brave';
-
-
-
-
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-
-
-
-
-
-
-
-
 
 export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindow | null, options: { generalSettings?: GeneralSettingsStore; notifications?: DesktopNotifications; updates?: AppUpdateService; environment?: import('../shared/runtimeEnvironment').RuntimeEnvironment } = {}) {
   const restoreBackgroundServices = options.environment?.restoreBackgroundServices ?? true;
@@ -534,28 +516,11 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     if (current.threadId !== review.threadId) throw new Error('DELEGATION_REVIEW_THREAD_CHANGED');
     return runExistingPartnerReview(client, key, { message: review.message, file, bytes }, signal);
   }
-  async function configuredApiOptions(connection: ApiPartnerConnection, keyOverride?: string) {
-    const requestSettings = connection.requestSettings ? apiRequestSettingsSchema.parse(connection.requestSettings) : undefined;
-    const modelSettings = connection.modelSettings ? apiModelSettingsSchema.parse(connection.modelSettings) : undefined;
-    const apiKey = requestSettings?.auth === 'none' ? '' : keyOverride || await credentials.get(connection.credentialRef);
-    if (apiKey === undefined) throw new Error('API_CREDENTIAL_REQUIRED');
-    const headers: Record<string, string> = {};
-    for (const header of requestSettings?.headers ?? []) {
-      const secret = await credentials.get(header.credentialRef);
-      if (secret === undefined) throw new Error('API_HEADER_CREDENTIAL_REQUIRED');
-      headers[header.name] = secret;
-    }
-    return { apiKey, requestSettings, modelSettings, headers };
-  }
+  const configuredApiOptions = createApiRuntimeConfiguration(credentials);
   const contextHandoff = new ContextHandoffService(singleChatMessages, studioRooms, id => {
     const partner = studioRuntimeCatalog.partner(id);
     return Boolean(partner?.available && (partner.runtime.kind === 'local' || partner.runtime.kind === 'api'));
   }, id => studioRuntimeCatalog.partner(id)?.publicIdentity.displayName ?? '伙伴');
-  const notifyHandoffDelivered = (event: PartnerEvent, command: SendMessageCommand) => {
-    if (event.type !== 'message.accepted' || !command.contextHandoff) return;
-    const window = getWindow();
-    if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.contextHandoffDelivered, command.contextHandoff.id);
-  };
   const memoryImport = new MemoryImportService(partnerMemories, fallbackEligible, async input => {
     const config = await memoryFallbackSettings.get();
     if (config.provider !== input.provider || config.endpoint !== input.endpoint || config.model !== input.model) {
@@ -792,43 +757,8 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   const unsubscribeUpdates = options.updates?.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.updatesChanged, snapshot); });
   registerGeneralSettingsIpc(ipcMain, generalSettings, requireSender);
   const unsubscribeGeneralSettings = generalSettings.subscribe(snapshot => { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(AGENT_IPC.generalSettingsChanged, snapshot); });
-  const sendEvent = (event: PartnerEvent | MessageDeliveryEvent | ExistingThreadChangedEvent) => {
-    if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.cancelled') automationConfirmations.cancelOwner(event.clientMessageId);
-    sessionCommands.observe(event as PartnerEvent);
-    if (event.type === 'run.completed' || event.type === 'authorization.requested') notifications?.agent(event, automationHandles.runtime?.eventRunFor(event), studioRuntimeCatalog.partner(event.partnerId)?.publicIdentity.displayName);
-    const observed = event.type === 'session.bound' && event.model
-      ? { partnerId: event.partnerId, conversationId: event.conversationId, threadId: event.sessionId, observedAt: event.occurredAt, model: event.model, source: event.modelSource ?? 'runtime' }
-      : event.type === 'extension.event' && event.namespace === 'asterium.runtime' && event.name === 'model_observed' && isRecord(event.payload) && typeof event.payload.model === 'string'
-        ? { partnerId: event.partnerId, conversationId: event.conversationId, threadId: event.sessionId, observedAt: event.occurredAt, model: event.payload.model, source: event.payload.source === 'native_thread' ? 'native_thread' as const : 'runtime' as const }
-        : undefined;
-    if (observed) {
-      studioRuntimeCatalog.observeModel(observed.partnerId, {
-        model: observed.model,
-        status: 'recent',
-        observedAt: observed.observedAt,
-        source: observed.source,
-        conversationId: observed.conversationId,
-        ...(observed.threadId ? { threadId: observed.threadId } : {}),
-      });
-      void partnerProfiles.observeModel({
-        partnerId: observed.partnerId,
-        conversationId: observed.conversationId,
-        threadId: observed.threadId,
-        model: observed.model,
-        source: observed.source,
-        observedAt: observed.observedAt,
-      }).catch(() => undefined);
-    }
-    const window = getWindow();
-    if (window && !window.isDestroyed()) {
-      const run = 'clientMessageId' in event ? automationHandles.runtime?.eventRunFor(event) : undefined;
-      if (run && event.type !== 'message.delivery' && event.type !== 'existing_thread.changed') {
-        automationHandles.runtime?.replaceEvent(event); window.webContents.send(AGENT_IPC.automationsEvent, { run, event });
-        if (run.definition.target.roomId) window.webContents.send(AGENT_IPC.event, event); // Studio retains its approval/question interaction path.
-      }
-      else window.webContents.send(AGENT_IPC.event, event);
-    }
-  };
+  const projectTaskRuntimeRef: { current?: ProjectTaskRuntime } = {};
+  const { sendEvent, transformRuntimeEvent, delivery, notifyHandoffDelivered } = createRuntimeEventBridge({ automationConfirmations, automationHandles, getWindow, notifications, partnerProfiles, projectFileDelivery, projectTaskRuntimeRef, sessionCommands, singleChatHistory, studioRuntimeCatalog });
   const studioOrchestration = { orchestrator: undefined as StudioOrchestrator | undefined };
   const unsubscribeStudioRooms = studioRooms.subscribe((snapshot) => {
     const window = getWindow();
@@ -944,25 +874,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   registerAttachmentMaintenanceIpc(ipcMain, { messageAttachments, cancelDelegation, delegation }, requireSender);
   const conversationLifecycle = new ConversationLifecycleService({ cancelDelegation, writerLeases, conversationDeletions, delegation, diarySettings, diaryScheduler, memoryFallbackInventory });
   registerConversationHistoryIpc(ipcMain, { conversationLifecycle, conversationDeletions, singleChatHistory, singleChatMessages, nativeBindings, diarySettings, diaryScheduler, memoryFallbackInventory }, requireSender);
-  const delivery = (command: SendMessageCommand, state: MessageDeliveryEvent['state'], error?: MessageDeliveryEvent['error']) => sendEvent({
-    protocolVersion: AGENT_PROTOCOL_VERSION,
-    type: 'message.delivery',
-    eventId: randomUUID(),
-    partnerId: command.partnerId,
-    conversationId: command.conversationId,
-    connectionSource: command.connectionSource,
-    clientMessageId: command.clientMessageId,
-    state,
-    occurredAt: new Date().toISOString(),
-    error,
-  });
-  const projectTaskRuntimeRef: { current?: ProjectTaskRuntime } = {};
-  const captureGuidanceSource = async (event: PartnerEvent, command: SendMessageCommand) => {
-    if (event.type !== 'guidance.applied' || !event.sourceMessage) return;
-    await singleChatMessages.upsertMessage(command.conversationId, command.partnerId, event.sourceMessage);
-    // Runtime tools capture sources lazily from this Main-owned command.
-    command.messageId = event.sourceMessage.messageId;
-  };
   const currentMemorySource = async (command: SendMessageCommand): Promise<MemorySourceAnchor | undefined> => {
     if (command.route?.scope === 'group') {
       const route = command.route;
@@ -1123,128 +1034,12 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     });
     return delegationHandles.delivery?.owns(command) ? delegationReportTools(tools) : tools;
   };
-  const transformRuntimeEvent = async (event: PartnerEvent, artifactBaseDirectory?: string) => {
-    if (event.type === 'tool.completed') {
-      // The reference is main-owned. Adapters can only supply the detail itself.
-      const clean = { ...event, detail: typeof event.detail === 'string' ? event.detail : undefined, detailRef: undefined };
-      if (event.route && event.route.scope !== 'single') return clean;
-      if (!clean.detail || clean.detail.length <= 4096) return clean;
-      // On failure leave the detail in the event. The checkpoint retries it and surfaces a storage failure.
-      const stored = await singleChatHistory.recordToolOutput(event.conversationId, clean.detail).catch(() => undefined);
-      return stored ? { ...clean, ...stored } : clean;
-    }
-    if (event.type !== 'file.produced') return event;
-    const registered = await projectFileDelivery.registerRuntimeFile(event, artifactBaseDirectory);
-    if (!registered?.emitArtifactEvent) {
-      // Invalid claims stay hidden; a same-run duplicate keeps its original renderer card.
-      return undefined;
-    }
-    const { info } = registered;
-    if (info.registrationMethod === 'deliver_tool' && registered.delivery) {
-      projectTaskRuntimeRef.current?.recordProjectFile(event, {
-        fileId: registered.delivery.fileId,
-        relativePath: registered.delivery.relativePath,
-        revision: registered.delivery.revision,
-        contentHash: registered.delivery.contentHash,
-        sizeBytes: registered.delivery.sizeBytes,
-      });
-    }
-    return { ...event, source: undefined, artifactId: info.id, artifactRef: info.id, name: info.name, mediaType: info.mediaType, sizeBytes: info.sizeBytes, sourceKind: info.sourceKind, registrationMethod: info.registrationMethod, availability: info.availability, cached: info.cached, localSourceKey: info.localSourceKey };
-  };
-  const runCoordinator = new RunCoordinator(host, {
-    prepare: async (command) => {
-      await delegationHandles.delivery?.validateBeforeStart(command);
-      const automatic = automationHandles.runtime?.runFor(command);
-      if (automatic && (automationHandles.runtime?.isAborted(command) || !(await checkAutomation(automatic, `runtime:${command.commandId}`)).available || automationRunExpired(automatic, Date.now()))) throw new Error('AUTOMATION_REVALIDATION_FAILED');
-      if (command.sessionId) await hydrateManagedRuntimeProfile(command);
-      if (!delegationHandles.delivery?.owns(command)) await projectChanges.begin(command).catch((error) => { projectChanges.failedStart(command); console.error('Project change baseline unavailable', error); });
-    },
-    beforeEvent: async (event, command) => { await projectChanges.observe(event, command).catch((error) => console.error('Project change capture unavailable', error)); },
-    deliver: delivery,
-    emit: sendEvent,
-    observe: (event) => studioRooms.observeEvent(event),
-    validateFirstEvent: async (event, command) => {
-      delegationHandles.delivery?.validateFirst(command, event);
-      automationHandles.runtime?.validateFirst(command, event);
-      await automationHandles.runtime?.observe(event);
-      if (event.type !== 'session.bound') throw new Error('FIRST_EVENT_MUST_BIND_SESSION');
-      await projectTaskRuntimeRef.current?.validateFirstEvent(event, command);
-      await workflowGenerationRuntimeRef.current?.validateFirstEvent(event, command);
-      if (command.route?.scope !== 'group') return;
-      const binding = await nativeBindings.getForScope(command.partnerId, 'group', command.route.roomId);
-      if (!binding || binding.conversationId !== command.conversationId || binding.generation !== command.route.bindingGeneration) throw new Error('NATIVE_BINDING_ROUTE_MISMATCH');
-      if (binding.state === 'pending') await nativeBindings.activate(binding.bindingId, event.sessionId);
-      else if (binding.nativeThreadId !== event.sessionId) throw new Error('NATIVE_THREAD_ROUTE_MISMATCH');
-    },
-    onBound: async (event, command) => {
-      await delegationHandles.delivery?.observe(event);
-      await persistFirstSingleChatBinding(event, command);
-      await automationHandles.runtime?.bound(command, { runId: event.runId, sessionId: event.sessionId });
-      if (command.route?.scope === 'group') await studioRooms.bindRun(command.route.roomId, command.route.roundId, command.partnerId, event.runId, event.sessionId);
-      await sessionBootstrapRecorder.onBound(event, command);
-    },
-    onEvent: async (event, command) => {
-      await delegationHandles.delivery?.observe(event);
-      notifyHandoffDelivered(event, command);
-      if (event.type === 'run.completed') await delegation.releaseTurn(command.clientMessageId, true);
-      await automationHandles.runtime?.observe(event);
-      await captureGuidanceSource(event, command);
-      await projectTaskRuntimeRef.current?.onEvent(event, command);
-      await workflowGenerationRuntimeRef.current?.onEvent(event, command);
-      await sessionBootstrapRecorder.onEvent(event, command);
-      await markAcceptedStudioSpeakingMode(event, command);
-      if (event.type === 'run.completed') await workflowGenerationRuntimeRef.current?.markCompleted(command, event.runId);
-      if (command.route?.scope !== 'group' || event.type !== 'run.completed') return;
-      const binding = await nativeBindings.getForScope(command.partnerId, 'group', command.route.roomId);
-      if (binding?.generation === command.route.bindingGeneration) await nativeBindings.markCompleted(binding.bindingId, event.runId).catch(() => undefined);
-    },
-    transformEvent: transformRuntimeEvent,
-    onStreamFailure: async (_error, context) => {
-      await automationHandles.runtime?.fail(context.command);
-      await projectChanges.finish(context.command, 'failed').catch(() => undefined);
-      await projectTaskRuntimeRef.current?.invalidatePending(context.command);
-      projectTaskRuntimeRef.current?.fail(context.command, _error);
-      await workflowGenerationRuntimeRef.current?.failCommand(context.command, _error);
-      if (context.command.route?.scope !== 'group') return;
-      await nativeBindings.invalidateGroupTurn(context.command).catch(() => undefined);
-      const failed = streamFailureEvent(context);
-      await studioRooms.observeEvent(failed).catch(() => undefined);
-      sendEvent(failed);
-    },
-    onStartFailure: async (_error, command) => {
-      await automationHandles.runtime?.fail(command);
-      await projectChanges.finish(command, 'failed').catch(() => undefined);
-      projectChanges.failedStart(command);
-      await projectTaskRuntimeRef.current?.invalidatePending(command);
-      projectTaskRuntimeRef.current?.fail(command, _error);
-      await workflowGenerationRuntimeRef.current?.failCommand(command, _error);
-      if (command.route?.scope !== 'group') return;
-      await nativeBindings.invalidateGroupTurn(command).catch(() => undefined);
-      await studioRooms.failPreparedTurn(command.route.roomId, command.route.roundId, command.partnerId).catch(() => undefined);
-    },
-    onReleased: async ({ command, receipt }) => {
-      await delegationHandles.delivery?.released(command);
-      await delegation.releaseTurn(command.clientMessageId, false);
-      await automationHandles.runtime?.fail(command);
-      await projectChanges.finish(command, 'failed').catch(() => undefined);
-      projectChanges.failedStart(command);
-      projectTaskRuntimeRef.current?.released(command);
-      if (command.route?.scope !== 'group' || !studioRooms.hasPendingPassRetry(receipt.runId)) return;
-      studioOrchestration.orchestrator?.markPassCorrection(command.route.roomId, command.route.roundId, command.partnerId);
-      await studioRooms.retryPassAfterRelease(receipt.runId).catch(() => undefined);
-    },
-  }, writerLeases);
-  async function persistFirstSingleChatBinding(event: Extract<PartnerEvent, { type: 'session.bound' }>, command: SendMessageCommand) {
-    if ((command.route && command.route.scope !== 'single') || command.connectionSource === 'existing_thread') return;
-    if (await singleChatHistory.bindInitialSession(command.conversationId, command.partnerId, event.sessionId)) {
-      await nativeBindings.registerSingle({
-        conversationId: command.conversationId, partnerId: command.partnerId,
-        source: command.connectionSource, nativeThreadId: event.sessionId,
-      });
-    }
-  }
 
+  const { hooks, persistFirstSingleChatBinding, captureGuidanceSource, markAcceptedStudioSpeakingMode } = createRuntimeRunHooks({ automationHandles, checkAutomation: (run, owner) => checkAutomation(run, owner), delegation, delegationHandles, delivery, hydrateManagedRuntimeProfile, nativeBindings, notifyHandoffDelivered, projectChanges, projectTaskRuntimeRef, sendEvent, sessionBootstrapRecorder, singleChatHistory, singleChatMessages, studioOrchestration, studioRooms, transformRuntimeEvent, workflowGenerationRuntimeRef });
+  const runCoordinator = new RunCoordinator(host, hooks, writerLeases);
+  const { startAdapterRun } = createLegacyRunPath({ captureGuidanceSource, delivery, host, hydrateManagedRuntimeProfile, markAcceptedStudioSpeakingMode, nativeBindings, notifyHandoffDelivered, persistFirstSingleChatBinding, sendEvent, sessionBootstrapRecorder, studioOrchestration, studioRooms, transformRuntimeEvent, writerLeases });
   const useLegacyRunPath = process.env.ASTERIUM_USE_LEGACY_RUN_PATH === '1';
+  const { startApiRuntime, startLocalRuntime } = createMessageRuntime({ apiConnections, apiProviders, attachAutomationCommand: command => attachAutomationCommand(command), availableImportedDirectory, configuredApiOptions, ensureClaudeInstallation, hydrateManagedRuntimeProfile, importedCodexBinding, messageAttachments, partnerWorkspaces, protectedRoots, resolveImportedCodexRuntime, resolveSelectedCodexRuntime, resolveWorkspaceGrant, runCoordinator, runtimeFactory, runtimeToolsFor, singleChatMessages, startAdapterRun, useLegacyRunPath });
   const projectTaskRuntime = new ProjectTaskRuntime({
     catalog: studioRuntimeCatalog,
     bindings: nativeBindings,
@@ -1445,165 +1240,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
 
   registerRunControlIpc(ipcMain, { runCoordinator, automationConfirmations }, requireSender);
 
-  function handoffFingerprint(command: SendMessageCommand) {
-    return command.contextHandoff ? createHash('sha256').update(JSON.stringify(command.contextHandoff)).digest('hex') : undefined;
-  }
-
-  async function startApiRuntime(request: ApiSendRequest, background = false) {
-    await attachAutomationCommand(request.command);
-    request = { ...request, connection: await apiConnections.resolve(request.command.partnerId, request.connection) };
-    request.command = await messageAttachments.prepareSend(request.command, protectedRoots);
-    if (request.command.sourceMessage) await singleChatMessages.upsertMessage(request.command.conversationId, request.command.partnerId, request.command.sourceMessage);
-    const storedProfile = await hydrateManagedRuntimeProfile(request.command);
-    if (request.command.runtimeContext) request.command.runtimeContext = { ...request.command.runtimeContext, runtime: { ...request.command.runtimeContext?.runtime, source: 'api_partner', provider: request.connection.provider, model: request.connection.model } };
-    apiProviders.require(request.connection.provider);
-    const attachmentCapabilities = resolveApiAttachmentCapabilities(request.connection);
-    const normalizedProvider = apiProviders.normalizeConnection(request.connection);
-    const apiOptions = await configuredApiOptions(request.connection);
-    const fingerprint = JSON.stringify({
-      connection: request.connection,
-      command: { ...request.command, sessionBootstrap: undefined, sessionBootstrapVersion: undefined, contextHandoff: handoffFingerprint(request.command) },
-    });
-    return runCoordinator.runIdempotent(request.command.clientMessageId, fingerprint, async () => {
-      let primaryDirectory: string | undefined;
-      let additionalDirectories: string[] = [];
-      if (request.projectRootOverride) {
-        primaryDirectory = await resolveProjectRuntimeRoot(request.projectRootOverride, protectedRoots);
-      } else {
-        await partnerWorkspaces.ensure(request.command.partnerId, request.connection.primaryWorkspaceGrantId, request.connection.workspaceGrantIds ?? []);
-        const partnerBindings = await partnerWorkspaces.grantIds(request.command.partnerId);
-        const grantIds = [...new Set(partnerBindings?.workspaceGrantIds ?? request.connection.workspaceGrantIds ?? [])];
-        const primaryGrantId = partnerBindings?.cwdGrantId ?? request.connection.primaryWorkspaceGrantId;
-        primaryDirectory = primaryGrantId ? await resolveWorkspaceGrant(primaryGrantId) : undefined;
-        if (primaryGrantId && !primaryDirectory) throw new Error('WORKSPACE_GRANT_REQUIRED');
-        const resolvedDirectories = await Promise.all(grantIds.map((grantId) => resolveWorkspaceGrant(grantId)));
-        if (resolvedDirectories.some((directory) => !directory)) throw new Error('WORKSPACE_GRANT_REQUIRED');
-        additionalDirectories = resolvedDirectories.filter((directory): directory is string => Boolean(directory && directory !== primaryDirectory));
-      }
-      const adapter = runtimeFactory.createApi({
-        command: request.command,
-        provider: normalizedProvider.definition.id,
-        endpoint: normalizedProvider.endpoint,
-        model: normalizedProvider.model,
-        ...apiOptions,
-        bindingKey: request.connection.bindingKey,
-        toolsEnabled: background ? false : request.connection.toolsEnabled,
-        thinkingMode: request.connection.thinkingMode ?? 'auto',
-        reasoningEffort: request.connection.reasoningEffort ?? 'high',
-        primaryDirectory,
-        additionalDirectories,
-        attachmentCapabilities,
-        runtimeTools: runtimeToolsFor(request.command, storedProfile?.management.memoryMode),
-      });
-      return useLegacyRunPath
-        ? startAdapterRun(adapter, request.command, true, primaryDirectory)
-        : runCoordinator.start(adapter, request.command, { disposeAfter: true, artifactBaseDirectory: primaryDirectory, waitForWriter: !background });
-    });
-  }
-
-  async function startLocalRuntime(request: LocalCliSendRequest, background = false) {
-    if (request.command.execution?.codexModel && (request.adapterType !== 'codex_cli'
-      || (request.command.route && request.command.route.scope !== 'single'))) throw new Error('CODEX_MODEL_SELECTION_UNAVAILABLE');
-    const imported = !request.command.route || request.command.route.scope === 'single'
-      ? await importedCodexBinding(request.command.partnerId, request.command.conversationId, request.command.sessionId) : undefined;
-    const importedDirectory = imported && await availableImportedDirectory(imported.workspace.directory, imported.workspace.canonicalDirectory);
-    if (imported && !importedDirectory) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
-    if (imported && (request.adapterType !== 'codex_cli' || !request.command.sessionId || request.command.forkFromTurnId)) throw new Error('CODEX_IMPORTED_THREAD_MISMATCH');
-    await attachAutomationCommand(request.command);
-    request.command = await messageAttachments.prepareSend(request.command, protectedRoots);
-    if (request.command.sourceMessage) await singleChatMessages.upsertMessage(request.command.conversationId, request.command.partnerId, request.command.sourceMessage);
-    const storedProfile = await hydrateManagedRuntimeProfile(request.command);
-    let partnerRoot: string;
-    let grantIds: string[] = [];
-    let additionalDirectories: string[] = [];
-    if (importedDirectory) {
-      partnerRoot = importedDirectory;
-    } else if (request.projectRootOverride) {
-      partnerRoot = await resolveProjectRuntimeRoot(request.projectRootOverride, protectedRoots);
-    } else {
-      if (!request.partnerRootGrantId) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
-      await partnerWorkspaces.ensure(request.command.partnerId, request.partnerRootGrantId, request.workspaceGrantIds);
-      const partnerBindings = await partnerWorkspaces.grantIds(request.command.partnerId);
-      grantIds = [...new Set(partnerBindings?.workspaceGrantIds ?? request.workspaceGrantIds)];
-      const workingDirectories = await Promise.all(grantIds.map((grantId) => resolveWorkspaceGrant(grantId)));
-      if (workingDirectories.some((directory) => !directory)) throw new Error('WORKSPACE_GRANT_REQUIRED');
-      const partnerRootGrantId = partnerBindings?.cwdGrantId ?? request.partnerRootGrantId;
-      const resolvedPartnerRoot = await resolveWorkspaceGrant(partnerRootGrantId);
-      if (!resolvedPartnerRoot) throw new Error('PARTNER_ROOT_GRANT_REQUIRED');
-      partnerRoot = resolvedPartnerRoot;
-      additionalDirectories = workingDirectories.filter((directory): directory is string => Boolean(directory && directory !== partnerRoot));
-    }
-    let executablePath: string;
-    let resolvedCodexRuntimeId = request.codexRuntimeId;
-    if (request.adapterType === 'codex_cli') {
-      const runtime = imported ? await resolveImportedCodexRuntime(imported.workspace)
-        : await resolveSelectedCodexRuntime(request.codexRuntimeId, request.codexRuntimeEnvironment);
-      executablePath = runtime.executablePath;
-      resolvedCodexRuntimeId = runtime.runtimeId;
-    } else {
-      const installation = await ensureClaudeInstallation();
-      if (!installation.executablePath) throw new Error('CLAUDE_NOT_FOUND');
-      if (!installation.loggedIn) throw new Error('CLAUDE_NOT_LOGGED_IN');
-      executablePath = installation.executablePath;
-    }
-
-    const fingerprint = JSON.stringify({
-      adapterType: request.adapterType,
-      codexRuntimeId: resolvedCodexRuntimeId,
-      partnerId: request.command.partnerId,
-      conversationId: request.command.conversationId,
-      connectionSource: request.command.connectionSource,
-      sessionId: request.command.sessionId,
-      forkFromTurnId: request.command.forkFromTurnId,
-      content: request.command.content,
-      contextHandoff: handoffFingerprint(request.command),
-      execution: request.command.execution,
-      attachments: request.command.attachments,
-      partnerRootGrantId: request.partnerRootGrantId,
-      workspaceGrantIds: grantIds,
-      projectRootOverride: request.projectRootOverride,
-      importedDirectory,
-    });
-    return runCoordinator.runIdempotent(request.command.clientMessageId, fingerprint, async (): Promise<SendMessageReceipt> => {
-      const adapterKey = localRuntimeAdapterKey({
-        adapterType: request.adapterType,
-        runtimeId: resolvedCodexRuntimeId,
-        partnerId: request.command.partnerId,
-        conversationId: request.command.conversationId,
-        partnerRoot,
-        additionalDirectories,
-      });
-      const runtimeTools = runtimeToolsFor(request.command, storedProfile?.management.memoryMode);
-      const adapter = runtimeFactory.getLocal({
-        adapterType: request.adapterType,
-        adapterKey,
-        executablePath,
-        partnerRoot,
-        additionalDirectories,
-        runtimeTools,
-        deferRuntimeConfiguration: true,
-        importedCodexThread: Boolean(imported),
-      });
-      const validateBeforeStart = async () => {
-        if (imported) {
-          const { partnerId, conversationId, sessionId } = request.command;
-          const current = await importedCodexBinding(partnerId, conversationId, sessionId);
-          const directory = current && await availableImportedDirectory(current.workspace.directory, current.workspace.canonicalDirectory);
-          if (!directory || !sameCodexPath(directory, partnerRoot)) throw new Error(CODEX_IMPORTED_DIRECTORY_UNAVAILABLE);
-        }
-        // Reuse the original native session and apply this turn's handlers only
-        // after obtaining its writer lease. A queued user turn must restore its
-        // own controller rather than inherit the background report's tools.
-        adapter.replaceRuntimeTools?.(runtimeTools);
-        adapter.replaceRuntimeWorkspaceRoots?.(additionalDirectories);
-        adapter.updateRuntimeContext?.(request.command);
-      };
-      return useLegacyRunPath
-        ? startAdapterRun(adapter, request.command, Boolean(imported), partnerRoot, validateBeforeStart)
-        : runCoordinator.start(adapter, request.command, { artifactBaseDirectory: partnerRoot, disposeAfter: Boolean(imported), validateBeforeStart, waitForWriter: !background });
-    });
-  }
-
   async function prepareStudioTurn(value: StudioPrepareTurnRequest) {
     if (value.source === 'existing_thread') throw new Error('STUDIO_EXISTING_THREAD_NOT_SUPPORTED');
     // v3 group bindings rebuild once from the canonical ledger so runtimes
@@ -1641,137 +1277,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     const prepared = await studioRooms.prepareTurn(value.roomId, value.roundId, value.partnerId, binding.generation, binding.conversationId, binding.nativeThreadId, binding.studioSpeakingMode);
     const snapshot = await studioRooms.getRoom(value.roomId);
     return studioAttachments.prepareTurn(prepared, snapshot?.messages ?? []);
-  }
-
-  async function markAcceptedStudioSpeakingMode(event: PartnerEvent, command: SendMessageCommand) {
-    if (event.type !== 'message.accepted' || command.route?.scope !== 'group') return;
-    const speakingMode = command.runtimeContext?.conversation?.studio?.speakingMode;
-    if (!speakingMode) return;
-    try {
-      const binding = await nativeBindings.getForScope(command.partnerId, 'group', command.route.roomId);
-      if (binding?.generation === command.route.bindingGeneration && binding.conversationId === command.conversationId
-        && binding.nativeThreadId === event.sessionId && binding.studioSpeakingMode !== speakingMode) await nativeBindings.markStudioSpeakingMode(binding.bindingId, speakingMode);
-    } catch {
-      // This bookkeeping must not fail an accepted Studio turn. If it cannot
-      // be persisted, the next turn safely repeats the mode notice once.
-    }
-  }
-
-  async function startAdapterRun(adapter: PartnerAdapter, command: SendMessageCommand, disposeAfter = false, artifactBaseDirectory?: string, validateBeforeStart?: () => Promise<void>) {
-    if (/^(compact|reload):/.test(writerLeases.ownerFor({ kind: 'conversation', partnerId: command.partnerId, conversationId: command.conversationId }) ?? '')) throw new Error('COMPACT_CONVERSATION_BUSY');
-    const lease = await writerLeases.acquire({ kind: 'conversation', partnerId: command.partnerId, conversationId: command.conversationId }, `legacy:${command.commandId}`);
-    const release = async () => {
-      try {
-        if (disposeAfter) await adapter.dispose?.();
-      } finally {
-        lease.release();
-      }
-    };
-    let iterator: AsyncIterator<PartnerEvent> | undefined;
-    try {
-      await validateBeforeStart?.();
-      if (command.sessionId) await hydrateManagedRuntimeProfile(command);
-      delivery(command, 'awaiting_confirmation');
-      const stream = adapter.sendMessage(command)[Symbol.asyncIterator]();
-      iterator = stream;
-      const first = await stream.next();
-      if (first.done || !isPartnerEvent(first.value) || first.value.type !== 'session.bound') throw new Error('ADAPTER_SESSION_NOT_BOUND');
-      const firstEvent = withCommandRoute(first.value, command);
-      if (!sameEventRoute(firstEvent, command)) throw new Error('ADAPTER_EVENT_ROUTE_MISMATCH');
-      if (command.route?.scope === 'group') {
-        const binding = await nativeBindings.getForScope(command.partnerId, 'group', command.route.roomId);
-        if (!binding || binding.conversationId !== command.conversationId || binding.generation !== command.route.bindingGeneration) throw new Error('NATIVE_BINDING_ROUTE_MISMATCH');
-        if (binding.state === 'pending') await nativeBindings.activate(binding.bindingId, firstEvent.sessionId);
-        else if (binding.nativeThreadId !== firstEvent.sessionId) throw new Error('NATIVE_THREAD_ROUTE_MISMATCH');
-      }
-      await studioRooms.observeEvent(firstEvent);
-      sendEvent(firstEvent);
-      const receipt = { runId: firstEvent.runId, sessionId: firstEvent.sessionId };
-      host.bindRun(receipt.runId, adapter);
-      host.bindSession(command.partnerId, command.conversationId, receipt.sessionId, adapter);
-      if (command.route?.scope === 'group') await studioRooms.bindRun(command.route.roomId, command.route.roundId, command.partnerId, receipt.runId, receipt.sessionId);
-      const bound = firstEvent as Extract<PartnerEvent, { type: 'session.bound' }>;
-      await persistFirstSingleChatBinding(bound, command);
-      await sessionBootstrapRecorder.onBound(bound, command);
-      void (async () => {
-        let lastSequence = firstEvent.sequence;
-        try {
-          for (;;) {
-            const next = await stream.next();
-            if (next.done) break;
-            if (!isPartnerEvent(next.value)) continue;
-            const routedEvent = withCommandRoute(next.value, command);
-            if (!sameEventRoute(routedEvent, command) || routedEvent.sessionId !== receipt.sessionId || routedEvent.runId !== receipt.runId) throw new Error('ADAPTER_EVENT_ROUTE_MISMATCH');
-            lastSequence = routedEvent.sequence;
-            await studioRooms.observeEvent(routedEvent);
-            if (command.route?.scope === 'group' && routedEvent.type === 'run.completed') {
-              const binding = await nativeBindings.getForScope(command.partnerId, 'group', command.route.roomId);
-              if (binding?.generation === command.route.bindingGeneration) await nativeBindings.markCompleted(binding.bindingId, routedEvent.runId).catch(() => undefined);
-            }
-            await captureGuidanceSource(routedEvent, command);
-            await sessionBootstrapRecorder.onEvent(routedEvent, command);
-            await markAcceptedStudioSpeakingMode(routedEvent, command);
-            notifyHandoffDelivered(routedEvent, command);
-            if (routedEvent.type === 'message.accepted') delivery(command, 'delivered');
-            if (routedEvent.type === 'run.failed') delivery(command, 'failed', routedEvent.error);
-            const outgoing = await transformRuntimeEvent(routedEvent, artifactBaseDirectory);
-            if (outgoing) sendEvent(outgoing);
-          }
-        } catch (error) {
-          if (command.route?.scope === 'group') {
-            await nativeBindings.invalidateGroupTurn(command).catch(() => undefined);
-            const failed: PartnerEvent = {
-              protocolVersion: AGENT_PROTOCOL_VERSION,
-              type: 'run.failed',
-              eventId: randomUUID(),
-              partnerId: command.partnerId,
-              conversationId: command.conversationId,
-              connectionSource: command.connectionSource,
-              clientMessageId: command.clientMessageId,
-              sessionId: receipt.sessionId,
-              runId: receipt.runId,
-              sequence: lastSequence + 1,
-              occurredAt: new Date().toISOString(),
-              route: command.route,
-              error: { code: 'ADAPTER_STREAM_FAILED', message: '伙伴的事件流意外中断。', stage: 'transport', retryable: true },
-            };
-            await studioRooms.observeEvent(failed).catch(() => undefined);
-            sendEvent(failed);
-          }
-          delivery(command, 'failed', {
-            code: 'ADAPTER_STREAM_FAILED',
-            message: '伙伴的事件流意外中断。',
-            stage: 'transport',
-            retryable: true,
-            technicalDetail: error instanceof Error ? error.message.slice(0, 500) : undefined,
-          });
-        } finally {
-          host.releaseRun(receipt.runId);
-          await stream.return?.().catch(() => undefined);
-          await release().catch(() => undefined);
-          if (command.route?.scope === 'group' && studioRooms.hasPendingPassRetry(receipt.runId)) {
-            studioOrchestration.orchestrator?.markPassCorrection(command.route.roomId, command.route.roundId, command.partnerId);
-            await studioRooms.retryPassAfterRelease(receipt.runId).catch(() => undefined);
-          }
-        }
-      })();
-      return receipt;
-    } catch (error) {
-      await iterator?.return?.().catch(() => undefined);
-      await release().catch(() => undefined);
-      if (command.route?.scope === 'group') {
-        await nativeBindings.invalidateGroupTurn(command).catch(() => undefined);
-        await studioRooms.failPreparedTurn(command.route.roomId, command.route.roundId, command.partnerId).catch(() => undefined);
-      }
-      delivery(command, 'failed', codexThreadInUseFailure(error) ?? {
-        code: 'ADAPTER_START_FAILED',
-        message: '无法启动伙伴会话。',
-        stage: 'adapter',
-        retryable: true,
-        technicalDetail: error instanceof Error ? error.message.slice(0, 500) : undefined,
-      });
-      throw error;
-    }
   }
 
   async function automationWorkspaceSignature(partnerId: string, projectId?: string) {
@@ -1956,7 +1461,6 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
   };
 }
 
-
 function isUserProfileSeed(value: unknown): value is { displayName: string; introduction: string; updatedAt: string; revision?: string } {
   return isRecord(value)
     && typeof value.displayName === 'string' && value.displayName.length <= 80
@@ -1993,21 +1497,6 @@ function isJsonRecord(value: Record<string, unknown>) {
   return valid(value, 0);
 }
 
-function isAttachmentCapabilities(value: unknown) {
-  return isRecord(value)
-    && typeof value.supportsImageInput === 'boolean'
-    && Array.isArray(value.acceptedMimeTypes)
-    && value.acceptedMimeTypes.every((item) => typeof item === 'string' && item === item.trim().toLocaleLowerCase() && /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(item))
-    && Number.isSafeInteger(value.maxImageBytes) && Number(value.maxImageBytes) >= 0
-    && ['local_path', 'native_multimodal', 'metadata_only'].includes(String(value.attachmentTransport));
-}
-
-
-
-
-
-
-
 function isStudioRoomMetadata(value: unknown): value is StudioRoomMetadata {
   return isRecord(value)
     && typeof value.roomId === 'string' && Boolean(value.roomId)
@@ -2015,19 +1504,6 @@ function isStudioRoomMetadata(value: unknown): value is StudioRoomMetadata {
     && typeof value.name === 'string' && Boolean(value.name.trim())
     && (value.archived === undefined || typeof value.archived === 'boolean')
     && Array.isArray(value.memberIds) && value.memberIds.every((id) => typeof id === 'string' && Boolean(id));
-}
-
-function resolveApiAttachmentCapabilities(connection: ApiPartnerConnection) {
-  const defaults = {
-    supportsImageInput: false,
-    acceptedMimeTypes: [] as string[],
-    maxImageBytes: 0,
-    attachmentTransport: 'metadata_only' as const,
-  };
-  const requested = connection.attachmentCapabilities ?? defaults;
-  if (!isAttachmentCapabilities(requested)) throw new Error('INVALID_ATTACHMENT_CAPABILITIES');
-  if (requested.attachmentTransport === 'local_path' || (connection.provider === 'deepseek' && (requested.attachmentTransport !== defaults.attachmentTransport || requested.supportsImageInput))) throw new Error('API_ATTACHMENT_TRANSPORT_NOT_IMPLEMENTED');
-  return { ...requested, acceptedMimeTypes: [...new Set(requested.acceptedMimeTypes)] };
 }
 
 function archivedMarkdownFileName(name: string, suffix: string) {
