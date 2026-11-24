@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { MEMORY_STATUSES, MEMORY_TYPES, assertMemoryArchiveRecords, memorySourceKey, memoryWeightOrDefault, type MemoryRecord, type MemorySourceAnchor } from '../../../shared/memoryArchive';
-import type { PartnerMemoryService } from '../PartnerMemoryService';
-import type { MemorySourceService } from '../MemorySourceService';
-import { searchMemoryRecords } from '../PartnerMemoryToolService';
-import type { ApiProviderAdapter, ApiProviderMessage, ApiToolDefinition } from '../../api/ApiProviderAdapter';
-import { fallbackHash, type FallbackJob, type FallbackMessage } from './MemoryFallbackJobStore';
-import { createDefaultApiProviderRegistry } from '../../api/ApiProviderRegistry';
 import { API_ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS } from '../../../shared/apiConnections';
+import { MEMORY_STATUSES, MEMORY_TYPES, assertMemoryArchiveRecords, memorySourceKey, memoryWeightOrDefault, type MemoryRecord, type MemorySourceAnchor } from '../../../shared/memoryArchive';
 import type { MemoryFallbackSettings } from '../../../shared/memoryFallback';
+import type { ApiProviderAdapter, ApiProviderMessage, ApiToolDefinition } from '../../api/ApiProviderAdapter';
+import { createDefaultApiProviderRegistry } from '../../api/ApiProviderRegistry';
+import type { MemoryImportService } from '../MemoryImportService';
+import type { MemorySourceService } from '../MemorySourceService';
+import type { PartnerMemoryService } from '../PartnerMemoryService';
+import { searchMemoryRecords } from '../PartnerMemoryToolService';
+import { fallbackHash, type FallbackJob, type FallbackMessage } from './MemoryFallbackJobStore';
+import type { MemoryFallbackScheduler } from './MemoryFallbackScheduler';
+import type { MemoryFallbackSettingsStore } from './MemoryFallbackSettingsStore';
 
 // Native provider items stay in this invocation's messages, never in shared or persisted history.
 const nativeBinding = 'asterium-memory-fallback';
@@ -171,4 +174,28 @@ export class MemoryConsolidation {
     assertMemoryArchiveRecords([...records.filter((record) => !changed.has(record.memoryId)), ...changed.values()], job.partnerId);
     return [...changed.values()];
   }
+}
+
+
+interface MemoryModelConnectionDependencies {
+  memoryFallbackSettings: MemoryFallbackSettingsStore;
+}
+
+export function createMemoryModelConnections(dependencies: MemoryModelConnectionDependencies) {
+  const { memoryFallbackSettings } = dependencies;
+  const connectImport: ConstructorParameters<typeof MemoryImportService>[2] = async input => {
+    const config = await memoryFallbackSettings.get();
+    if (config.provider !== input.provider || config.endpoint !== input.endpoint || config.model !== input.model) {
+      throw new Error('MEMORY_IMPORT_CONNECTION_CHANGED');
+    }
+    const apiKey = await memoryFallbackSettings.secret(config);
+    if (!apiKey) throw new Error('MEMORY_IMPORT_CREDENTIAL_REQUIRED');
+    return createMemoryFallbackAdapter(config, apiKey);
+  };
+  const connectFallback: ConstructorParameters<typeof MemoryFallbackScheduler>[4] = async (config) => {
+    const apiKey = await memoryFallbackSettings.secret(config);
+    if (!apiKey) throw new Error('MEMORY_FALLBACK_CREDENTIAL_REQUIRED');
+    return createMemoryFallbackAdapter(config, apiKey);
+  };
+  return { connectImport, connectFallback };
 }

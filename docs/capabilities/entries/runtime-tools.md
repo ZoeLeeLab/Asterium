@@ -40,7 +40,18 @@
     "src/main/runtime/ExistingPartnerReview.ts",
     "src/main/adapters/CyberBossBridgeClient.ts",
     "src/main/agentIpc.ts",
-    "src/shared/existingPartnerReview.ts"
+    "src/shared/existingPartnerReview.ts",
+    "src/main/runtime/LocalRuntimeResolver.ts",
+    "src/main/runtime/MessageRuntime.ts",
+    "src/main/runtime/LegacyRunPath.ts",
+    "src/main/runtime/RuntimeEventBridge.ts",
+    "src/main/runtime/RuntimeRunHooks.ts",
+    "src/main/runtime/RuntimeToolBindings.ts",
+    "src/main/runtime/DelegationExecutor.ts",
+    "src/main/runtime/DelegationToolHandler.ts",
+    "src/main/runtime/SessionMaintenanceRuntime.ts",
+    "src/main/runtime/ExistingThreadService.ts",
+    "src/main/studio/StudioTurnRuntime.ts"
   ],
   "tests": [
     "tests/unit/asteriumRuntimeTools.test.ts",
@@ -74,7 +85,8 @@
     "tests/unit/singleChatHistoryStore.test.ts",
     "tests/unit/singleChatMessageStore.test.ts",
     "tests/renderer/Phase6RunHistoryIntegration.test.tsx",
-    "tests/renderer/ExistingPartnerReview.test.tsx"
+    "tests/renderer/ExistingPartnerReview.test.tsx",
+    "tests/unit/localRuntimeResolver.test.ts"
   ],
   "docs": [
     "docs/capabilities/schema.md",
@@ -84,9 +96,12 @@
     "docs/existing-partner-review-v1.md",
     "docs/delegation-access.md",
     "docs/delegation-result-delivery.md",
-    "docs/delegation-integration-verification-20261124.md"
+    "docs/delegation-integration-verification-20261124.md",
+    "docs/agent-ipc-final-service-extraction.md",
+    "docs/agent-ipc-final-service-granularity.md",
+    "docs/agent-ipc-final-service-verification-20261124.md"
   ],
-  "lastVerifiedCommit": "d03e3bfaf89eab4ffcbc268d4c69d11ed2168361"
+  "lastVerifiedCommit": "4ed57df4cab29444a48ad9f8b128e1dbc0ad5045"
 }
 ---
 
@@ -127,4 +142,6 @@ Markdown 复核阶段的代码提交为 `a8c1a7838c732fa834d23cc463dff39d393f44c
 
 2026-11-24 整合第八阶段模块边界后，Main 持久记录原会话投递目标，在原单聊空闲时续用原线程主动汇报。同一单聊和发起伙伴可跨轮读取结果；前台消费正常完成后不重复后台汇报。用户消息优先，后台运行只尝试获取现有写租约，并在租约内复查绑定、重绑本轮工具；排队用户不会提前替换正在汇报的配置。
 
-内部输入按 Main 的确切消息／运行身份隐藏于 Codex 原生历史分页、搜索和定位，保留伙伴回复、工具及真实用户输入。重启仅补送尚未开始的结果；已接受或无法确定的提交不会盲目重发。read/write 仍为原 v1 message 的任务提示，不要求服务器升级。数据流、限制和合成验收边界见[原会话回传说明](../../delegation-result-delivery.md)。本轮 lastVerifiedCommit 绑定已存在的整合代码基线 `d03e3bfaf89eab4ffcbc268d4c69d11ed2168361`，在后续纯文档提交记录[核验](../../delegation-integration-verification-20261124.md)，不沿用旧候选验收归属。
+内部输入按 Main 的确切消息／运行身份隐藏于 Codex 原生历史分页、搜索和定位，保留伙伴回复、工具及真实用户输入。重启仅补送尚未开始的结果；已接受或无法确定的提交不会盲目重发。read/write 仍为原 v1 message 的任务提示，不要求服务器升级。数据流、限制和合成验收边界见[原会话回传说明](../../delegation-result-delivery.md)。此前委派整合阶段的核验绑定已存在代码基线 `d03e3bfaf89eab4ffcbc268d4c69d11ed2168361`，在后续纯文档提交记录[核验](../../delegation-integration-verification-20261124.md)，不沿用旧候选验收归属。
+
+最终业务辅助逻辑收尾的源码与合成回归核验绑定 `4ed57df4cab29444a48ad9f8b128e1dbc0ad5045`。模块归属与颗粒度审查见新增文档；既有工具、权限、协议和界面行为保持不变。该核验不扩展真实服务验收范围。

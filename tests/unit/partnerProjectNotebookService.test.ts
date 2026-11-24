@@ -29,6 +29,20 @@ async function fixture() {
 }
 
 describe('PartnerProjectNotebookService', () => {
+  it('keeps runtime tools scoped to the current Studio project, current membership and notebook revision', async () => {
+    const { service, setMembers } = await fixture();
+    expect(JSON.parse(await service.callTool('partner-a', 'project-a', { action: 'list' }))).toEqual([
+      { projectId: 'project-a', name: '项目 A', current: true },
+    ]);
+    await expect(service.callTool('partner-a', undefined, { action: 'read' })).rejects.toThrow('PROJECT_NOTEBOOK_PROJECT_REQUIRED');
+    await expect(service.callTool('partner-a', 'project-a', { action: 'append', projectId: 'project-b', content: '合成笔记' })).rejects.toThrow('PROJECT_NOTEBOOK_STUDIO_PROJECT_FIXED');
+    const saved = JSON.parse(await service.callTool('partner-a', 'project-a', { action: 'append', content: '合成笔记' }));
+    await expect(service.callTool('partner-a', 'project-a', { action: 'replace', content: '过期改写', expectedRevision: saved.revision - 1 })).rejects.toThrow('PROJECT_NOTEBOOK_REVISION_CONFLICT');
+    expect(JSON.parse(await service.callTool('partner-a', 'project-a', { action: 'read' })).notebook.content).toBe('合成笔记');
+    setMembers(['partner-b']);
+    await expect(service.callTool('partner-a', 'project-a', { action: 'read' })).rejects.toThrow('PROJECT_NOTEBOOK_ACCESS_DENIED');
+  });
+
   it('marks removed members inactive and restores access state when they rejoin', async () => {
     const value = await fixture();
     const store = await value.service.notebookStore('partner-b');

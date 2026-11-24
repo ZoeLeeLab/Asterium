@@ -26,7 +26,12 @@
     "src/main/api/ApiProviderRegistry.ts",
     "src/main/adapters/ClaudeCliTransport.ts",
     "src/main/adapters/claudeStdioProxy.cjs",
-    "native/claude-bridge/ClaudePipeHost.cs"
+    "native/claude-bridge/ClaudePipeHost.cs",
+    "src/main/partner/PartnerProfileService.ts",
+    "src/main/runtime/LocalRuntimeResolver.ts",
+    "src/main/runtime/SessionMaintenanceRuntime.ts",
+    "src/main/runtime/ExistingThreadService.ts",
+    "src/main/diary/DiaryGenerators.ts"
   ],
   "tests": [
     "tests/unit/codexCliAdapter.test.ts",
@@ -42,16 +47,21 @@
     "tests/unit/apiProviderRegistry.test.ts",
     "tests/unit/claudeCliBootstrap.test.ts",
     "tests/unit/claudePlanRevision.test.ts",
-    "tests/claude-cli-acceptance.mjs"
+    "tests/claude-cli-acceptance.mjs",
+    "tests/unit/localRuntimeResolver.test.ts",
+    "tests/unit/runInteractionIpc.test.ts"
   ],
   "docs": [
     "docs/capabilities/schema.md",
     "docs/single-chat-storage-stage-1.md",
     "docs/single-chat-storage-stage-4.md",
     "docs/claude-cli-compatibility.md",
-    "docs/claude-cli-release-blocker.md"
+    "docs/claude-cli-release-blocker.md",
+    "docs/agent-ipc-final-service-extraction.md",
+    "docs/agent-ipc-final-service-granularity.md",
+    "docs/agent-ipc-final-service-verification-20261124.md"
   ],
-  "lastVerifiedCommit": "a3eb8cbbf62962f346c24901b5fe1266e669629d"
+  "lastVerifiedCommit": "4ed57df4cab29444a48ad9f8b128e1dbc0ad5045"
 }
 ---
 
@@ -111,3 +121,5 @@ Codex 桌面端占用写入时，可在释放原会话后使用消息旁的「�
 ## 本机 Codex 原线程搜索（第四阶段）
 
 当前单聊搜索可查找只在已绑定 Codex 原线程中的消息，并定位到命中的历史页。搜索通过所选本机运行时只读分页，继续校验单聊绑定和工作区授权。原线程暂不可读或找不到匹配时，原有放大镜会查询星丛记录。核验来源为已存在的界面兼容修正提交，实施范围见 [实施与验证记录](../../single-chat-storage-stage-4.md)。
+
+最终业务辅助逻辑收尾的源码与合成回归核验绑定 `4ed57df4cab29444a48ad9f8b128e1dbc0ad5045`。模块归属与颗粒度审查见新增文档；既有工具、权限、协议和界面行为保持不变。该核验不扩展真实服务验收范围。

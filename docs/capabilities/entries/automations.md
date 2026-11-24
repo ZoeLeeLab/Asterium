@@ -28,7 +28,10 @@
     "src/renderer/components/settings/AutomationsView.tsx",
     "src/renderer/components/settings/AutomationConfirmationDialog.tsx",
     "src/renderer/components/layout/WorkspaceShortcuts.tsx",
-    "src/main/agentIpc.ts"
+    "src/main/agentIpc.ts",
+    "src/main/automation/AutomationTargetPolicy.ts",
+    "src/main/automation/AutomationExecutionBridge.ts",
+    "src/main/runtime/RuntimeRunHooks.ts"
   ],
   "tests": [
     "tests/unit/automation.test.ts",
@@ -42,7 +45,9 @@
     "tests/renderer/AutomationConfirmationDialog.test.tsx",
     "tests/renderer/WorkspaceShortcuts.test.tsx",
     "tests/studio-browser-smoke.mjs",
-    "tests/unit/runtimeEnvironment.test.ts"
+    "tests/unit/runtimeEnvironment.test.ts",
+    "tests/unit/automationIpc.test.ts",
+    "tests/unit/runInteractionIpc.test.ts"
   ],
   "docs": [
     "docs/release-status.md",
@@ -52,9 +57,12 @@
     "docs/development-data-isolation-s1.md",
     "docs/automatic-test-isolation.md",
     "docs/development-data-isolation-progress.md",
-    "docs/development-data-isolation-s5.md"
+    "docs/development-data-isolation-s5.md",
+    "docs/agent-ipc-final-service-extraction.md",
+    "docs/agent-ipc-final-service-granularity.md",
+    "docs/agent-ipc-final-service-verification-20261124.md"
   ],
-  "lastVerifiedCommit": "89a6c2dfd803b470690f1a2993d8ba729e981dca"
+  "lastVerifiedCommit": "4ed57df4cab29444a48ad9f8b128e1dbc0ad5045"
 }
 ---
 
@@ -79,3 +87,5 @@
 本轮源码非日常启动默认不启动计划调度，也不由 writer availability 事件触发自动扫描；日记、记忆兜底及同步伙伴后的项目自动派发同样不自动恢复。显式启动开关可启用本次后台恢复，日常行为不变；管理及执行权限没有增加。
 
 lastVerifiedCommit 保留原已提交基线，不代表本轮未提交实现已绑定。仅完成启动隔离与最小并行核验，不继承旧候选验收；结果与后续停点见 [S1 记录](../../development-data-isolation-s1.md)。
+
+最终业务辅助逻辑收尾的源码与合成回归核验绑定 `4ed57df4cab29444a48ad9f8b128e1dbc0ad5045`。模块归属与颗粒度审查见新增文档；既有工具、权限、协议和界面行为保持不变。该核验不扩展真实服务验收范围。

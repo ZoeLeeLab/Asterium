@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import type { PartnerEvent, SendMessageCommand, SendMessageReceipt } from '../../shared/agentProtocol';
 import { AGENT_PROTOCOL_VERSION } from '../../shared/agentProtocol';
+import type { ProjectWorkRoleCatalog } from '../../shared/projectRoles';
 import type {
   ProjectWorkflowDraftProposal,
   ProjectWorkflowGenerationCancelRequest,
@@ -9,12 +12,17 @@ import type {
   ProjectWorkflowGenerationStartRequest,
 } from '../../shared/projectWorkflowGeneration';
 import type { ProjectWorkflowCatalog } from '../../shared/projectWorkflows';
-import type { ProjectWorkRoleCatalog } from '../../shared/projectRoles';
 import type { AsteriumRuntimeToolController } from '../runtime/AsteriumRuntimeTools';
-import type { StudioRuntimeCatalog, StudioPartnerRecord } from '../studio/StudioRuntimeCatalog';
-import type { StudioRoomStore } from '../studio/StudioRoomStore';
+import type { createMessageRuntime } from '../runtime/MessageRuntime';
+import type { RunCoordinator } from '../runtime/RunCoordinator';
 import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
+import type { StudioRoomStore } from '../studio/StudioRoomStore';
+import type { StudioPartnerRecord, StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { ProjectDomainStore } from './ProjectDomainStore';
+import type { ProjectService } from './ProjectService';
+import type { ProjectWorkRoleStore } from './ProjectWorkRoleStore';
 import type { ProjectWorkflowGenerationStore } from './ProjectWorkflowGenerationStore';
+import type { ProjectWorkflowStore } from './ProjectWorkflowStore';
 
 const MAX_SOURCE_MESSAGES = 160;
 const MAX_SOURCE_CHARACTERS = 80_000;
@@ -400,4 +408,59 @@ function runtimeError(error: unknown) {
 
 function sha256(value: string) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+
+interface WorkflowGenerationRuntimeServices {
+  nativeBindings: NativeThreadBindingStore;
+  projectDomain: ProjectDomainStore;
+  projectService: ProjectService;
+  projectWorkflowGenerations: ProjectWorkflowGenerationStore;
+  projectWorkflows: ProjectWorkflowStore;
+  projectWorkRoles: ProjectWorkRoleStore;
+  runCoordinator: RunCoordinator;
+  startApiRuntime: ReturnType<typeof createMessageRuntime>['startApiRuntime'];
+  startLocalRuntime: ReturnType<typeof createMessageRuntime>['startLocalRuntime'];
+  studioRooms: StudioRoomStore;
+  studioRuntimeCatalog: StudioRuntimeCatalog;
+  temporaryDirectory: () => string;
+}
+
+export function createWorkflowGenerationRuntimeOptions(dependencies: WorkflowGenerationRuntimeServices) {
+  const { projectWorkflowGenerations, studioRooms, studioRuntimeCatalog, nativeBindings, projectDomain, projectWorkRoles, projectService, projectWorkflows, startApiRuntime, startLocalRuntime, runCoordinator, temporaryDirectory } = dependencies;
+  const workflowOptions: ConstructorParameters<typeof ProjectWorkflowGenerationRuntime>[0] = {
+    generations: projectWorkflowGenerations,
+    rooms: studioRooms,
+    catalog: studioRuntimeCatalog,
+    bindings: nativeBindings,
+    project: (projectId) => projectDomain.getProject(projectId),
+    roles: (projectId) => projectWorkRoles.catalog(projectId),
+    workflowCatalog: (projectId) => projectService.workflowCatalog(projectId),
+    createWorkflow: (input) => projectService.createGeneratedWorkflow(input),
+    workflowForGeneration: (generationId) => projectWorkflows.getByGenerationId(generationId),
+    startApi: ({ partner, command, planningRoot }) => {
+      if (partner.runtime.kind !== 'api') throw new Error('PROJECT_WORKFLOW_GENERATION_PLANNER_UNAVAILABLE');
+      return startApiRuntime({ connection: partner.runtime.connection, command, projectRootOverride: planningRoot });
+    },
+    startLocal: ({ partner, command, planningRoot }) => {
+      if (partner.runtime.kind !== 'local') throw new Error('PROJECT_WORKFLOW_GENERATION_PLANNER_UNAVAILABLE');
+      return startLocalRuntime({
+        adapterType: partner.runtime.adapterType,
+        partnerId: partner.partnerId,
+        partnerRootGrantId: partner.runtime.partnerRootGrantId,
+        workspaceGrantIds: [],
+        command,
+        codexRuntimeId: partner.runtime.codexRuntimeId,
+        codexRuntimeEnvironment: partner.runtime.codexRuntimeEnvironment,
+        projectRootOverride: planningRoot,
+      });
+    },
+    cancelRun: (command) => runCoordinator.cancel(command),
+    planningRoot: async () => {
+      const root = path.join(temporaryDirectory(), 'workflow-planning');
+      await mkdir(root, { recursive: true });
+      return root;
+    },
+  };
+  return workflowOptions;
 }

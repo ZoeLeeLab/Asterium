@@ -167,3 +167,9 @@ IPC 只接请求、校验权限和参数、调用服务、返回结果。文件�
 | `cancelRun` | `asterium:agent:cancel-run` | `runInteractionIpc.ts` | `runInteractionIpc.ts` |
 | `resolveAuthorization` | `asterium:agent:resolve-authorization` | `runInteractionIpc.ts` | `runInteractionIpc.ts` |
 | `resumeSession` | `asterium:agent:resume-session` | `runInteractionIpc.ts` | `runInteractionIpc.ts` |
+
+## 最终业务辅助逻辑收尾（独立分支）
+
+2026-11-24 在最新 main `eab6b7d` 上完成运行时解析、消息启动与事件协调、工具及委派、其他领域回调四组迁移；颗粒度复核后将六处辅助文件归回现有模块。主文件保留构造、注入、薄事件连接、注册和统一清理。
+
+最终代码基线 `4ed57df4cab29444a48ad9f8b128e1dbc0ad5045` 已完成默认全量、类型、Lint、隐私及累计 Windows 合成验收；旧运行分支和环境开关保留，频道注册与清理不变。详见 [颗粒度审查](agent-ipc-final-service-granularity.md) 和 [本轮验收](agent-ipc-final-service-verification-20261124.md)。尚未推送、合入 main 或打包，不继承旧安装包的验收归属。
