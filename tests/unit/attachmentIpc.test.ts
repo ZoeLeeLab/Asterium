@@ -293,7 +293,7 @@ it('previews and clears only the confirmed snapshot plan, preserving source file
 it('awaits report cancellation between attachment removal and delegation removal, propagating failures', async () => {
   const calls: string[] = [], local = new Map<string, Handler>();
   const remove = vi.fn(async () => { calls.push('attachments'); });
-  const cancelDelegation = vi.fn(async (_id: string) => { calls.push('cancel'); return true; });
+  const cancelDelegation = vi.fn<(id: string) => Promise<boolean>>(async () => { calls.push('cancel'); return true; });
   const delegation = { remove: vi.fn(async () => { calls.push('delegation'); }) };
   registerAttachmentMaintenanceIpc({ handle: (channel: string, handler: Handler) => { expect(local.has(channel)).toBe(false); local.set(channel, handler); } } as unknown as IpcMain,
     { messageAttachments: { deleteConversation: remove, previewSnapshotCleanup: vi.fn(), clearSnapshots: vi.fn() }, cancelDelegation, delegation }, () => window);

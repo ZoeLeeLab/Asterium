@@ -173,7 +173,7 @@ it('returns the API runtime receipt through the existing factory and coordinator
     const start = vi.spyOn(RunCoordinator.prototype, 'start').mockResolvedValue(receipt);
     await expect(invoke(DESKTOP_IPC.sendApiMessage, apiRequest())).resolves.toBe(receipt);
     expect(create).toHaveBeenCalledTimes(1); expect(create.mock.calls[0][0]).toMatchObject({ provider: 'openai', endpoint: apiConnection.endpoint + '/chat/completions', model: apiConnection.model, apiKey: 'fixture-secret' });
-    expect(start).toHaveBeenCalledExactlyOnceWith(adapter, create.mock.calls[0][0].command, { disposeAfter: true, artifactBaseDirectory: undefined });
+    expect(start).toHaveBeenCalledExactlyOnceWith(adapter, create.mock.calls[0][0].command, { disposeAfter: true, artifactBaseDirectory: undefined, waitForWriter: true });
   });
 });
 

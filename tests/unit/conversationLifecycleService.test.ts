@@ -9,7 +9,7 @@ function fixture() {
   const trace: string[] = [], writerLeases = new WriterLeaseCoordinator();
   const receipt = { conversationId: request.conversationId, cleanupPending: true };
   const options = {
-    cancelDelegation: vi.fn(async (_conversationId: string) => false), writerLeases,
+    cancelDelegation: vi.fn<(conversationId: string) => Promise<boolean>>(async () => false), writerLeases,
     conversationDeletions: { delete: vi.fn(async () => { trace.push('delete'); expect(writerLeases.ownerFor(scope)).toBe('delete:' + request.conversationId); return receipt; }) },
     delegation: { remove: vi.fn(async () => { trace.push('delegation'); expect(writerLeases.ownerFor(scope)).toBe('delete:' + request.conversationId); }) },
     diarySettings: { reconcileSources: vi.fn(async () => { trace.push('diary'); expect(writerLeases.ownerFor(scope)).toBeUndefined(); }) },

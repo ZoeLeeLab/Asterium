@@ -15,6 +15,10 @@ import type { StudioPartnerRecord } from '../../src/main/studio/StudioRuntimeCat
 import type { NativeThreadBinding } from '../../src/shared/studioRuntime';
 import { AGENT_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../src/shared/agentProtocol';
 import type { SingleChatConversationSnapshot } from '../../src/shared/singleChatMessages';
+import { SingleChatHistoryStore } from '../../src/main/conversation/SingleChatHistoryStore';
+import { SingleChatMessageStore } from '../../src/main/conversation/SingleChatMessageStore';
+import { CodexCliAdapter, readCodexThreadHistory, locateCodexHistoryTurn, searchCodexThreadHistory } from '../../src/main/adapters/CodexCliAdapter';
+import type { CodexAppServerTransport, CodexRpcMessage } from '../../src/main/adapters/codexAppServerProtocol';
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -31,18 +35,23 @@ async function fixture() {
     management: { personality: true, userProfile: true, memoryMode: 'asterium' }, runtime: { kind: 'local', adapterType: 'codex_cli', workspaceGrantIds: [] },
     runtimeContext: { source: 'local_cli' }, fallbackModel: 'fixture-model' };
   const leases = new WriterLeaseCoordinator();
-  const save = vi.fn(async () => undefined);
+  const save = vi.fn<SingleChatMessageStore['upsertMessage']>(async () => undefined);
   const state = { binding, source, deleted: false, workspace: 'fixture-workspace' };
   const runtime = new DelegationConversationRuntime({ binding: async () => state.binding, source: async () => state.source,
     deleted: async () => state.deleted, partner: () => partner, workspaceSignature: async () => state.workspace, leases, save });
   const captureCommand: SendMessageCommand = { protocolVersion: AGENT_PROTOCOL_VERSION, type: 'message.send', commandId: 'fixture-command',
     clientMessageId: owner.turnId, ...owner, connectionSource: 'local_cli', sessionId: binding.nativeThreadId, content: { type: 'text', text: 'Consult the example partner' } };
   const execute = vi.fn(async () => '合成复核结论');
-  const store = new PartnerDelegation(file, execute);
+  let completed!: () => void, failed!: (reason: unknown) => void;
+  const completion = new Promise<void>((resolve, reject) => { completed = resolve; failed = reject; });
+  const store = new PartnerDelegation(file, execute, () => {
+    void store.pendingDeliveries().then(batches => { if (batches.length) completed(); }, failed);
+  });
   cleanups.push(async () => { store.close(); });
   const target = await runtime.capture(captureCommand);
   const batch = await store.submit(owner, 'fixture-call', { tasks: [{ targetPartnerId: 'fixture-child', instruction: 'Review synthetic material' }] }, undefined, target);
-  await vi.waitFor(async () => expect(await store.pendingDeliveries()).toHaveLength(1));
+  await completion;
+  expect(await store.pendingDeliveries()).toHaveLength(1);
   const start = vi.fn(async (command: SendMessageCommand) => ({ runId: 'fixture-run', sessionId: command.sessionId! }));
   const cancel = vi.fn(async () => undefined);
   const delivery = new DelegationResultDelivery(store, { prepare: (b, underLease) => runtime.prepare(b, underLease), start, cancel,
@@ -92,6 +101,75 @@ it('continues the exact original thread, separates acceptance from completion, p
   await f.delivery.tick();
   expect(f.start).toHaveBeenCalledTimes(1);
   expect(f.execute).toHaveBeenCalledTimes(1);
+});
+
+it('composes native continuation, durable chat storage, restart recovery and all three history readers', async () => {
+  const f = await fixture(), profile = path.join(path.dirname(f.file), 'chat-profile');
+  const history = new SingleChatHistoryStore(profile);
+  await history.initialize(async () => ({ conversations: [{ id: owner.conversationId, partnerId: owner.partnerId,
+    title: '合成委派验收', updatedAt: time, sessionId: f.binding.nativeThreadId, messages: [] }], deletedConversationIds: [] }));
+  const messages = new SingleChatMessageStore(path.join(profile, 'messages.json'), history);
+  f.save.mockImplementation(async (...args: Parameters<SingleChatMessageStore['upsertMessage']>) => messages.upsertMessage(...args));
+  cleanups.push(() => history.flush());
+  const listeners = new Set<(message: CodexRpcMessage) => void>();
+  const rpc = vi.fn<(method: string, params?: Record<string, unknown>) => Promise<unknown>>(async (method, params) => {
+    if (method === 'thread/resume') return { thread: { id: f.binding.nativeThreadId }, model: 'fixture-model' };
+    if (method === 'collaborationMode/list') return { data: [{ name: 'Default', mode: 'default', model: null, reasoning_effort: 'medium' }] };
+    if (method === 'turn/start') {
+      expect(params?.threadId).toBe(f.binding.nativeThreadId);
+      expect(params?.sandboxPolicy).toEqual({ type: 'readOnly', networkAccess: false });
+      queueMicrotask(() => {
+        for (const message of [
+          { method: 'item/agentMessage/delta', params: { threadId: f.binding.nativeThreadId, turnId: 'fixture-run', itemId: 'fixture-answer', delta: '合成持久汇报' } },
+          { method: 'turn/completed', params: { threadId: f.binding.nativeThreadId, turn: { id: 'fixture-run', status: 'completed' } } },
+        ]) for (const listener of listeners) listener(message);
+      });
+      return { turn: { id: 'fixture-run' } };
+    }
+    if (method === 'thread/turns/list') return { data: [{ id: 'fixture-run', status: 'completed', items: [
+      { id: 'fixture-native-input', type: 'userMessage', content: [{ type: 'text', text: 'fixture-internal-material' }] },
+      { id: 'fixture-answer', type: 'agentMessage', text: '合成持久汇报' },
+    ] }] };
+    throw new Error(`Unexpected fixture RPC: ${method}`);
+  });
+  const transport: CodexAppServerTransport = { connected: true, start: async () => undefined,
+    request: async <T,>(method: string, params?: Record<string, unknown>) => await rpc(method, params) as T,
+    respond: vi.fn(), onMessage: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    onClose: () => () => undefined, close: async () => undefined };
+  const adapter = new CodexCliAdapter('fixture-cli', path.dirname(f.file), () => transport);
+  cleanups.push(() => adapter.dispose());
+  const coordinator = new RunCoordinator(new AdapterHost(), {
+    deliver: vi.fn(), emit: vi.fn(), observe: async () => undefined,
+    prepare: command => f.delivery.validateBeforeStart(command), validateFirstEvent: async (e, c) => f.delivery.validateFirst(c, e),
+    onBound: e => f.delivery.observe(e), onEvent: e => f.delivery.observe(e), onReleased: ({ command }) => f.delivery.released(command),
+  }, f.leases);
+  f.start.mockImplementation(command => coordinator.start(adapter, command, { waitForWriter: false }));
+  await f.delivery.tick();
+  await expect(f.start.mock.results[0].value).resolves.toMatchObject({ sessionId: f.binding.nativeThreadId });
+  await vi.waitFor(async () => expect((await f.raw()).delivery?.state).toBe('completed'));
+  await vi.waitFor(() => expect(f.leases.ownerFor({ kind: 'conversation', ...owner })).toBeUndefined());
+  await f.delivery.close(); f.store.close(); await history.flush();
+  const reopenedHistory = new SingleChatHistoryStore(profile);
+  cleanups.push(() => reopenedHistory.flush());
+  expect((await reopenedHistory.readPage({ conversationId: owner.conversationId }))?.messages)
+    .toEqual([expect.objectContaining({ content: '合成持久汇报', delegationBatchId: f.batch.id, runState: 'completed' })]);
+  const child = vi.fn(), recovered = new PartnerDelegation(f.file, child);
+  cleanups.push(async () => { recovered.close(); });
+  const afterRestart = new DelegationResultDelivery(recovered, { prepare: (batch, underLease) => f.runtime.prepare(batch, underLease),
+    start: f.start, cancel: f.cancel, saveReply: vi.fn() });
+  cleanups.push(() => afterRestart.close());
+  await afterRestart.tick(); expect(f.start).toHaveBeenCalledTimes(1); expect(child).not.toHaveBeenCalled();
+  const result = await recovered.wait({ ...owner, turnId: 'fixture-followup' }, f.batch.id, new AbortController().signal);
+  expect(result.tasks[0]).toMatchObject({ result: '合成复核结论' });
+  const hidden = await recovered.hiddenHistoryInputs(owner.conversationId, owner.partnerId, f.binding.nativeThreadId!);
+  const create = () => transport, thread = f.binding.nativeThreadId!;
+  const page = await readCodexThreadHistory('fixture-cli', '.', thread, undefined, create, hidden);
+  expect(page.turns[0].items).toEqual([{ id: 'fixture-answer', kind: 'assistant', text: '合成持久汇报' }]);
+  expect(await locateCodexHistoryTurn('fixture-cli', '.', thread, 'fixture-run', undefined, create, hidden)).toEqual(page);
+  const request = { partnerId: owner.partnerId, conversationId: owner.conversationId, threadId: thread, query: 'fixture-internal-material' };
+  expect((await searchCodexThreadHistory('fixture-cli', '.', request, new AbortController().signal, create, hidden)).hits).toEqual([]);
+  expect((await searchCodexThreadHistory('fixture-cli', '.', { ...request, query: '合成持久汇报' }, new AbortController().signal, create, hidden)).hits).toHaveLength(1);
+  expect(rpc.mock.calls.filter(([method]) => method === 'turn/start')).toHaveLength(1);
 });
 
 it('queues while the parent is busy and retries only before submission when the writer is taken in a race', async () => {
