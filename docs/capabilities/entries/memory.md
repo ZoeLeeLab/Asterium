@@ -23,7 +23,8 @@
     "src/renderer/components/memory/MemoryFallbackSettings.tsx",
     "src/main/memory/MemoryImportService.ts",
     "src/shared/memoryImport.ts",
-    "src/renderer/components/memory/MemoryImportPanel.tsx"
+    "src/renderer/components/memory/MemoryImportPanel.tsx",
+    "src/main/runtime/RuntimeToolBindings.ts"
   ],
   "tests": [
     "tests/unit/partnerMemoryToolService.test.ts",
@@ -37,16 +38,21 @@
     "tests/unit/memoryConsolidation.test.ts",
     "tests/renderer/MemoryFallbackSettings.test.tsx",
     "tests/unit/memoryImportService.test.ts",
-    "tests/renderer/MemoryImportPanel.test.tsx"
+    "tests/renderer/MemoryImportPanel.test.tsx",
+    "tests/unit/memoryImportIpc.test.ts",
+    "tests/renderer/Phase6RunHistoryIntegration.test.tsx"
   ],
   "docs": [
     "docs/capabilities/schema.md",
     "docs/claude-cli-compatibility.md",
     "docs/data-isolation.md",
     "docs/api-connections-guide.md",
-    "docs/avatar-memory-fallback-2026-11-02.md"
+    "docs/avatar-memory-fallback-2026-11-02.md",
+    "docs/agent-ipc-final-service-extraction.md",
+    "docs/agent-ipc-final-service-granularity.md",
+    "docs/agent-ipc-final-service-verification-20261124.md"
   ],
-  "lastVerifiedCommit": "8bbec45d55d93ce0d1a7adc754f6447fba414fcc"
+  "lastVerifiedCommit": "4ed57df4cab29444a48ad9f8b128e1dbc0ad5045"
 }
 ---
 
@@ -81,3 +87,5 @@
 记忆业务权限不变，Claude 调用改经官方 CLI；日记生成继续禁用工具并不保存原生会话。旧对话可经手动预览导入星丛记忆。日记、重读与压缩的合成回归不等于真实订阅通过。
 
 本条核验绑定已存在代码提交 `10437a8d41a665073d7c091ce2dc31ad805ba0ad`，不继承旧候选验收归属。构建和人工验收分别以新候选独立报告为准；模拟、源码及配置核验不代表真实服务或普通账户验收通过。
+
+最终业务辅助逻辑收尾的源码与合成回归核验绑定 `4ed57df4cab29444a48ad9f8b128e1dbc0ad5045`。模块归属与颗粒度审查见新增文档；既有工具、权限、协议和界面行为保持不变。该核验不扩展真实服务验收范围。

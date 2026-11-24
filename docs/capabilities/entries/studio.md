@@ -24,7 +24,10 @@
     "src/renderer/pages/StudioPage.tsx",
     "src/main/project/ProjectWorkspaceStore.ts",
     "src/main/agentIpc.ts",
-    "src/renderer/components/studio/ProjectFileTree.tsx"
+    "src/renderer/components/studio/ProjectFileTree.tsx",
+    "src/main/studio/StudioTurnRuntime.ts",
+    "src/main/runtime/RuntimeRunHooks.ts",
+    "src/main/project/ProjectWorkflowGenerationRuntime.ts"
   ],
   "tests": [
     "tests/unit/studioRoomStore.test.ts",
@@ -36,7 +39,9 @@
     "tests/unit/projectWorkspaceStore.test.ts",
     "tests/renderer/StorageSettings.test.tsx",
     "tests/unit/projectBrowserService.test.ts",
-    "tests/unit/projectNotebookIpc.test.ts"
+    "tests/unit/projectNotebookIpc.test.ts",
+    "tests/unit/studioRoundIpc.test.ts",
+    "tests/unit/projectWorkflowGenerationIpc.test.ts"
   ],
   "docs": [
     "docs/capabilities/schema.md",
@@ -46,9 +51,12 @@
     "docs/data-isolation.md",
     "docs/automatic-test-isolation.md",
     "docs/development-data-isolation-progress.md",
-    "docs/development-data-isolation-s5.md"
+    "docs/development-data-isolation-s5.md",
+    "docs/agent-ipc-final-service-extraction.md",
+    "docs/agent-ipc-final-service-granularity.md",
+    "docs/agent-ipc-final-service-verification-20261124.md"
   ],
-  "lastVerifiedCommit": "efeb5445bf93510e2d3871aaee831aadfccad880"
+  "lastVerifiedCommit": "4ed57df4cab29444a48ad9f8b128e1dbc0ad5045"
 }
 ---
 
@@ -75,4 +83,6 @@
 
 群聊可选择、拖入或粘贴图片和文件、附文或仅附件发送、保存历史快照、显示与预览卡片；每条最多 10 个、单个 20 MiB。Main 从桌面附件服务的待选 ID 生成元数据，冻结群聊账本序号并绑定当前原生会话的读取范围，复用单聊适配器与文件服务，不改变 CLI 登录或 Full 的 Windows 账户权限。图片和文档理解依伙伴能力；外部现有线程仅收到附件元数据，不收到内容或本机路径。Markdown 导出仅含引用。项目群中的用户附件在消息发布后从快照复制到项目的 `uploads/`；失败保留待补存状态，补存不重发消息。「项目文件交付」展示实际根目录和子目录，沿用原交付登记与上下文注入方式。详见[群聊附件](../../studio-attachments.md)。本轮能力以 `efeb5445bf93510e2d3871aaee831aadfccad880` 为代码基线。相关自动回归使用合成数据；开发版已人工确认拖放、粘贴、项目群附件归档和项目文件交付。合成存储及 UI 测试不等于真实伙伴理解或多人协作通过。
 
-当前 lastVerifiedCommit 绑定已存在代码提交 `a4a5ace1446b0a2601099cae337c21fbb56a8fb8`，之前的真实来源 `39122d3a15ba44f14568d6826b7dc5b590266cea` 仍在历史中保留。全套检查及新包验收结果另见独立候选报告；不继承旧候选验收归属。
+该历史阶段的核验绑定已存在代码提交 `a4a5ace1446b0a2601099cae337c21fbb56a8fb8`，之前的真实来源 `39122d3a15ba44f14568d6826b7dc5b590266cea` 仍在历史中保留。全套检查及新包验收结果另见独立候选报告；不继承旧候选验收归属。
+
+最终业务辅助逻辑收尾的源码与合成回归核验绑定 `4ed57df4cab29444a48ad9f8b128e1dbc0ad5045`。模块归属与颗粒度审查见新增文档；既有工具、权限、协议和界面行为保持不变。该核验不扩展真实服务验收范围。

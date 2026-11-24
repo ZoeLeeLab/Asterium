@@ -42,5 +42,6 @@
 | `tests/unit/localRuntimeResolver.test.ts` | 独立验证共享缓存／刷新、运行时回退、保护目录、授权、导入线程身份和删除状态。 |
 | `docs/agent-ipc-final-service-extraction.md` | 实施边界、数据流、四组职责和必须保持的行为。 |
 | `docs/agent-ipc-final-service-granularity.md` | 记录本次颗粒度审查、归并结果和逐文件理由。 |
+| `docs/agent-ipc-final-service-verification-20261124.md` | 汇总已存在代码基线、测试与 Windows 验收范围、限制和文件清单。 |
 
 归并后重新执行受影响领域定向测试、默认全量、类型、Lint、隐私检查，再提交代码；累计 Windows 验收绑定归并后的代码提交。

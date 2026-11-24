@@ -35,7 +35,12 @@
     "src/renderer/components/ui/useAttachmentTransfer.ts",
     "src/renderer/pages/ChatPage.tsx",
     "src/renderer/components/chat/MarkdownContent.tsx",
-    "src/renderer/components/chat/FilePreviewPane.tsx"
+    "src/renderer/components/chat/FilePreviewPane.tsx",
+    "src/main/project/ProjectTaskRuntime.ts",
+    "src/main/project/ProjectTaskOrchestrator.ts",
+    "src/main/project/ProjectWorkflowGenerationRuntime.ts",
+    "src/main/security/localPath.ts",
+    "src/main/notebook/PartnerProjectNotebookService.ts"
   ],
   "tests": [
     "tests/unit/apiAgentTools.test.ts",
@@ -61,7 +66,9 @@
     "tests/renderer/StudioComposer.test.tsx",
     "tests/renderer/NavigationFlows.test.tsx",
     "tests/renderer/MarkdownContent.test.tsx",
-    "tests/renderer/FilePreviewPane.test.tsx"
+    "tests/renderer/FilePreviewPane.test.tsx",
+    "tests/unit/partnerProjectNotebookService.test.ts",
+    "tests/unit/projectTaskRuntime.test.ts"
   ],
   "docs": [
     "docs/release-status.md",
@@ -71,9 +78,12 @@
     "docs/data-isolation.md",
     "docs/automatic-test-isolation.md",
     "docs/development-data-isolation-progress.md",
-    "docs/development-data-isolation-s5.md"
+    "docs/development-data-isolation-s5.md",
+    "docs/agent-ipc-final-service-extraction.md",
+    "docs/agent-ipc-final-service-granularity.md",
+    "docs/agent-ipc-final-service-verification-20261124.md"
   ],
-  "lastVerifiedCommit": "a3eb8cbbf62962f346c24901b5fe1266e669629d"
+  "lastVerifiedCommit": "4ed57df4cab29444a48ad9f8b128e1dbc0ad5045"
 }
 ---
 
@@ -133,3 +143,5 @@ Windows 沙箱为实验能力；Full 使用 Native，普通审批不授予沙箱
 附件存储新增群聊账本到当前 group:v3 原生会话的只读解析关联，Main 限制为该群已发布且处于输入序号边界内的附件 ID。未注册、其他群或单聊不能经该解析器读取；原生绑定释放只清理关联，不删除群聊快照。API 文本读取和原多模态能力继续复用现有实现。本项不新增命令权限、沙箱或认证体系；Full 原生命令沿用当前 Windows 账户授权语义。
 
 本阶段的核验来源是代码提交 `a4a5ace1446b0a2601099cae337c21fbb56a8fb8`，之前的真实来源 `bff2507f7dfab0cfca4436e7b754b2557554d3de` 仍在历史中保留。全套检查及新包验收结果另见独立候选报告；不继承旧候选验收归属。
+
+最终业务辅助逻辑收尾的源码与合成回归核验绑定 `4ed57df4cab29444a48ad9f8b128e1dbc0ad5045`。模块归属与颗粒度审查见新增文档；既有工具、权限、协议和界面行为保持不变。该核验不扩展真实服务验收范围。
