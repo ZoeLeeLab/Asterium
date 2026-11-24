@@ -1,3 +1,4 @@
+
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,4 +16,11 @@ export function normalizeReportedLocalPath(value: string, baseDirectory = proces
     if (/^(?:\\\\|\/\/)/.test(input)) return path.win32.normalize(input.replace(/\//g, '\\'));
   }
   return path.resolve(baseDirectory, input);
+}
+
+
+export function archivedMarkdownFileName(name: string, suffix: string) {
+  const withoutControlCharacters = [...name].map((character) => character.charCodeAt(0) < 32 ? '_' : character).join('');
+  const safeName = withoutControlCharacters.replace(/[<>:"/\\|?*]/g, '_').trim().slice(0, 120) || '项目';
+  return `${safeName}-${suffix}.md`;
 }

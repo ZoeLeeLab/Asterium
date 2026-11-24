@@ -1,17 +1,15 @@
 import { createHash } from 'node:crypto';
-import {
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import type { SendMessageCommand } from '../../shared/agentProtocol';
 import type { AutomationRun, AutomationTargetOption } from '../../shared/automations';
-import { AutomationRuntime } from './AutomationRuntime';
-import { ConversationDeletionService } from '../conversation/ConversationDeletionService';
-import { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
-import { ProjectWorkspaceStore } from '../project/ProjectWorkspaceStore';
-import { WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
-import { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
-import { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
-import { StudioRoomStore } from '../studio/StudioRoomStore';
-import { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { ConversationDeletionService } from '../conversation/ConversationDeletionService';
+import type { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
+import type { ProjectWorkspaceStore } from '../project/ProjectWorkspaceStore';
+import type { WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
+import type { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
+import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
+import type { StudioRoomStore } from '../studio/StudioRoomStore';
+import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { AutomationRuntime } from './AutomationRuntime';
 
 interface Dependencies {
   automationHandles: { runtime?: AutomationRuntime };

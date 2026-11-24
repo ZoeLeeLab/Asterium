@@ -1,9 +1,9 @@
 import type { StudioPrepareTurnRequest, StudioRoomMetadata } from '../../shared/studioRuntime';
 import { getCodexThreadLastTurnId, getCodexThreadLifecycles } from '../adapters/CodexCliAdapter';
-import { createLocalRuntimeResolver } from '../runtime/LocalRuntimeResolver';
-import { NativeThreadBindingStore } from './NativeThreadBindingStore';
-import { StudioAttachments } from './StudioAttachments';
-import { StudioRoomStore } from './StudioRoomStore';
+import type { createLocalRuntimeResolver } from '../runtime/LocalRuntimeResolver';
+import type { NativeThreadBindingStore } from './NativeThreadBindingStore';
+import type { StudioAttachments } from './StudioAttachments';
+import type { StudioRoomStore } from './StudioRoomStore';
 
 interface Dependencies {
   nativeBindings: NativeThreadBindingStore;

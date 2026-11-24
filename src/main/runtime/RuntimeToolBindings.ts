@@ -1,21 +1,19 @@
-import {
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import type { SendMessageCommand } from '../../shared/agentProtocol';
 import type { MemorySourceAnchor } from '../../shared/memoryArchive';
-import { AutomationAgentTools } from '../automation/AutomationAgentTools';
-import { AutomationRuntime } from '../automation/AutomationRuntime';
-import { PartnerMemoryToolService } from '../memory/PartnerMemoryToolService';
-import { PartnerProjectNotebookService } from '../notebook/PartnerProjectNotebookService';
-import { ProjectTaskRuntime } from '../project/ProjectTaskRuntime';
-import { ProjectWorkflowGenerationRuntime } from '../project/ProjectWorkflowGenerationRuntime';
-import { ArtifactRegistry } from '../security/ArtifactRegistry';
-import { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
-import { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
-import { StudioRoomStore } from '../studio/StudioRoomStore';
-import { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { AutomationAgentTools } from '../automation/AutomationAgentTools';
+import type { AutomationRuntime } from '../automation/AutomationRuntime';
+import type { PartnerMemoryToolService } from '../memory/PartnerMemoryToolService';
+import type { PartnerProjectNotebookService } from '../notebook/PartnerProjectNotebookService';
+import type { ProjectTaskRuntime } from '../project/ProjectTaskRuntime';
+import type { ProjectWorkflowGenerationRuntime } from '../project/ProjectWorkflowGenerationRuntime';
+import type { ArtifactRegistry } from '../security/ArtifactRegistry';
+import type { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
+import type { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
+import type { StudioRoomStore } from '../studio/StudioRoomStore';
+import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
 import { createAsteriumRuntimeTools, memoryToolAccess, projectNotebookToolAccess, type ProjectNotebookToolInput } from './AsteriumRuntimeTools';
 import { delegationReportTools } from './DelegationConversationRuntime';
-import { DelegationResultDelivery } from './DelegationResultDelivery';
+import type { DelegationResultDelivery } from './DelegationResultDelivery';
 import type { createDelegationToolHandler } from './DelegationToolHandler';
 interface Dependencies {
   automationAgentTools: () => AutomationAgentTools;

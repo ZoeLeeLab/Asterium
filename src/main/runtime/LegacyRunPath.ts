@@ -1,21 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import {
-  AGENT_PROTOCOL_VERSION,
-  type PartnerEvent,
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import { AGENT_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../shared/agentProtocol';
 import { isPartnerEvent } from '../../shared/agentProtocolValidation';
 import { codexThreadInUseFailure } from '../../shared/codexThreadInUse';
-import { AdapterHost } from '../AdapterHost';
+import type { AdapterHost } from '../AdapterHost';
 import type { PartnerAdapter } from '../adapters/PartnerAdapter';
-import { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
-import { StudioOrchestrator } from '../studio/StudioOrchestrator';
-import { StudioRoomStore } from '../studio/StudioRoomStore';
+import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
+import type { StudioOrchestrator } from '../studio/StudioOrchestrator';
+import type { StudioRoomStore } from '../studio/StudioRoomStore';
 import type { RunCoordinatorHooks } from './RunCoordinator';
 import { sameEventRoute, withCommandRoute } from './RunCoordinator';
-import { SessionBootstrapRecorder } from './SessionBootstrapRecorder';
-import { SessionBootstrapService } from './SessionBootstrapService';
-import { WriterLeaseCoordinator } from './WriterLeaseCoordinator';
+import type { SessionBootstrapRecorder } from './SessionBootstrapRecorder';
+import type { SessionBootstrapService } from './SessionBootstrapService';
+import type { WriterLeaseCoordinator } from './WriterLeaseCoordinator';
 interface Dependencies {
   captureGuidanceSource: (event: PartnerEvent, command: SendMessageCommand) => Promise<void>;
   delivery: RunCoordinatorHooks['deliver'];

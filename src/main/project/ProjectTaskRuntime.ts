@@ -4,9 +4,14 @@ import { AGENT_PROTOCOL_VERSION } from '../../shared/agentProtocol';
 import type { TaskAttempt, TaskHandoff, TaskHandoffSubmission, TaskReview, TaskReviewSubmission } from '../../shared/projectTaskExecution';
 import type { ProjectFileVersionRef } from '../../shared/projectWorkspace';
 import type { AsteriumTaskToolInput } from '../runtime/AsteriumRuntimeTools';
+import type { createMessageRuntime } from '../runtime/MessageRuntime';
 import type { ProjectTaskRuntimeCommand, ProjectTaskRuntimeHandle, ProjectTaskRuntimeLifecyclePort, ProjectTaskRuntimeOutcome } from '../runtime/PartnerRuntimePort';
+import type { RunCoordinator } from '../runtime/RunCoordinator';
 import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
 import type { StudioPartnerRecord, StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { ProjectFileStore } from './ProjectFileStore';
+import type { ProjectRunChangeRecorder } from './ProjectRunChangeRecorder';
+import type { ProjectTaskOrchestrator } from './ProjectTaskOrchestrator';
 import { compileProjectTaskPrompt } from './ProjectTaskPrompt';
 
 interface ProjectTaskRuntimeDependencies {
@@ -284,4 +289,51 @@ function taskRuntimeContext(partner: StudioPartnerRecord, user: ReturnType<Studi
     runtime: partner.runtimeContext,
     conversation: { title: `${command.contract.projectName} · ${command.contract.title}` },
   };
+}
+
+
+interface ProjectTaskRuntimeServices {
+  nativeBindings: NativeThreadBindingStore;
+  projectChanges: ProjectRunChangeRecorder;
+  projectFiles: ProjectFileStore;
+  projectTaskOrchestrator: ProjectTaskOrchestrator;
+  projectTaskRuntimeRef: { current?: ProjectTaskRuntime };
+  runCoordinator: RunCoordinator;
+  startApiRuntime: ReturnType<typeof createMessageRuntime>['startApiRuntime'];
+  startLocalRuntime: ReturnType<typeof createMessageRuntime>['startLocalRuntime'];
+  studioRuntimeCatalog: StudioRuntimeCatalog;
+}
+
+export function createProjectTaskRuntimeOptions(dependencies: ProjectTaskRuntimeServices) {
+  const { studioRuntimeCatalog, nativeBindings, startApiRuntime, startLocalRuntime, runCoordinator, projectTaskOrchestrator, projectTaskRuntimeRef, projectChanges, projectFiles } = dependencies;
+  const taskOptions: ConstructorParameters<typeof ProjectTaskRuntime>[0] = {
+    catalog: studioRuntimeCatalog,
+    bindings: nativeBindings,
+    startApi: ({ partner, command, projectRoot }) => {
+      if (partner.runtime.kind !== 'api') throw new Error('PROJECT_TASK_PARTNER_RUNTIME_UNAVAILABLE');
+      return startApiRuntime({ connection: partner.runtime.connection, command, projectRootOverride: projectRoot });
+    },
+    startLocal: ({ partner, command, projectRoot }) => {
+      if (partner.runtime.kind !== 'local') throw new Error('PROJECT_TASK_PARTNER_RUNTIME_UNAVAILABLE');
+      return startLocalRuntime({
+        adapterType: partner.runtime.adapterType,
+        partnerId: partner.partnerId,
+        partnerRootGrantId: partner.runtime.partnerRootGrantId,
+        workspaceGrantIds: [],
+        command,
+        codexRuntimeId: partner.runtime.codexRuntimeId,
+        codexRuntimeEnvironment: partner.runtime.codexRuntimeEnvironment,
+        projectRootOverride: projectRoot,
+      });
+    },
+    cancelRun: (command) => runCoordinator.cancel(command),
+    submitHandoff: async (attemptId, handoff) => {
+      const result = await projectTaskOrchestrator.submitHandoff(attemptId, handoff);
+      projectTaskRuntimeRef.current?.reportChanges(attemptId, handoff.changedPaths, projectChanges, handoff.verification);
+      return result;
+    },
+    submitReview: (attemptId, review) => projectTaskOrchestrator.submitReview(attemptId, review),
+    captureChangedFiles: (projectId, changedPaths) => projectFiles.captureChangedPaths(projectId, changedPaths),
+  };
+  return taskOptions;
 }

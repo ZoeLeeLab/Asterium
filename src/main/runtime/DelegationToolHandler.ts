@@ -1,19 +1,17 @@
 import { createHash } from 'node:crypto';
-import {
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import type { SendMessageCommand } from '../../shared/agentProtocol';
 import { REVIEW_MARKDOWN_MAX_BYTES } from '../../shared/existingPartnerReview';
-import { ApiConnectionStore } from '../api/ApiConnectionStore';
+import type { ApiConnectionStore } from '../api/ApiConnectionStore';
 import { resolveApiAttachmentCapabilities } from '../api/ApiRuntimeConfiguration';
-import { ConversationDeletionService } from '../conversation/ConversationDeletionService';
-import { ArtifactRegistry } from '../security/ArtifactRegistry';
-import { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
-import { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { ConversationDeletionService } from '../conversation/ConversationDeletionService';
+import type { ArtifactRegistry } from '../security/ArtifactRegistry';
+import type { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
+import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
 import { assertReadOnlyDelegation, resolveDelegationAccess } from './DelegationAccess';
-import { DelegationConversationRuntime } from './DelegationConversationRuntime';
-import { codexDelegationImageLimit, createDelegationExecutor, delegationConnectionFingerprint } from './DelegationExecutor';
+import type { DelegationConversationRuntime } from './DelegationConversationRuntime';
+import { codexDelegationImageLimit, type createDelegationExecutor, delegationConnectionFingerprint } from './DelegationExecutor';
 import { describeReviewFile, existingPartnerReviewMessage, snapshotReviewArtifact } from './ExistingPartnerReview';
-import { PartnerDelegation, delegationInput, delegationWaitInput } from './PartnerDelegation';
+import { type PartnerDelegation, delegationInput, delegationWaitInput } from './PartnerDelegation';
 interface Dependencies {
   apiConnections: ApiConnectionStore;
   artifacts: ArtifactRegistry;

@@ -1,22 +1,16 @@
-import { type BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
-import {
-  AGENT_PROTOCOL_VERSION,
-  type ExistingThreadChangedEvent,
-  type MessageDeliveryEvent,
-  type PartnerEvent,
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import { AGENT_PROTOCOL_VERSION, type ExistingThreadChangedEvent, type MessageDeliveryEvent, type PartnerEvent, type SendMessageCommand } from '../../shared/agentProtocol';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
-import { AutomationConfirmations } from '../automation/AutomationConfirmations';
-import { AutomationRuntime } from '../automation/AutomationRuntime';
-import { SingleChatHistoryStore } from '../conversation/SingleChatHistoryStore';
-import { PartnerProfileStore } from '../partner/PartnerProfileStore';
-import { ProjectFileDeliveryCoordinator } from '../project/ProjectFileDeliveryCoordinator';
-import { ProjectTaskRuntime } from '../project/ProjectTaskRuntime';
+import type { AutomationConfirmations } from '../automation/AutomationConfirmations';
+import type { AutomationRuntime } from '../automation/AutomationRuntime';
+import type { SingleChatHistoryStore } from '../conversation/SingleChatHistoryStore';
+import type { PartnerProfileStore } from '../partner/PartnerProfileStore';
+import type { ProjectFileDeliveryCoordinator } from '../project/ProjectFileDeliveryCoordinator';
+import type { ProjectTaskRuntime } from '../project/ProjectTaskRuntime';
 import type { DesktopNotifications } from '../settings/DesktopNotifications';
-import { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
-import { SessionCommandService } from './SessionCommandService';
+import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { SessionCommandService } from './SessionCommandService';
 
 interface Dependencies {
   automationConfirmations: AutomationConfirmations;

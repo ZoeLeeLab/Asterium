@@ -1,27 +1,25 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  type ExistingThreadConnection
-} from '../../shared/agentProtocol';
+import type { ExistingThreadConnection } from '../../shared/agentProtocol';
 import { resolveCodexRuntime } from '../../shared/codexRuntimeSelection';
 import { loadClaudeCliRuntime } from '../adapters/ClaudeCodeAdapter';
 import { CyberBossBridgeClient, normalizeCyberBossServiceUrl } from '../adapters/CyberBossBridgeClient';
-import { ApiConnectionStore } from '../api/ApiConnectionStore';
+import type { ApiConnectionStore } from '../api/ApiConnectionStore';
 import type { ApiProviderContentPart } from '../api/ApiProviderAdapter';
 import type { ApiProviderRegistry } from '../api/ApiProviderRegistry';
-import { createApiRuntimeConfiguration, resolveApiAttachmentCapabilities } from '../api/ApiRuntimeConfiguration';
-import { ConversationDeletionService } from '../conversation/ConversationDeletionService';
-import { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
+import { type createApiRuntimeConfiguration, resolveApiAttachmentCapabilities } from '../api/ApiRuntimeConfiguration';
+import type { ConversationDeletionService } from '../conversation/ConversationDeletionService';
+import type { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
 import { generateClaudeOneShot, generateCodexDelegation } from '../diary/DiaryGenerators';
-import { PartnerDiaryCatalog } from '../diary/PartnerDiaryCatalog';
-import { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
-import { CredentialStore } from '../security/CredentialStore';
-import { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { PartnerDiaryCatalog } from '../diary/PartnerDiaryCatalog';
+import type { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
+import type { CredentialStore } from '../security/CredentialStore';
+import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
 import { assertReadOnlyDelegation, delegationSystemPrompt, resolveDelegationAccess } from './DelegationAccess';
 import { describeReviewFile, runExistingPartnerReview } from './ExistingPartnerReview';
-import { createLocalRuntimeResolver } from './LocalRuntimeResolver';
-import { type DelegationBatch, type DelegationTask } from './PartnerDelegation';
+import type { createLocalRuntimeResolver } from './LocalRuntimeResolver';
+import type { DelegationBatch, DelegationTask } from './PartnerDelegation';
 
 interface Dependencies {
   apiConnections: ApiConnectionStore;

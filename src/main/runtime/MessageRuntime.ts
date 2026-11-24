@@ -1,23 +1,20 @@
 import { createHash } from 'node:crypto';
-import {
-  type SendMessageCommand,
-  type SendMessageReceipt
-} from '../../shared/agentProtocol';
+import type { SendMessageCommand, SendMessageReceipt } from '../../shared/agentProtocol';
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE } from '../../shared/codexThreadImport';
 import { sameCodexPath } from '../adapters/codexSessionFile';
-import { ApiConnectionStore } from '../api/ApiConnectionStore';
+import type { ApiConnectionStore } from '../api/ApiConnectionStore';
 import type { ApiProviderRegistry } from '../api/ApiProviderRegistry';
-import { createApiRuntimeConfiguration, resolveApiAttachmentCapabilities } from '../api/ApiRuntimeConfiguration';
-import { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
-import { type ApiSendRequest, type LocalCliSendRequest } from '../ipc/runInteractionIpc';
-import { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
-import { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
+import { type createApiRuntimeConfiguration, resolveApiAttachmentCapabilities } from '../api/ApiRuntimeConfiguration';
+import type { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
+import type { ApiSendRequest, LocalCliSendRequest } from '../ipc/runInteractionIpc';
+import type { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
+import type { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
 import type { AsteriumRuntimeToolController } from './AsteriumRuntimeTools';
 import type { createLegacyRunPath } from './LegacyRunPath';
-import { createLocalRuntimeResolver, resolveProjectRuntimeRoot } from './LocalRuntimeResolver';
-import { PartnerRuntimeFactory, localRuntimeAdapterKey } from './PartnerRuntimeFactory';
-import { RunCoordinator } from './RunCoordinator';
-import { SessionBootstrapService } from './SessionBootstrapService';
+import { type createLocalRuntimeResolver, resolveProjectRuntimeRoot } from './LocalRuntimeResolver';
+import { type PartnerRuntimeFactory, localRuntimeAdapterKey } from './PartnerRuntimeFactory';
+import type { RunCoordinator } from './RunCoordinator';
+import type { SessionBootstrapService } from './SessionBootstrapService';
 interface Dependencies {
   apiConnections: ApiConnectionStore;
   apiProviders: ApiProviderRegistry;

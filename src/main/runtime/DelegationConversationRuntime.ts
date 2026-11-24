@@ -1,11 +1,18 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { AGENT_PROTOCOL_VERSION, type PartnerEvent, type SendMessageCommand } from '../../shared/agentProtocol';
+import { trimChatHistory } from '../../shared/chatHistory';
 import type { SingleChatConversationSnapshot, SingleChatIndexedMessage } from '../../shared/singleChatMessages';
 import type { NativeThreadBinding } from '../../shared/studioRuntime';
-import type { StudioPartnerRecord } from '../studio/StudioRuntimeCatalog';
-import type { DelegationBatch, DelegationDestination } from './PartnerDelegation';
-import type { WriterLeaseCoordinator } from './WriterLeaseCoordinator';
-import { trimChatHistory } from '../../shared/chatHistory';
+import type { ConversationDeletionService } from '../conversation/ConversationDeletionService';
+import type { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
+import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
+import type { StudioPartnerRecord, StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
 import type { AsteriumRuntimeToolController } from './AsteriumRuntimeTools';
+import { DelegationResultDelivery } from './DelegationResultDelivery';
+import type { createMessageRuntime } from './MessageRuntime';
+import type { DelegationBatch, DelegationDestination, PartnerDelegation } from './PartnerDelegation';
+import type { RunCoordinator } from './RunCoordinator';
+import type { WriterLeaseCoordinator } from './WriterLeaseCoordinator';
 
 export interface DelegationConversationDependencies {
   binding: (partnerId: string, conversationId: string) => Promise<NativeThreadBinding | undefined>;
@@ -96,4 +103,52 @@ export function delegationResultPrompt(batch: DelegationBatch, name: (id: string
       status: task.status, result: task.result, reason: task.reason,
     })) }),
   ].join('\n');
+}
+
+
+interface DelegationRuntimeDependencies {
+  nativeBindings: NativeThreadBindingStore;
+  singleChatMessages: SingleChatMessageStore;
+  conversationDeletions: ConversationDeletionService;
+  studioRuntimeCatalog: StudioRuntimeCatalog;
+  writerLeases: WriterLeaseCoordinator;
+  automationWorkspaceSignature: (partnerId: string, projectId?: string) => Promise<string>;
+  startApiRuntime: ReturnType<typeof createMessageRuntime>['startApiRuntime'];
+  startLocalRuntime: ReturnType<typeof createMessageRuntime>['startLocalRuntime'];
+  runCoordinator: RunCoordinator;
+  delegation: PartnerDelegation;
+}
+
+export function createDelegationRuntimeBridge(dependencies: DelegationRuntimeDependencies) {
+  const { nativeBindings, singleChatMessages, conversationDeletions, studioRuntimeCatalog, writerLeases, automationWorkspaceSignature, startApiRuntime, startLocalRuntime, runCoordinator, delegation } = dependencies;
+  const conversation = new DelegationConversationRuntime({
+    binding: (partnerId, conversationId) => nativeBindings.getForScope(partnerId, 'single', conversationId),
+    source: id => singleChatMessages.getConversation(id), deleted: id => conversationDeletions.isDeleted(id),
+    partner: id => studioRuntimeCatalog.partner(id), leases: writerLeases,
+    workspaceSignature: async (partnerId, binding) => createHash('sha256').update(JSON.stringify({
+      workspace: await automationWorkspaceSignature(partnerId), imported: binding.importedCodexWorkspace,
+      runtime: studioRuntimeCatalog.partner(partnerId)?.runtime,
+    })).digest('hex'),
+    save: (conversationId, partnerId, message) => singleChatMessages.upsertMessage(conversationId, partnerId, message),
+  });
+  const resultConversation = conversation;
+  const delivery = new DelegationResultDelivery(delegation, {
+    prepare: (batch, underLease) => resultConversation.prepare(batch, underLease),
+    start: async command => {
+      const partner = studioRuntimeCatalog.partner(command.partnerId);
+      if (!partner?.available || partner.runtime.kind === 'unsupported') throw new Error('DELEGATION_DELIVERY_DEFERRED');
+      if (partner.runtime.kind === 'api') return startApiRuntime({ connection: partner.runtime.connection, command }, true);
+      return startLocalRuntime({
+        adapterType: partner.runtime.adapterType, partnerId: command.partnerId,
+        partnerRootGrantId: partner.runtime.partnerRootGrantId, workspaceGrantIds: partner.runtime.workspaceGrantIds,
+        codexRuntimeId: partner.runtime.codexRuntimeId, codexRuntimeEnvironment: partner.runtime.codexRuntimeEnvironment, command
+      }, true);
+    },
+    cancel: (command, receipt) => runCoordinator.cancel({
+      ...command, type: 'run.cancel', commandId: 'delegation-cancel:' + randomUUID(),
+      runId: receipt.runId, sessionId: receipt.sessionId, reason: '用户消息优先'
+    }),
+    saveReply: (batch, event, text, completed) => resultConversation.saveReply(batch, event, text, completed),
+  });
+  return { conversation, delivery };
 }

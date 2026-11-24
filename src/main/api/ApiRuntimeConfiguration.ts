@@ -1,8 +1,6 @@
-import {
-  type ApiPartnerConnection
-} from '../../shared/agentProtocol';
+import type { ApiPartnerConnection } from '../../shared/agentProtocol';
 import { apiModelSettingsSchema, apiRequestSettingsSchema } from '../../shared/apiConnections';
-import { CredentialStore } from '../security/CredentialStore';
+import type { CredentialStore } from '../security/CredentialStore';
 export function createApiRuntimeConfiguration(credentials: Pick<CredentialStore, 'get'>) {
   async function configuredApiOptions(connection: ApiPartnerConnection, keyOverride?: string) {
     const requestSettings = connection.requestSettings ? apiRequestSettingsSchema.parse(connection.requestSettings) : undefined;

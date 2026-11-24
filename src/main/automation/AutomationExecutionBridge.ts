@@ -1,27 +1,24 @@
-import { type BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
-import {
-  AGENT_PROTOCOL_VERSION,
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import { AGENT_PROTOCOL_VERSION, type SendMessageCommand } from '../../shared/agentProtocol';
 import { trimChatHistory } from '../../shared/chatHistory';
+import type { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
+import type { ProjectExecutionPolicyStore } from '../project/ProjectExecutionPolicyStore';
+import type { createMessageRuntime } from '../runtime/MessageRuntime';
+import type { RunCoordinator } from '../runtime/RunCoordinator';
+import type { WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
+import type { StudioMcpAccessStore } from '../studio/StudioMcpAccessStore';
+import type { StudioMcpService } from '../studio/StudioMcpService';
+import type { StudioRoomStore } from '../studio/StudioRoomStore';
+import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
 import { AutomationAgentTools } from './AutomationAgentTools';
-import { AutomationConfirmations } from './AutomationConfirmations';
+import type { AutomationConfirmations } from './AutomationConfirmations';
 import { AutomationRuntime } from './AutomationRuntime';
 import { AutomationScheduler } from './AutomationScheduler';
-import { AutomationService } from './AutomationService';
-import { AutomationStore } from './AutomationStore';
-import { automationPrompt } from './automationPrompt';
-import { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
-import { ProjectExecutionPolicyStore } from '../project/ProjectExecutionPolicyStore';
-import { createMessageRuntime } from '../runtime/MessageRuntime';
-import { RunCoordinator } from '../runtime/RunCoordinator';
-import { WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
-import { StudioMcpAccessStore } from '../studio/StudioMcpAccessStore';
-import { StudioMcpService } from '../studio/StudioMcpService';
-import { StudioRoomStore } from '../studio/StudioRoomStore';
-import { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { AutomationService } from './AutomationService';
+import type { AutomationStore } from './AutomationStore';
 import type { createAutomationTargetPolicy } from './AutomationTargetPolicy';
+import { automationPrompt } from './automationPrompt';
 interface Dependencies {
   automationConfirmations: AutomationConfirmations;
   automationHandles: { runtime?: AutomationRuntime; scheduler?: AutomationScheduler };

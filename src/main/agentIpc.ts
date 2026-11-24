@@ -1,10 +1,6 @@
 import { app, safeStorage, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron';
 import path from 'node:path';
-import {
-  type ExistingThreadConnectionStatus,
-  type PartnerWorkspaceState,
-  type SendMessageCommand
-} from '../shared/agentProtocol';
+import type { ExistingThreadConnectionStatus, PartnerWorkspaceState, SendMessageCommand } from '../shared/agentProtocol';
 import { DESKTOP_IPC as AGENT_IPC, DESKTOP_INVOKE_CHANNELS } from '../shared/desktopIpc';
 import { AdapterHost } from './AdapterHost';
 import { ApiAgentSessionStore } from './api/ApiAgentSessionStore';
@@ -16,8 +12,8 @@ import { McpConnectionManager } from './api/extensions/McpConnectionManager';
 import { McpManagementWorkspace } from './api/extensions/McpManagementWorkspace';
 import { AutomationConfirmations } from './automation/AutomationConfirmations';
 import { createAutomationExecutionBridge } from './automation/AutomationExecutionBridge';
-import { AutomationRuntime } from './automation/AutomationRuntime';
-import { AutomationScheduler } from './automation/AutomationScheduler';
+import type { AutomationRuntime } from './automation/AutomationRuntime';
+import type { AutomationScheduler } from './automation/AutomationScheduler';
 import { AutomationService } from './automation/AutomationService';
 import { AutomationStore } from './automation/AutomationStore';
 import { createAutomationTargetPolicy } from './automation/AutomationTargetPolicy';
@@ -26,7 +22,7 @@ import { ConversationDeletionStore } from './conversation/ConversationDeletionSt
 import { ConversationLifecycleService } from './conversation/ConversationLifecycleService';
 import { SingleChatHistoryStore } from './conversation/SingleChatHistoryStore';
 import { SingleChatMessageStore } from './conversation/SingleChatMessageStore';
-import { createDiaryGeneration } from './diary/DiaryGeneration';
+import { createDiaryGeneration } from './diary/DiaryGenerators';
 import { PartnerDiaryCatalog } from './diary/PartnerDiaryCatalog';
 import { PartnerDiaryScheduler } from './diary/PartnerDiaryScheduler';
 import { PartnerDiaryService } from './diary/PartnerDiaryService';
@@ -48,7 +44,6 @@ import { registerExistingThreadIpc } from './ipc/existingThreadIpc';
 import { registerExtensionsIpc } from './ipc/extensionsIpc';
 import { registerGeneralSettingsIpc } from './ipc/generalSettingsIpc';
 import { registerCodexRuntimeQueryIpc, registerLocalRuntimeDetectionIpc } from './ipc/localRuntimeIpc';
-import { archivedMarkdownFileName } from './ipc/markdownExport';
 import { registerMemoryArchiveIpc } from './ipc/memoryArchiveIpc';
 import { registerMemoryBackupExportIpc, registerMemoryBackupImportIpc } from './ipc/memoryBackupIpc';
 import { registerMemoryFallbackModelListIpc, registerMemoryFallbackSettingsIpc } from './ipc/memoryFallbackIpc';
@@ -78,23 +73,21 @@ import { registerStudioWakeIpc } from './ipc/studioWakeIpc';
 import { registerWebSearchCredentialIpc } from './ipc/webSearchCredentialIpc';
 import { registerWorkspaceGrantRevocationIpc, registerWorkspaceGrantSelectionIpc } from './ipc/workspaceGrantIpc';
 import { MemoryImportService } from './memory/MemoryImportService';
-import { createMemoryModelConnections } from './memory/MemoryModelConnections';
 import { MemorySourceService } from './memory/MemorySourceService';
 import { PartnerMemoryBriefingService } from './memory/PartnerMemoryBriefingService';
 import { PartnerMemoryManagementService } from './memory/PartnerMemoryManagementService';
 import { PartnerMemoryService } from './memory/PartnerMemoryService';
 import { PartnerMemoryToolService } from './memory/PartnerMemoryToolService';
 import { SqliteMemoryCutover } from './memory/SqliteMemoryCutover';
-import { MemoryConsolidation } from './memory/fallback/MemoryConsolidation';
+import { createMemoryModelConnections, MemoryConsolidation } from './memory/fallback/MemoryConsolidation';
 import { singleChatFallbackInputs, studioFallbackInputs } from './memory/fallback/MemoryFallbackInputs';
 import { MemoryFallbackInventory } from './memory/fallback/MemoryFallbackInventory';
 import { MemoryFallbackJobStore } from './memory/fallback/MemoryFallbackJobStore';
 import { MemoryFallbackScheduler } from './memory/fallback/MemoryFallbackScheduler';
 import { MemoryFallbackSettingsStore } from './memory/fallback/MemoryFallbackSettingsStore';
 import { PartnerProjectNotebookService } from './notebook/PartnerProjectNotebookService';
-import { PartnerProfileService } from './partner/PartnerProfileService';
+import { isPartnerProfileSeed, isUserProfileSeed, PartnerProfileService } from './partner/PartnerProfileService';
 import { PartnerProfileStore } from './partner/PartnerProfileStore';
-import { isPartnerProfileSeed, isUserProfileSeed } from './partner/profileSeedValidation';
 import { ArtifactDeliveryService } from './project/ArtifactDeliveryService';
 import { ProjectBrowserService } from './project/ProjectBrowserService';
 import { ProjectDeletionStore } from './project/ProjectDeletionStore';
@@ -106,7 +99,11 @@ import { ProjectFileStore } from './project/ProjectFileStore';
 import { ProjectLifecycleService } from './project/ProjectLifecycleService';
 import { ProjectMutationCoordinator } from './project/ProjectMutationCoordinator';
 import { ProjectRunChangeRecorder } from './project/ProjectRunChangeRecorder';
-import { createProjectRuntimeBindings, createProjectStateReconciler } from './project/ProjectRuntimeBindings';
+import { createProjectStateReconciler } from './project/ProjectTaskOrchestrator';
+import { createProjectTaskRuntimeOptions } from './project/ProjectTaskRuntime';
+import { createWorkflowGenerationRuntimeOptions } from './project/ProjectWorkflowGenerationRuntime';
+import { archivedMarkdownFileName } from './security/localPath';
+
 import { ProjectService } from './project/ProjectService';
 import { ProjectTaskExecutionStore } from './project/ProjectTaskExecutionStore';
 import { ProjectTaskHandoffValidator } from './project/ProjectTaskHandoffValidator';
@@ -121,10 +118,9 @@ import { ProjectWorkflowStore } from './project/ProjectWorkflowStore';
 import { ProjectWorkflowTemplateStore } from './project/ProjectWorkflowTemplateStore';
 import { ProjectWorkspaceStore } from './project/ProjectWorkspaceStore';
 import { ContextHandoffService } from './runtime/ContextHandoffService';
-import { DelegationConversationRuntime } from './runtime/DelegationConversationRuntime';
+import { createDelegationRuntimeBridge, type DelegationConversationRuntime } from './runtime/DelegationConversationRuntime';
 import { createDelegationExecutor } from './runtime/DelegationExecutor';
-import { DelegationResultDelivery } from './runtime/DelegationResultDelivery';
-import { createDelegationRuntimeBridge } from './runtime/DelegationRuntimeBridge';
+import type { DelegationResultDelivery } from './runtime/DelegationResultDelivery';
 import { createDelegationToolHandler } from './runtime/DelegationToolHandler';
 import { createExistingThreadEvents, createExistingThreadService } from './runtime/ExistingThreadService';
 import { ExistingThreadWatchRegistry } from './runtime/ExistingThreadWatchRegistry';
@@ -713,22 +709,29 @@ export function registerAgentIpc(ipcMain: IpcMain, getWindow: () => BrowserWindo
     startAdapterRun,
     useLegacyRunPath,
   });
-  const { taskOptions, workflowOptions } = createProjectRuntimeBindings({
+  const taskOptions = createProjectTaskRuntimeOptions({
+    studioRuntimeCatalog,
     nativeBindings,
-    projectChanges,
-    projectDomain,
-    projectFiles,
-    projectService,
-    projectTaskOrchestrator,
-    projectTaskRuntimeRef,
-    projectWorkflowGenerations,
-    projectWorkflows,
-    projectWorkRoles,
-    runCoordinator,
     startApiRuntime,
     startLocalRuntime,
+    runCoordinator,
+    projectTaskOrchestrator,
+    projectTaskRuntimeRef,
+    projectChanges,
+    projectFiles,
+  });
+  const workflowOptions = createWorkflowGenerationRuntimeOptions({
+    projectWorkflowGenerations,
     studioRooms,
     studioRuntimeCatalog,
+    nativeBindings,
+    projectDomain,
+    projectWorkRoles,
+    projectService,
+    projectWorkflows,
+    startApiRuntime,
+    startLocalRuntime,
+    runCoordinator,
     temporaryDirectory: () => options.environment?.temporaryDirectory ?? app.getPath('temp'),
   });
   const projectTaskRuntime = new ProjectTaskRuntime(taskOptions);

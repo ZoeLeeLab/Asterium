@@ -1,23 +1,18 @@
-import { type BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
 import type { ExistingThreadChangedEvent, ExistingThreadConnection, SendMessageReceipt } from '../../shared/agentProtocol';
-import {
-  AGENT_PROTOCOL_VERSION,
-  type ExistingThreadConnectionStatus,
-  type ExistingThreadReplyEvent,
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import { AGENT_PROTOCOL_VERSION, type ExistingThreadConnectionStatus, type ExistingThreadReplyEvent, type SendMessageCommand } from '../../shared/agentProtocol';
 import { DESKTOP_IPC as AGENT_IPC } from '../../shared/desktopIpc';
 import { CyberBossBridgeClient } from '../adapters/CyberBossBridgeClient';
 import type { PartnerAdapter } from '../adapters/PartnerAdapter';
-import { PartnerDiaryCatalog } from '../diary/PartnerDiaryCatalog';
-import { PartnerDiaryScheduler } from '../diary/PartnerDiaryScheduler';
-import { ExistingThreadWatchRegistry } from './ExistingThreadWatchRegistry';
-import { PartnerRuntimeFactory } from './PartnerRuntimeFactory';
-import { RunCoordinator } from './RunCoordinator';
-import { BridgeCursorStore } from '../security/BridgeCursorStore';
-import { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
-import { CredentialStore } from '../security/CredentialStore';
+import type { PartnerDiaryCatalog } from '../diary/PartnerDiaryCatalog';
+import type { PartnerDiaryScheduler } from '../diary/PartnerDiaryScheduler';
+import type { BridgeCursorStore } from '../security/BridgeCursorStore';
+import type { ConversationAttachmentStore } from '../security/ConversationAttachmentStore';
+import type { CredentialStore } from '../security/CredentialStore';
+import type { ExistingThreadWatchRegistry } from './ExistingThreadWatchRegistry';
+import type { PartnerRuntimeFactory } from './PartnerRuntimeFactory';
+import type { RunCoordinator } from './RunCoordinator';
 
 export interface ExistingThreadSendRequest {
   connection: ExistingThreadConnection;

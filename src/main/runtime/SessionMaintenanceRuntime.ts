@@ -1,24 +1,24 @@
 import { CODEX_IMPORTED_DIRECTORY_UNAVAILABLE } from '../../shared/codexThreadImport';
-import { AdapterHost } from '../AdapterHost';
+import type { AdapterHost } from '../AdapterHost';
 import type { PartnerAdapter } from '../adapters/PartnerAdapter';
-import { ApiAgentSessionStore } from '../api/ApiAgentSessionStore';
-import { ApiConnectionStore } from '../api/ApiConnectionStore';
+import type { ApiAgentSessionStore } from '../api/ApiAgentSessionStore';
+import type { ApiConnectionStore } from '../api/ApiConnectionStore';
 import type { ApiProviderRegistry } from '../api/ApiProviderRegistry';
-import { createApiRuntimeConfiguration } from '../api/ApiRuntimeConfiguration';
+import type { createApiRuntimeConfiguration } from '../api/ApiRuntimeConfiguration';
 import { compactApiSession } from '../api/ApiSessionCompactor';
 import { confirmProfileReload } from '../api/confirmProfileReload';
-import { ConversationDeletionService } from '../conversation/ConversationDeletionService';
-import { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
-import { PartnerProfileStore } from '../partner/PartnerProfileStore';
-import { createLocalRuntimeResolver } from './LocalRuntimeResolver';
+import type { ConversationDeletionService } from '../conversation/ConversationDeletionService';
+import type { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
+import type { PartnerProfileStore } from '../partner/PartnerProfileStore';
+import type { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
+import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
+import type { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { createLocalRuntimeResolver } from './LocalRuntimeResolver';
 import { NativeProfileReloadError, confirmNativeProfileReload } from './NativeProfileReload';
-import { PartnerRuntimeFactory, localRuntimeAdapterKey } from './PartnerRuntimeFactory';
+import { type PartnerRuntimeFactory, localRuntimeAdapterKey } from './PartnerRuntimeFactory';
 import { SessionCompactionService } from './SessionCompactionService';
 import { SessionProfileReloadService, profileReloadPrompt } from './SessionProfileReloadService';
-import { WriterLeaseCoordinator } from './WriterLeaseCoordinator';
-import { PartnerWorkspaceStore } from '../security/PartnerWorkspaceStore';
-import { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
-import { StudioRuntimeCatalog } from '../studio/StudioRuntimeCatalog';
+import type { WriterLeaseCoordinator } from './WriterLeaseCoordinator';
 
 interface Dependencies {
   apiConnections: ApiConnectionStore;

@@ -2,23 +2,24 @@ import { randomUUID } from 'node:crypto';
 import type { ProjectDomainSnapshot, ProjectTask } from '../../shared/projectDomain';
 import type {
   FrozenTaskContract,
+  ProjectTaskExecutionSnapshot,
   TaskAttempt,
   TaskAttemptFailure,
   TaskAttemptStatus,
   TaskGateResolutionRequest,
   TaskHandoff,
   TaskHandoffSubmission,
-  ProjectTaskExecutionSnapshot,
   TaskReviewSubmission,
 } from '../../shared/projectTaskExecution';
-import type { ProjectExecutionPolicyStore } from './ProjectExecutionPolicyStore';
-import type { ProjectDomainStore } from './ProjectDomainStore';
-import type { ProjectTaskExecutionStore } from './ProjectTaskExecutionStore';
-import { projectPartnerWriterScope, projectWorkspaceWriterScope, type WriterLease, type WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
 import type { ProjectTaskRuntimeHandle, ProjectTaskRuntimeLifecyclePort, ProjectTaskRuntimeOutcome } from '../runtime/PartnerRuntimePort';
-import type { ProjectWorkspaceStore } from './ProjectWorkspaceStore';
+import { projectPartnerWriterScope, projectWorkspaceWriterScope, type WriterLease, type WriterLeaseCoordinator } from '../runtime/WriterLeaseCoordinator';
+import type { ProjectDomainStore } from './ProjectDomainStore';
+import type { ProjectExecutionPolicyStore } from './ProjectExecutionPolicyStore';
+import type { ProjectTaskExecutionStore } from './ProjectTaskExecutionStore';
 import type { ProjectTaskHandoffValidator } from './ProjectTaskHandoffValidator';
 import type { ProjectTaskReviewValidator } from './ProjectTaskReviewValidator';
+import type { ProjectWorkflowStore } from './ProjectWorkflowStore';
+import type { ProjectWorkspaceStore } from './ProjectWorkspaceStore';
 
 interface ProjectTaskOrchestratorOptions {
   workspaces: Pick<ProjectWorkspaceStore, 'get'>;
@@ -685,3 +686,14 @@ function requireRuntime(runtime?: ProjectTaskRuntimeLifecyclePort): ProjectTaskR
 export const NON_TERMINAL_TASK_ATTEMPT_STATUSES: readonly TaskAttemptStatus[] = [
   'waiting_dependencies', 'queued', 'starting', 'running', 'pause_requested', 'paused', 'cancel_requested',
 ];
+
+
+export function createProjectStateReconciler(projectTaskOrchestrator: ProjectTaskOrchestrator, projectWorkflows: ProjectWorkflowStore) {
+  return (snapshot: ProjectDomainSnapshot) => {
+    void projectTaskOrchestrator.reconcileProject(snapshot).catch((error) => console.error('Failed to reconcile project task dependencies.', error));
+    for (const project of snapshot.projects) {
+      void projectWorkflows.reconcileProject(project.id, snapshot.tasks.filter((task) => task.projectId === project.id))
+        .catch((error) => console.error('Failed to reconcile project workflow state.', error));
+    }
+  };
+}

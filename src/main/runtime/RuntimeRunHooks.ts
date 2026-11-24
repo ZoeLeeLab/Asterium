@@ -1,24 +1,21 @@
-import {
-  type PartnerEvent,
-  type SendMessageCommand
-} from '../../shared/agentProtocol';
+import type { PartnerEvent, SendMessageCommand } from '../../shared/agentProtocol';
 import { automationRunExpired } from '../../shared/automationTime';
 import type { AutomationRun } from '../../shared/automations';
-import { AutomationRuntime } from '../automation/AutomationRuntime';
-import { SingleChatHistoryStore } from '../conversation/SingleChatHistoryStore';
-import { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
-import { ProjectRunChangeRecorder } from '../project/ProjectRunChangeRecorder';
-import { ProjectTaskRuntime } from '../project/ProjectTaskRuntime';
-import { ProjectWorkflowGenerationRuntime } from '../project/ProjectWorkflowGenerationRuntime';
-import { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
-import { StudioOrchestrator } from '../studio/StudioOrchestrator';
-import { StudioRoomStore } from '../studio/StudioRoomStore';
-import { DelegationResultDelivery } from './DelegationResultDelivery';
-import { PartnerDelegation } from './PartnerDelegation';
+import type { AutomationRuntime } from '../automation/AutomationRuntime';
+import type { SingleChatHistoryStore } from '../conversation/SingleChatHistoryStore';
+import type { SingleChatMessageStore } from '../conversation/SingleChatMessageStore';
+import type { ProjectRunChangeRecorder } from '../project/ProjectRunChangeRecorder';
+import type { ProjectTaskRuntime } from '../project/ProjectTaskRuntime';
+import type { ProjectWorkflowGenerationRuntime } from '../project/ProjectWorkflowGenerationRuntime';
+import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
+import type { StudioOrchestrator } from '../studio/StudioOrchestrator';
+import type { StudioRoomStore } from '../studio/StudioRoomStore';
+import type { DelegationResultDelivery } from './DelegationResultDelivery';
+import type { PartnerDelegation } from './PartnerDelegation';
 import type { RunCoordinatorHooks } from './RunCoordinator';
 import { streamFailureEvent } from './RunCoordinator';
-import { SessionBootstrapRecorder } from './SessionBootstrapRecorder';
-import { SessionBootstrapService } from './SessionBootstrapService';
+import type { SessionBootstrapRecorder } from './SessionBootstrapRecorder';
+import type { SessionBootstrapService } from './SessionBootstrapService';
 interface Dependencies {
   automationHandles: { runtime?: AutomationRuntime };
   checkAutomation: (run: AutomationRun, leaseOwner?: string) => Promise<{ available: boolean; reason?: string }>;

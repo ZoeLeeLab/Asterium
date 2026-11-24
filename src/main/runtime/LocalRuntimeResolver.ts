@@ -1,19 +1,16 @@
 import { access, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  type CodexRuntimeInfo,
-  type LocalThreadLifecycleRequest
-} from '../../shared/agentProtocol';
+import type { CodexRuntimeInfo, LocalThreadLifecycleRequest } from '../../shared/agentProtocol';
 import { resolveCodexRuntime } from '../../shared/codexRuntimeSelection';
-import { type ImportedCodexWorkspace } from '../../shared/codexThreadImport';
+import type { ImportedCodexWorkspace } from '../../shared/codexThreadImport';
 import { detectClaudeCode, type ClaudeInstallation } from '../adapters/ClaudeCodeAdapter';
 import { detectCodexCli, type CodexInstallation } from '../adapters/CodexCliAdapter';
 import { sameCodexPath } from '../adapters/codexSessionFile';
-import { ConversationDeletionService } from '../conversation/ConversationDeletionService';
-import { SingleChatHistoryStore } from '../conversation/SingleChatHistoryStore';
+import type { ConversationDeletionService } from '../conversation/ConversationDeletionService';
+import type { SingleChatHistoryStore } from '../conversation/SingleChatHistoryStore';
 import { assertCanonicalPathOutsideProtectedRoots } from '../security/ProtectedPathPolicy';
-import { WorkspaceGrantStore } from '../security/WorkspaceGrantStore';
-import { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
+import type { WorkspaceGrantStore } from '../security/WorkspaceGrantStore';
+import type { NativeThreadBindingStore } from '../studio/NativeThreadBindingStore';
 
 interface LocalRuntimeResolverDependencies {
   nativeBindings: Pick<NativeThreadBindingStore, 'getForScope'>;
