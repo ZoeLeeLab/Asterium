@@ -149,6 +149,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   onLocalArtifactLink?: (href: string) => void;
   onLocalArtifactContextMenu?: (href: string, event: ReactMouseEvent<HTMLElement>) => void;
 }) {
+  const isUserMessage = className.split(/\s+/).includes('message-content--user');
   const annotations = useMemo(() => createStudioAnnotationPlugin(studioReferences, studioReferenceAuthors, studioMentions), [studioMentions, studioReferenceAuthors, studioReferences]);
   const components = useMemo<Components>(() => ({
     ...markdownComponents,
@@ -193,7 +194,7 @@ export const MarkdownContent = memo(function MarkdownContent({
     <div className={`markdown-content ${className}`.trim()}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[annotations]}
+        rehypePlugins={isUserMessage ? [userMessageBlockSpacing, annotations] : [annotations]}
         components={components}
         urlTransform={onLocalArtifactLink ? chatLinkUrlTransform : undefined}
       >{children}</ReactMarkdown>
@@ -207,6 +208,32 @@ interface HastNode {
   tagName?: string;
   properties?: Record<string, unknown>;
   children?: HastNode[];
+}
+
+const markdownBlockTags = new Set([
+  'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'li', 'ol', 'p',
+  'pre', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'ul',
+]);
+
+function userMessageBlockSpacing() {
+  return (tree: HastNode) => {
+    const visit = (node: HastNode) => {
+      if (!node.children || node.tagName === 'pre' || node.tagName === 'code') return;
+      const children = node.children;
+      // Markdown inserts newline text nodes around blocks and after <br> for readable HTML.
+      // User bubbles preserve whitespace, so those nodes create extra line boxes.
+      // Keep authored inline newlines/spaces, including those in tight list items.
+      node.children = children.filter((child, index) => !(
+        child.type === 'text' && /^[\t \r\n]*[\r\n][\t \r\n]*$/.test(child.value ?? '')
+        && (node.type === 'root'
+          || children[index - 1]?.tagName === 'br'
+          || markdownBlockTags.has(children[index - 1]?.tagName ?? '')
+          || markdownBlockTags.has(children[index + 1]?.tagName ?? ''))
+      ));
+      node.children.forEach(visit);
+    };
+    visit(tree);
+  };
 }
 
 function createStudioAnnotationPlugin(references: StudioMessageReference[], referenceAuthors: string[], mentions: StudioRenderedMention[]) {
