@@ -81,3 +81,69 @@ describe('MarkdownContent external links', () => {
     expect(view.container.querySelectorAll('.studio-mention-token')).toHaveLength(1);
   });
 });
+
+describe('MarkdownContent user bubble whitespace', () => {
+  const blockContainers = '.markdown-content, ul, ol, li, blockquote, table, thead, tbody, tr';
+  const separatorNodes = (container: HTMLElement) => [...container.querySelectorAll(blockContainers)]
+    .flatMap((node) => [...node.childNodes])
+    .filter((node) => node.nodeType === Node.TEXT_NODE && /^[\t \r\n]*\n[\t \r\n]*$/.test(node.textContent ?? ''));
+
+  it.each(['\n', '\n\n'])('does not preserve generated block separators in user lists (%j)', (separator) => {
+    const view = render(<MarkdownContent className="message-content--user">{
+      `简介\n\n${['第一项', '第二项', '第三项'].map((text) => `- ${text}`).join(separator)}`
+    }</MarkdownContent>);
+
+    expect(view.container.querySelectorAll('li')).toHaveLength(3);
+    expect(separatorNodes(view.container)).toHaveLength(0);
+  });
+
+  it('handles nested lists, quotes and tables without extra structural lines', () => {
+    const view = render(<MarkdownContent className="message-content--user">{
+      '> 引用段落\n>\n> - 引用列表\n>\n> 第二段\n\n1. 父项\n   - 子项一\n   - 子项二\n\n2. 下一项\n\n| 列一 | 列二 |\n| --- | --- |\n| 值一 | 值二 |'
+    }</MarkdownContent>);
+
+    expect(view.container.querySelector('blockquote')).not.toBeNull();
+    expect(view.container.querySelectorAll('li')).toHaveLength(5);
+    expect(view.container.querySelector('table')).not.toBeNull();
+    expect(separatorNodes(view.container)).toHaveLength(0);
+  });
+
+  it('preserves authored soft breaks, spaces, hard breaks and code whitespace', () => {
+    const view = render(<MarkdownContent className="message-content--user">{
+      '第一行  连续空格\n第二行\n\n[链接一](https://example.com/one)\n[链接二](https://example.com/two)\n\n显式换行  \n下一行\n\n```text\n  缩进一\n\n    缩进二\n```'
+    }</MarkdownContent>);
+
+    const paragraphs = view.container.querySelectorAll('p');
+    expect(paragraphs[0].textContent).toBe('第一行  连续空格\n第二行');
+    expect(paragraphs[1].textContent).toBe('链接一\n链接二');
+    expect(paragraphs[2].querySelector('br')).not.toBeNull();
+    expect(paragraphs[2].textContent).toBe('显式换行下一行');
+    expect(view.container.querySelector('pre code')?.textContent).toBe('  缩进一\n\n    缩进二\n');
+  });
+
+  it('keeps inline-only newlines in a list item even when it also has a nested list', () => {
+    const view = render(<MarkdownContent className="message-content--user">{
+      '- [链接一](https://example.com/one)\n  [链接二](https://example.com/two)\n  - 嵌套项'
+    }</MarkdownContent>);
+
+    const item = view.container.querySelector('li')!;
+    const links = item.querySelectorAll('a');
+    expect(links).toHaveLength(2);
+    expect(links[0].nextSibling?.textContent).toBe('\n');
+    expect(item.querySelector('ul li')?.textContent).toBe('嵌套项');
+  });
+
+  it('retains studio annotations and leaves assistant rendering unchanged', () => {
+    const view = render(<MarkdownContent className="extra message-content--user"
+      studioReferences={[{ seq: 2, messageId: 'fixture-message-2', authorName: '测试伙伴', excerpt: '合成摘要' }]}
+      studioMentions={[{ partnerId: 'fixture-partner', label: '测试伙伴' }]}
+    >{'测试伙伴[2]\n\n- @测试伙伴\n- 下一项'}</MarkdownContent>);
+
+    expect(screen.getByRole('link', { name: '测试伙伴[2]' })).toBeInTheDocument();
+    expect(screen.getByTitle('已提到 @测试伙伴')).toBeInTheDocument();
+    expect(separatorNodes(view.container)).toHaveLength(0);
+
+    view.rerender(<MarkdownContent>{'简介\n\n- 第一项\n- 第二项'}</MarkdownContent>);
+    expect(separatorNodes(view.container).length).toBeGreaterThan(0);
+  });
+});
