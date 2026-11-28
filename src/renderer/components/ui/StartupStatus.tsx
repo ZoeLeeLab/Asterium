@@ -1,6 +1,6 @@
 import '../../styles/startup.css';
 
-export function StartupStatus({ failed, onRetry }: { failed: boolean; onRetry: () => void }) {
+export function StartupStatus({ failed, onRetry, onQuit }: { failed: boolean; onRetry: () => void; onQuit?: () => void }) {
   // Readiness belongs to the history provider. This view never delays unmount
   // for a timer, animationend or an exit transition.
   return <div className="app-viewport startup-view" data-failed={failed || undefined}>
@@ -19,7 +19,7 @@ export function StartupStatus({ failed, onRetry }: { failed: boolean; onRetry: (
       </div>
       <div className="startup-status" role={failed ? 'alert' : 'status'} aria-live="polite">
         <p>{failed ? '单聊资料暂时无法打开。' : '伙伴们正在归来'}</p>
-        {failed && <><p className="startup-error-detail">请检查磁盘空间和访问权限，再重试。</p><button className="primary-button" type="button" onClick={onRetry}>重试</button></>}
+        {failed && <><p className="startup-error-detail">请检查磁盘空间和访问权限，再重试。</p><button className="primary-button" type="button" onClick={onRetry}>重试</button>{onQuit && <button className="startup-quit" type="button" onClick={onQuit}>退出</button>}</>}
       </div>
     </section>
   </div>;

@@ -65,6 +65,9 @@ export function useSingleChatHistory(reducer: (state: PrototypeState, action: Pr
 
   const [startupFailed, setStartupFailed] = useState(false);
   const [startupAttempt, setStartupAttempt] = useState(0);
+  useEffect(() => {
+    if (startupFailed) void window.asteriumStartup?.report('failed').catch(() => undefined);
+  }, [startupFailed]);
   const [writeFailed, setWriteFailed] = useState(false);
   const [sendSaveFailed, setSendSaveFailed] = useState(false);
   const inFlight = useRef<number | undefined>(undefined);

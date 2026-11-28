@@ -57,6 +57,14 @@ vi.mock('../../src/main/settings/runtimeEnvironment', () => ({
 vi.mock('../../src/main/settings/AppUpdateService', () => ({
   AppUpdateService: class { constructor() { return fixture.makeUpdates(); } },
 }));
+// This suite isolates update IPC. Native startup windows are exercised by the
+// dedicated service suite and real Electron handoff acceptance.
+vi.mock('../../src/main/settings/StartupWindowService', () => ({
+  StartupWindowService: class {
+    restoreTarget = undefined;
+    register() {} attach() {} dispose() {}
+  },
+}));
 
 const channels = {
   get: 'asterium:updates:get',

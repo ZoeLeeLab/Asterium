@@ -1,5 +1,14 @@
 /* Intro runs once; only a light float/blink repeats while history is pending.
    The provider unmounts this entire view as soon as data is ready. */
+html[data-startup-window], html[data-startup-window] body, html[data-startup-window] #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+html[data-startup-window] body { font-family: 'Segoe UI','Microsoft YaHei',sans-serif; }
+html[data-startup-window] * { box-sizing: border-box; }
+html[data-startup-window] .startup-view { width: 100%; height: 100%; padding: 16px; }
+html[data-startup-window] .window-drag-strip { position: fixed; z-index: 10; inset: 0 0 auto; height: 36px; -webkit-app-region: drag; }
+html[data-startup-window] .startup-status button { -webkit-app-region: no-drag; cursor: pointer; padding: 7px 20px; border-radius: 8px; border: 1px solid var(--border-strong); color: var(--text-strong); background: var(--surface-strong); font: inherit; }
+html[data-startup-window] .startup-status button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; }
+html[data-startup-window] .startup-quit { margin-left: 12px; }
+html[data-startup-window] .startup-view:not([data-failed]) .startup-status { top: calc(50% + 126px); }
 .startup-view {
   display: grid; place-items: center; overflow: hidden; color: var(--text);
   background: radial-gradient(ellipse at 50% 44%,light-dark(#fdfaff,#253451),transparent 64%),radial-gradient(ellipse at 5% 18%,light-dark(#e5e5ff,#253358),transparent 58%),linear-gradient(135deg,light-dark(#eef1ff,#141b36),light-dark(#d9e9ff,#1d2e4e) 56%,light-dark(#e9e4fb,#272744));

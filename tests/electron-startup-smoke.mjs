@@ -554,7 +554,7 @@ async function waitForAsteriumPage(browser) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const pages = browser.contexts().flatMap((context) => context.pages());
-    const page = pages.find((candidate) => candidate.url().startsWith('file:'));
+    const page = pages.find((candidate) => candidate.url().startsWith('file:') && !candidate.url().includes('/startup.html'));
     if (page) return page;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

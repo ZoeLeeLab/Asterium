@@ -100,7 +100,9 @@
     "tests/chat-sidebar-browser.mjs",
     "tests/unit/startupHistoryReads.test.ts",
     "tests/renderer/StartupStatus.test.tsx",
-    "tests/startup-responsiveness-smoke.mjs"
+    "tests/startup-responsiveness-smoke.mjs",
+    "tests/unit/startupWindowService.test.ts",
+    "tests/startup-window-electron.mjs"
   ],
   "docs": [
     "docs/release-status.md",
@@ -122,11 +124,14 @@
     "docs/automatic-test-isolation.md",
     "docs/development-data-isolation-progress.md",
     "docs/development-data-isolation-s5.md",
-    "docs/startup-responsiveness.md"
+    "docs/startup-responsiveness.md",
+    "docs/startup-window-handoff.md"
   ],
   "lastVerifiedCommit": "7d82b8541a53b14a8ee8252d6d7ea68ed19683c1"
 }
 ---
+
+独立启动窗补充（待绑定本轮代码基线）：520×450 无边框启动窗只负责动画和失败重试／退出，使用专用受限 Preload。主窗口隐藏到资料就绪及实际路由经过绘制机会，再立即交接，不等待动画结束；重复唤回不能绕过就绪条件。原窗口生命周期通过独立、固定枚举、校验当前顶层 frame 的启动 IPC 管理，不授予资料、文件、凭据或伙伴工具权限。验证与适用边界见[窗口交接记录](../../startup-window-handoff.md)，不将此补充追溯到上一条核验 SHA 或旧包。
 
 启动响应性修复核验绑定已存在的代码提交 `7d82b8541a53b14a8ee8252d6d7ea68ed19683c1`：自动化目标列表仅读取会话元信息，必要的完整消息投影在只读 Worker 中执行；历史就绪前显示已确认的圆润星形动画，开场一次、等待时轻量循环，资料就绪即进入主界面，不等待动画播完。无产品名称或模拟窗口控件；减少动画时静态显示，读取失败停止动画并可手动重试。未新增工具、IPC 或权限，仍沿用现有历史分页和恢复机制。默认全量 2140 项、定向、类型、Lint、隐私、真实浏览器与隔离 Electron 核验范围见[启动响应性记录](../../startup-responsiveness.md)，不追溯到已安装包；私用包的冻结来源和构建验收另记于候选收据。
 

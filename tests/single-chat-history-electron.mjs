@@ -63,7 +63,7 @@ await runAutoTest(async () => {
   const url = 'http://127.0.0.1:' + server.httpServer.address().port + '/';
   try {
     const external = ['electron', ...builtinModules, /^node:/];
-    for (const [entry, name] of [['src/main/main.ts', 'main.js'], ['src/preload/preload.ts', 'preload.js']]) {
+    for (const [entry, name] of [['src/main/main.ts', 'main.js'], ['src/preload/preload.ts', 'preload.js'], ['src/preload/startupPreload.ts', 'startupPreload.js']]) {
       await build({
         configFile: false, logLevel: 'error', cacheDir: autoTestOutput(),
         define: { MAIN_WINDOW_VITE_DEV_SERVER_URL: JSON.stringify(url), MAIN_WINDOW_VITE_NAME: '"main_window"' },
@@ -90,7 +90,7 @@ await runAutoTest(async () => {
         if (await fetch(endpoint + '/json/version').then(response => response.ok, () => false)) {
           const browser = await chromium.connectOverCDP(endpoint);
           const context = browser.contexts()[0];
-          const page = context.pages()[0] ?? await context.waitForEvent('page');
+          const page = context.pages().find(candidate => !candidate.url().includes('/startup.html')) ?? await context.waitForEvent('page');
           try {
             await page.getByLabel('主要页面').waitFor({ timeout: 15_000 });
             return { child, browser, page };

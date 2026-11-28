@@ -9,6 +9,11 @@ import type { SingleChatConversationSnapshot } from '../shared/singleChatMessage
 import type { MemoryArchiveChange, MemoryArchiveCommentRequest, MemoryArchiveCreateRequest, MemoryArchiveMutationRequest, MemoryArchiveQuery, MemoryArchiveSourceReadRequest, MemoryArchiveUpdateRequest } from '../shared/memoryArchive';
 import type { AsteriumAgentsApi, AsteriumAppearanceApi, AsteriumArtifactsApi, AsteriumAttachmentsApi, AsteriumConversationsApi, AsteriumMemoryApi, AsteriumNativeBindingsApi, AsteriumProjectsApi, AsteriumStudioApi, AsteriumStudioNotesApi } from '../shared/desktopBridge';
 import { DESKTOP_IPC as AGENT_IPC } from '../shared/desktopIpc';
+import { STARTUP_IPC, type AsteriumMainStartupApi } from '../shared/startupWindow';
+
+contextBridge.exposeInMainWorld('asteriumStartup', {
+  report: state => ipcRenderer.invoke(STARTUP_IPC.control, state === 'painted' ? 'main-painted' : 'main-failed'),
+} satisfies AsteriumMainStartupApi);
 
 contextBridge.exposeInMainWorld('asteriumStorage', {
   get: () => ipcRenderer.invoke(AGENT_IPC.storageGet),

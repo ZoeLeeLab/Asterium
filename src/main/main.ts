@@ -18,6 +18,7 @@ import { APP_VERSION } from '../shared/appRelease';
 import { normalizeExternalHttpUrl } from './security/externalUrl';
 import { BETA_APP_NAME } from '../shared/appRelease';
 import { activateRuntimeEnvironment } from './settings/runtimeEnvironment';
+import { StartupWindowService } from './settings/StartupWindowService';
 
 app.setName(BETA_APP_NAME);
 const environment = (() => {
@@ -47,8 +48,8 @@ let mainWindow: BrowserWindow | null = null;
 const generalSettings = new GeneralSettingsStore(() => path.join(app.getPath('userData'), 'general-settings.v1.json'),
   environment.allowStartup && process.platform === 'win32' ? windowsStartupRegistration(app, process.execPath) : undefined);
 let disposeAgentIpc: () => Promise<void> = async () => undefined;
-const lifecycle = new DesktopLifecycle({
-  getWindow: () => mainWindow, closeAction: () => generalSettings.current().closeAction,
+const lifecycle: DesktopLifecycle = new DesktopLifecycle({
+  getWindow: () => startupWindows.restoreTarget ?? mainWindow, closeAction: () => generalSettings.current().closeAction,
   createTray: (restore, quit) => {
     const tray = new Tray(nativeImage.createFromDataURL(appIcon));
     try {
@@ -60,6 +61,7 @@ const lifecycle = new DesktopLifecycle({
   },
   trayError: () => { if (mainWindow) void dialog.showMessageBox(mainWindow, { type: 'error', message: '未能创建托盘图标，窗口已保留。', detail: '你可以在通用设置中选择“彻底退出”。' }); },
   dispose: async () => {
+    startupWindows.dispose();
     notifications.dispose();
     for (const notification of activeNotifications) { try { notification.close(); } catch { /* OS state must not prevent runtime cleanup. */ } }
     activeNotifications.clear(); await disposeAgentIpc();
@@ -97,6 +99,20 @@ const notifications = new DesktopNotifications({
   navigationReady: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(DESKTOP_IPC.desktopNavigationReady); },
 });
 
+const startupWindows: StartupWindowService = new StartupWindowService({
+  createSplash: () => new BrowserWindow({
+    width: 520, height: 450, center: true, show: false, frame: false,
+    resizable: false, maximizable: false, minimizable: false, fullscreenable: false, autoHideMenuBar: true,
+    title: environment.label, icon: nativeImage.createFromDataURL(windowIcon), backgroundColor: '#edf3fa',
+    webPreferences: { preload: path.join(__dirname, 'startupPreload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  }),
+  loadSplash: window => MAIN_WINDOW_VITE_DEV_SERVER_URL
+    ? window.loadURL(new URL('startup.html', MAIN_WINDOW_VITE_DEV_SERVER_URL).href)
+    : window.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/startup.html`)),
+  quit: () => lifecycle.quit(),
+  fatal: () => { dialog.showErrorBox('启动画面无法打开', '请重新打开应用。未显示尚未就绪的主窗口。'); void lifecycle.quit(); },
+});
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     title: environment.label,
@@ -105,6 +121,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 720,
     show: false,
+    paintWhenInitiallyHidden: true,
     icon: nativeImage.createFromDataURL(windowIcon),
     backgroundColor: '#071321',
     titleBarStyle: 'hidden',
@@ -124,7 +141,7 @@ function createWindow() {
   installAppearanceRecovery(mainWindow);
   installWindowsScreenshotShortcut(mainWindow);
   mainWindow.on('page-title-updated', event => { event.preventDefault(); mainWindow?.setTitle(environment.label); });
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  startupWindows.attach(mainWindow);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const externalUrl = normalizeExternalHttpUrl(url);
@@ -151,6 +168,7 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+startupWindows.register(ipcMain);
 registerTitlebarThemeChannel(ipcMain, () => mainWindow);
 disposeAgentIpc = registerAgentIpc(ipcMain, () => mainWindow, { generalSettings, notifications, updates, environment });
 
@@ -167,7 +185,7 @@ app.whenReady().then(async () => {
     }
     await runtime.verifyClaudeBridgeResources();
   }
-  createWindow();
+  if (!mainWindow) createWindow();
 
   if (environment.allowUpdates && generalSettings.current().checkUpdatesAtStartup) void updates.check();
 

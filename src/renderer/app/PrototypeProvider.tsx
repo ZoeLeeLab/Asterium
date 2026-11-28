@@ -2584,7 +2584,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   }), [chatHistory.needsRecent, chatHistory.selectedPage, historyPending, submitChatMessage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, dispatch, refreshProfiles, refreshConversationArtifacts, replaceConversationArtifacts, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
   return <PrototypeContext.Provider value={value}>
-    {conversationAuthorityReady ? children : <StartupStatus failed={chatHistory.startupFailed} onRetry={chatHistory.retryStartup} />}
+    {conversationAuthorityReady ? children : window.asteriumStartup ? null : <StartupStatus failed={chatHistory.startupFailed} onRetry={chatHistory.retryStartup} />}
     {(chatHistory.writeFailed || chatHistory.sendSaveFailed) && <div className="run-notice single-chat-storage-notice" role="alert">
       <span>{chatHistory.writeFailed ? '单聊暂时无法保存。请检查磁盘，再切回星丛重试。' : '消息保存失败，草稿还在输入框里。请检查磁盘后重新发送。'}</span>
     </div>}

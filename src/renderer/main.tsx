@@ -18,7 +18,9 @@ import './styles/appearance-customization.css';
 import './styles/automations.css';
 import './styles/form-controls.css';
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById('root')!, {
+  onUncaughtError: error => { console.error('RENDERER_STARTUP_FAILED', error); void window.asteriumStartup?.report('failed').catch(() => undefined); },
+}).render(
   <StrictMode>
     <HashRouter>
       <PrototypeProvider>

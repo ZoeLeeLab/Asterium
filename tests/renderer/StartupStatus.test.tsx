@@ -6,7 +6,7 @@ import { PrototypeProvider } from '../../src/renderer/app/PrototypeProvider';
 import { createTestState } from '../fixtures/applicationState';
 import type { SingleChatHistorySnapshot } from '../../src/shared/singleChatHistory';
 
-afterEach(() => { vi.useRealTimers(); delete window.asteriumConversations; });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); delete window.asteriumConversations; delete (window as Window & { asteriumStartup?: unknown }).asteriumStartup; });
 
 function connect() {
   let resolve!: (snapshot: SingleChatHistorySnapshot) => void;
@@ -65,4 +65,21 @@ it.each([0, 4000, 20000])('enters chat immediately when history resolves after %
   await act(async () => { fixture.finish(); });
   expect(view.container.querySelector('.startup-view')).toBeNull();
   expect(screen.getByRole('textbox', { name: '给 测试伙伴 A 发送消息…' })).toBeInTheDocument();
+});
+
+it('keeps the native main renderer free of the full-screen animation and reports only after chat has had a paint opportunity', async () => {
+  vi.useFakeTimers();
+  const report = vi.fn(async () => undefined);
+  Object.assign(window, { asteriumStartup: { report } });
+  const fixture = connect();
+  const view = mount();
+  expect(view.container.querySelector('.startup-view')).toBeNull();
+  expect(report).not.toHaveBeenCalled();
+  await act(async () => { fixture.finish(); });
+  expect(screen.getByRole('textbox', { name: '给 测试伙伴 A 发送消息…' })).toBeInTheDocument();
+  expect(report).not.toHaveBeenCalled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+  expect(report).not.toHaveBeenCalled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+  expect(report).toHaveBeenCalledWith('painted');
 });

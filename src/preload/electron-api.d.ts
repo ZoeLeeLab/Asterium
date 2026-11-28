@@ -2,6 +2,8 @@ import type { DesktopBridge } from '../shared/desktopBridge';
 
 declare global {
   interface Window {
+    asteriumStartup?: import('../shared/startupWindow').AsteriumMainStartupApi;
+    asteriumSplash?: import('../shared/startupWindow').AsteriumSplashApi;
     asteriumDelegation?: {
       list(conversationId: string): Promise<import('../main/runtime/PartnerDelegation').DelegationBatchView[]>;
       interruptWait(conversationId: string): Promise<boolean>;
