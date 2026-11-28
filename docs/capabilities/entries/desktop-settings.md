@@ -91,7 +91,10 @@
     "tests/unit/autoTestIsolation.test.mjs",
     "tests/renderer/LocalArtifactLinkMenu.test.tsx",
     "tests/renderer/TurnTimelinePresentation.test.tsx",
-    "tests/chat-sidebar-browser.mjs"
+    "tests/chat-sidebar-browser.mjs",
+    "tests/unit/startupHistoryReads.test.ts",
+    "tests/renderer/StartupStatus.test.tsx",
+    "tests/startup-responsiveness-smoke.mjs"
   ],
   "docs": [
     "docs/release-status.md",
@@ -112,11 +115,14 @@
     "docs/development-data-isolation-s1.md",
     "docs/automatic-test-isolation.md",
     "docs/development-data-isolation-progress.md",
-    "docs/development-data-isolation-s5.md"
+    "docs/development-data-isolation-s5.md",
+    "docs/startup-responsiveness.md"
   ],
   "lastVerifiedCommit": "148fc82fd03f78d298b29fd880363dc76daa5bd5"
 }
 ---
+
+启动响应性修复（当前工作区待提交、待绑定代码基线）：自动化目标列表仅读取会话元信息，必要的完整消息投影在只读 Worker 中执行；历史就绪前显示已确认的圆润星形动画，开场一次、等待时轻量循环，资料就绪即进入主界面，不等待动画播完。无产品名称或模拟窗口控件；减少动画时静态显示，读取失败停止动画并可手动重试。未新增工具、IPC 或权限，仍沿用现有历史分页和恢复机制。测试入口和适用边界见[启动响应性记录](../../startup-responsiveness.md)。本段不追溯到现有 lastVerifiedCommit 或已安装包；代码提交建立后需单独绑定核验。
 
 既有 Bug 修复提交 `8bbec45d55d93ce0d1a7adc754f6447fba414fcc` 修复单聊伙伴列表的滚动条横向位移与手动折叠问题，并曾加入正文复制、引用菜单。本轮工作区撤回误加的整段回复菜单，保留原有选中文字引用；正文中的本机交付文件链接右键复用现有交付文件菜单，提供浏览器打开、文件夹定位、交付列表定位、复制路径、另存为与保存到项目。左键仍沿用预览和启动器定位规则。链接由现有对话交付校验接口解析，不新增 IPC；已关闭或已切换对话的异步菜单结果会丢弃。回归入口为 `LocalArtifactLinkMenu.test.tsx`、`TurnTimelinePresentation.test.tsx`、`NavigationFlows.test.tsx` 和 `chat-sidebar-browser.mjs`。本轮核验绑定已存在的代码提交 `148fc82fd03f78d298b29fd880363dc76daa5bd5`；73 项针对性回归、独立 Chromium 检查、类型、Lint、隐私与能力检查通过，不追溯到此前安装包。
 

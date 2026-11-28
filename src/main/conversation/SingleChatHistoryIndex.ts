@@ -165,12 +165,6 @@ export class SingleChatHistoryIndex {
     return { conversationIds: rows.length ? [id] : [], messageIds: rows.slice(0, size).map(row => String(row.id)), hasMore: rows.length > size };
   }
 
-  // Main readers need the projection fields, without transferring rich tool timelines into their queries.
-  projection(id: string): Message[] {
-    return this.db.prepare("SELECT json_remove(payload, '$.timeline', '$.toolEvents', '$.attachments', '$.quote') AS data FROM messages WHERE chat_id = ? ORDER BY position")
-      .all(id).map(row => decodeIndexJson(String(row.data)));
-  }
-
   private position(chatId: string, id: string) {
     const row = this.db.prepare('SELECT position FROM messages WHERE chat_id = ? AND id = ?').get(chatId, id);
     return row ? Number(row.position) : undefined;

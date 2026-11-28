@@ -72,7 +72,7 @@ export function createAutomationTargetPolicy(dependencies: Dependencies) {
 
   const targets = async () => {
     const targets: AutomationTargetOption[] = [];
-    for (const c of await singleChatMessages.list()) {
+    for (const c of await singleChatMessages.listMetadata()) {
       const partner = studioRuntimeCatalog.partner(c.partnerId);
       if (!partner || c.isArchived || c.isDisabled || !c.sessionId || await conversationDeletions.isDeleted(c.conversationId)) continue;
       const b = await nativeBindings.getForScope(c.partnerId, 'single', c.conversationId);

@@ -51,6 +51,12 @@ export class SingleChatMessageStore {
     return includesPartner ? legacy.filter(item => includesPartner(item.partnerId)) : legacy;
   }
 
+  async listMetadata() {
+    const active = await this.history?.readProjection(undefined, undefined, { metadataOnly: true });
+    if (active) return active.conversations.map(item => projectSingleChat(item, active.profile, active.busy.has(item.id)));
+    return (await this.listLegacy()).map(item => ({ ...item, messages: [] }));
+  }
+
   async listLegacy() {
     return structuredClone(Object.values((await this.storage.read()).conversations));
   }
