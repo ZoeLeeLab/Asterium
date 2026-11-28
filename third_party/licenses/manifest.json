@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "Production bundle tracing preparation baseline plus retained conservative runtime/peer closure, upstream prebundled notices and vendored/installer texts. Claude Agent SDK dependency removed; not an exact binary SBOM. Project-owned code is separately MPL-2.0; this corpus does not grant project rights or certify release clearance.",
   "sourceReviewDate": "2026-11-01",
-  "packageLockSha256": "df890af4c8e2b9dd18f97d6e704477edad46d593ea29f3bf849855c43aa81b5b",
+  "packageLockSha256": "0ad4942507f39de9497c6d329bad9f3afd65975825e168f87dc823b0e3269076",
   "aggregateSha256": "1332442f4819336fb1a4f952c60c4a006ccfeec7b8549a0c45d45493a9aa4f8c",
   "components": [
     {
