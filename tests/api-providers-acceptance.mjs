@@ -59,7 +59,14 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 let application, page;
 async function launch() {
   application = await launchTestElectron(electron, { executablePath: executable, args: [`--user-data-dir=${temporary}`] });
-  page = await application.firstWindow(); await page.locator('.app-grid, .settings-shell').first().waitFor();
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    page = application.windows().find(candidate => candidate.url().includes('/index.html'));
+    if (page) break;
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
+  assert.ok(page, 'Main renderer must load independently of the splash');
+  await page.locator('.app-grid, .settings-shell').first().waitFor();
   page.setDefaultTimeout(15000);
   page.on('pageerror', error => { (result.rendererErrors ??= []).push(error.message); });
   page.on('dialog', dialog => { void dialog.accept().catch(() => undefined); });

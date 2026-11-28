@@ -15,6 +15,7 @@ export function App() {
   const [initialRoute] = useState(readLastVisitedRoute);
   return (
     <div className="app-viewport">
+      <MainWindowPainted />
       <div className="window-drag-strip" aria-hidden="true" />
       <EnvironmentBadge />
       <LastVisitedRoute />
@@ -45,6 +46,20 @@ function EnvironmentBadge() {
   return environment && environment.profile !== 'daily'
     ? <span className="runtime-environment-badge" role="status" title={environment.userDataDirectory}>{environment.label}</span>
     : null;
+}
+
+function MainWindowPainted() {
+  const location = useLocation();
+  useEffect(() => {
+    const api = window.asteriumStartup;
+    if (!api || !APP_ROUTE.test(location.pathname)) return;
+    let next = 0;
+    // One painted frame of the actual route must precede the native handoff.
+    // These are frame opportunities, not a timed splash/animation minimum.
+    const first = requestAnimationFrame(() => { next = requestAnimationFrame(() => { void api.report('painted').catch(() => undefined); }); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(next); };
+  }, [location.pathname]);
+  return null;
 }
 
 function LastVisitedRoute() {

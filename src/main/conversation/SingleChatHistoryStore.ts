@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { appendFile, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
+import projectionWorkerSource from './historyProjectionWorker.cjs?raw';
 import type { Conversation, Message } from '../../renderer/types/domain';
 import type { SingleChatHistoryChange, SingleChatHistorySnapshot, SingleChatHistoryWrite, SingleChatMetadata, SingleChatProfile, SingleChatToolOutputRequest } from '../../shared/singleChatHistory';
 import { AtomicJsonStore } from '../storage/AtomicJsonStore';
@@ -247,7 +249,7 @@ export class SingleChatHistoryStore {
     });
   }
 
-  readProjection(conversationId?: string, includesPartner?: (partnerId: string) => boolean) {
+  readProjection(conversationId?: string, includesPartner?: (partnerId: string) => boolean, options: { metadataOnly?: boolean } = {}) {
     return this.exclusive(async () => {
       const manifest = await this.readManifest();
       if (!manifest) return undefined;
@@ -256,7 +258,11 @@ export class SingleChatHistoryStore {
         const result: Conversation[] = [];
         for (const id of ids) {
           const marker = await this.ensureIndexed(index, id);
-          if (!includesPartner || includesPartner(marker.metadata.partnerId)) result.push({ ...marker.metadata, messages: index.projection(id) });
+          if (!includesPartner || includesPartner(marker.metadata.partnerId)) result.push({ ...marker.metadata, messages: [] });
+        }
+        if (!options.metadataOnly && result.length) {
+          const messages = await readProjectionInWorker(path.join(this.root, 'history-index.v1.sqlite'), manifest.generation, result.map(item => item.id));
+          result.forEach((item, index) => { item.messages = messages[index]; });
         }
         return result;
       });
@@ -569,6 +575,25 @@ export class SingleChatHistoryStore {
     this.mutation = next.catch(() => undefined);
     return next;
   }
+}
+
+function readProjectionInWorker(file: string, generation: string, conversationIds: string[]): Promise<Message[][]> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(projectionWorkerSource, {
+      eval: true, workerData: { file, generation, conversationIds },
+      execArgv: process.execArgv.filter(argument => !argument.startsWith('--input-type')),
+    });
+    let reply: { messages?: Message[][]; error?: string } | undefined;
+    worker.once('message', value => { reply = value; });
+    worker.once('error', reject);
+    // Resolve after the read-only connection is closed and the thread exits.
+    worker.once('exit', code => {
+      if (reply?.error) reject(new Error(reply.error));
+      else if (code !== 0 || !Array.isArray(reply?.messages) || reply.messages.length !== conversationIds.length || !reply.messages.every(Array.isArray)) {
+        reject(new Error('SINGLE_CHAT_PROJECTION_WORKER_FAILED'));
+      } else resolve(reply.messages);
+    });
+  });
 }
 
 async function fingerprint(target: string) {

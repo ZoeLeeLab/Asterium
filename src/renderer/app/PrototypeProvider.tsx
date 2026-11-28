@@ -9,6 +9,7 @@ import type { SessionCommandName, SessionStatus } from '../../shared/sessionComm
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Modal } from '../components/ui/Modal';
+import { StartupStatus } from '../components/ui/StartupStatus';
 import { useLocation } from 'react-router-dom';
 
 import type { ApiPartner, Conversation, ConversationArtifact, ExistingThreadPartner, GroupChat, LocalCliPartner, Message, MessageQuote, Partner, Project, ProjectFile, PrototypeAction, PrototypeState, TaskItem, ThemeMode, TurnOperationCategory, TurnTimelineItem, UserProfile } from '../types/domain';
@@ -2583,10 +2584,7 @@ export function PrototypeProvider({ children }: { children: ReactNode }) {
   }), [chatHistory.needsRecent, chatHistory.selectedPage, historyPending, submitChatMessage, confirmProjectLocation, contextHandoffDraft, changeConversationLifecycle, dispatch, refreshProfiles, refreshConversationArtifacts, replaceConversationArtifacts, dismissChatCommandResult, dismissChatCompaction, chatMaintenanceRunning, chatCommandResults, chatCompactions, state, studioInteractions, studioRooms, theme, appearanceError, appearance, updateAppearance, setTheme, toggleTheme]);
 
   return <PrototypeContext.Provider value={value}>
-    {conversationAuthorityReady ? children : null}
-    {chatHistory.startupFailed && <div className="run-notice single-chat-storage-notice" role="alert">
-      <span>单聊资料暂时无法打开。请检查磁盘空间和访问权限，再切回星丛重试。</span>
-    </div>}
+    {conversationAuthorityReady ? children : window.asteriumStartup ? null : <StartupStatus failed={chatHistory.startupFailed} onRetry={chatHistory.retryStartup} />}
     {(chatHistory.writeFailed || chatHistory.sendSaveFailed) && <div className="run-notice single-chat-storage-notice" role="alert">
       <span>{chatHistory.writeFailed ? '单聊暂时无法保存。请检查磁盘，再切回星丛重试。' : '消息保存失败，草稿还在输入框里。请检查磁盘后重新发送。'}</span>
     </div>}

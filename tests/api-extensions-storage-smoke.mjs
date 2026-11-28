@@ -141,7 +141,7 @@ async function launch() {
     return fetch(`http://127.0.0.1:${port}/json/version`).then((response) => response.ok).catch(() => false);
   }, 'debugger');
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  await until(() => { page = browser.contexts().flatMap((context) => context.pages()).find((candidate) => candidate.url().startsWith('file:')); return Boolean(page); }, 'page');
+  await until(() => { page = browser.contexts().flatMap((context) => context.pages()).find((candidate) => candidate.url().startsWith('file:') && !candidate.url().includes('/startup.html')); return Boolean(page); }, 'main page');
   await page.getByLabel('主要页面').waitFor();
   await page.waitForFunction(async () => Boolean(globalThis.asteriumExtensions && await globalThis.asteriumConversations?.openHistory?.(true)));
 }

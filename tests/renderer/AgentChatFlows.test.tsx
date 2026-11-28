@@ -501,8 +501,13 @@ describe('local Codex renderer flow', () => {
     fireEvent.change(screen.getByLabelText('性格与相处方式'), { target: { value: '温柔、简洁' } });
     fireEvent.click(screen.getByRole('button', { name: '添加 API 伙伴' }));
     expect(await screen.findByText('DeepSeek 伙伴 已加入星丛')).toBeInTheDocument();
-    expect(localStorage.getItem('asterium.prototype.v7')).not.toContain('renderer-only-secret');
-    expect(localStorage.getItem('asterium.prototype.v7')).toContain('credential-deepseek');
+    // The toast commits before the provider's persistence effect. Check the
+    // secret boundary against the saved new partner, never the old snapshot.
+    await waitFor(() => {
+      const saved = localStorage.getItem('asterium.prototype.v7');
+      expect(saved).toContain('credential-deepseek');
+      expect(saved).not.toContain('renderer-only-secret');
+    });
     fireEvent.click(screen.getByRole('button', { name: '去和 TA 聊聊' }));
 
     const input = await screen.findByRole('textbox', { name: /给 DeepSeek 伙伴 发送消息/ });
